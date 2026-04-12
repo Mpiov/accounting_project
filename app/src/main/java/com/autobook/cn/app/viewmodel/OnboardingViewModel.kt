@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** 引导页 ViewModel，组合系统权限状态与本地设置状态。 */
 @HiltViewModel
 class OnboardingViewModel
     @Inject
@@ -27,35 +28,24 @@ class OnboardingViewModel
         private val _uiState = MutableStateFlow(OnboardingUiState())
         val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
 
-        init {
-            settingsRepository.settings
-                .onEach { settings ->
-                    applySettings(settings)
-                }
-                .launchIn(viewModelScope)
-        }
-
-        fun refreshPermissionStatus() {
-            applySettings(
-                AppSettings(
-                    onboardingCompleted = _uiState.value.onboardingCompleted,
-                    autoAccountingEnabled = _uiState.value.autoAccountingEnabled,
-                    cloudAnalysisEnabled = _uiState.value.cloudAnalysisEnabled,
-                ),
-            )
-        }
-
-        fun setAutoAccountingEnabled(enabled: Boolean) {
-            viewModelScope.launch {
-                settingsRepository.setAutoAccountingEnabled(enabled)
+    init {
+        // 持续监听设置仓库，让引导页开关状态和持久化配置保持同步。
+        settingsRepository.settings
+            .onEach { settings ->
+                applySettings(settings)
             }
         }
 
-        fun setCloudAnalysisEnabled(enabled: Boolean) {
-            viewModelScope.launch {
-                settingsRepository.setCloudAnalysisEnabled(enabled)
-            }
-        }
+    fun refreshPermissionStatus() {
+        // 从系统设置页返回后，仅刷新权限状态，不覆写已有开关选择。
+        applySettings(
+            AppSettings(
+                onboardingCompleted = _uiState.value.onboardingCompleted,
+                autoAccountingEnabled = _uiState.value.autoAccountingEnabled,
+                cloudAnalysisEnabled = _uiState.value.cloudAnalysisEnabled,
+            ),
+        )
+    }
 
         fun completeOnboarding() {
             viewModelScope.launch {

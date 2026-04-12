@@ -4,6 +4,10 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import com.autobook.cn.app.ui.EntryEditorScreen
+import com.autobook.cn.app.ui.SettingsScreen
+import com.autobook.cn.app.viewmodel.EntryEditorUiState
+import com.autobook.cn.app.viewmodel.SettingsUiState
 import com.autobook.cn.feature.ledger.LedgerScreen
 import com.autobook.cn.feature.ledger.LedgerUiState
 import com.autobook.cn.feature.onboarding.OnboardingScreen
@@ -13,6 +17,7 @@ import com.autobook.cn.feature.pending.PendingUiState
 import org.junit.Rule
 import org.junit.Test
 
+/** 基础烟雾测试，确保主要页面至少能够正常渲染。 */
 class ScreenSmokeTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
@@ -39,11 +44,16 @@ class ScreenSmokeTest {
         composeRule.setContent {
             LedgerScreen(
                 state = LedgerUiState(),
+                onSearchChange = {},
+                onRangeChange = {},
                 onPendingClick = {},
+                onSettingsClick = {},
+                onAddClick = {},
+                onEntryClick = {},
             )
         }
 
-        composeRule.onNodeWithText("账本首页").assertIsDisplayed()
+        composeRule.onNodeWithText("账本").assertIsDisplayed()
     }
 
     @Test
@@ -53,10 +63,52 @@ class ScreenSmokeTest {
                 state = PendingUiState(),
                 onBack = {},
                 onConfirm = {},
+                onEdit = {},
                 onIgnore = {},
+                onFalsePositive = {},
             )
         }
 
         composeRule.onNodeWithText("待确认").assertIsDisplayed()
+    }
+
+    @Test
+    fun settingsScreenRenders() {
+        composeRule.setContent {
+            SettingsScreen(
+                state = SettingsUiState(),
+                onBack = {},
+                onAutoAccountingChanged = {},
+                onCloudAnalysisChanged = {},
+                onCaptureEnabledChanged = {},
+                onOcrEnabledChanged = {},
+                onNotificationRetentionChanged = {},
+                onScreenshotRetentionChanged = { },
+                onSourceEnabledChanged = { _, _ -> },
+                onLoadExportPreview = {},
+            )
+        }
+
+        composeRule.onNodeWithText("设置").assertIsDisplayed()
+    }
+
+    @Test
+    fun entryEditorRenders() {
+        composeRule.setContent {
+            EntryEditorScreen(
+                state = EntryEditorUiState(),
+                onBack = {},
+                onAmountChange = {},
+                onMerchantChange = {},
+                onCategoryChange = {},
+                onNoteChange = {},
+                onOrderIdChange = {},
+                onDirectionChange = {},
+                onSave = {},
+                onDelete = {},
+            )
+        }
+
+        composeRule.onNodeWithText("新建手动记账").assertIsDisplayed()
     }
 }
