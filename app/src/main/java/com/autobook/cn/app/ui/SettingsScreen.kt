@@ -18,6 +18,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +43,8 @@ fun SettingsScreen(
     onLoadExportPreview: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val clipboardManager = LocalClipboardManager.current
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -98,6 +102,7 @@ fun SettingsScreen(
                 range = 1..30,
                 onValueChange = onScreenshotRetentionChanged,
             )
+            DataOverviewCard(state = state)
             Card {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -125,14 +130,39 @@ fun SettingsScreen(
                         "生成一份当前账本的 CSV 预览，方便后续接入分享、导出或备份。",
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    Button(onClick = onLoadExportPreview) {
-                        Text("生成 CSV 预览")
+                    if (state.exportPreviewSummary.isNotBlank()) {
+                        Text(
+                            text = state.exportPreviewSummary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = onLoadExportPreview) {
+                            Text("生成 CSV 预览")
+                        }
+                        if (state.exportPreview.isNotBlank()) {
+                            TextButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(state.exportPreview))
+                                },
+                            ) {
+                                Text("复制 CSV")
+                            }
+                        }
                     }
                     if (state.exportPreview.isNotBlank()) {
                         Text(
-                            text = state.exportPreview,
+                            text = buildPreviewSnippet(state.exportPreview),
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        if (state.exportPreview.lineSequence().count() > PREVIEW_MAX_LINES) {
+                            Text(
+                                text = "仅展示前 $PREVIEW_MAX_LINES 行，复制按钮可获取完整 CSV。",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
@@ -199,6 +229,58 @@ private fun RetentionCard(
         }
     }
 }
+
+@Composable
+private fun DataOverviewCard(
+    state: SettingsUiState,
+) {
+    Card {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("本地账本概览", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OverviewMetric(title = "总记录", value = state.totalEntries.toString(), modifier = Modifier.weight(1f))
+                OverviewMetric(title = "手动补记", value = state.manualEntries.toString(), modifier = Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OverviewMetric(title = "自动入账", value = state.autoEntries.toString(), modifier = Modifier.weight(1f))
+                OverviewMetric(title = "待确认", value = state.pendingEntries.toString(), modifier = Modifier.weight(1f))
+            }
+            Text("本月收入：${state.currentMonthIncome}", style = MaterialTheme.typography.bodyMedium)
+            Text("本月支出：${state.currentMonthExpense}", style = MaterialTheme.typography.bodyMedium)
+            Text("最近一笔：${state.latestEntrySummary}", style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun OverviewMetric(
+    title: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    Card(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.labelLarge)
+            Text(value, style = MaterialTheme.typography.headlineSmall)
+        }
+    }
+}
+
+private fun buildPreviewSnippet(csv: String): String {
+    return csv.lineSequence()
+        .take(PREVIEW_MAX_LINES)
+        .joinToString("\n")
+}
+
+private const val PREVIEW_MAX_LINES = 12
 
 /** 将来源枚举映射为设置页可读文案。 */
 private fun NotificationSourceApp.label(): String = when (this) {

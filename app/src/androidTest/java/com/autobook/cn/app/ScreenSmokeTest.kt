@@ -129,6 +129,7 @@ class ScreenSmokeTest {
         }
 
         composeRule.onNodeWithText("设置").assertIsDisplayed()
+        composeRule.onNodeWithText("本地账本概览").assertIsDisplayed()
     }
 
     @Test
