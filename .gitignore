@@ -1,0 +1,19 @@
+# Gradle 相关缓存 (这就是导致您报错的罪魁祸首)
+.gradle/
+build/
+app/build/
+
+# 本地配置文件 (绝对不能传，否则您的伙伴拉下来会报错)
+local.properties
+gradlew.bat
+gradlew
+
+# IDE 生成的临时文件
+.idea/
+*.iml
+.vscode/
+
+# Mac 系统的垃圾文件
+.DS_Store
+
+.gradle-home/
