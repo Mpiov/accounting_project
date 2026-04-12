@@ -17,10 +17,11 @@ class AutobookAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         serviceScope.launch {
-            val entryPoint = EntryPointAccessors.fromApplication(
-                applicationContext,
-                ServiceDependenciesEntryPoint::class.java,
-            )
+            val entryPoint =
+                EntryPointAccessors.fromApplication(
+                    applicationContext,
+                    ServiceDependenciesEntryPoint::class.java,
+                )
             entryPoint.captureCoordinator().requestCapture("service_connected")
             Log.d("AutobookAccessService", "Accessibility service connected")
         }

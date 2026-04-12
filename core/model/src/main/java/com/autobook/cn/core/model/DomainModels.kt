@@ -24,11 +24,12 @@ data class ParseConfidence(
     val score: Float,
 ) {
     val level: ConfidenceLevel
-        get() = when {
-            score >= 0.85f -> ConfidenceLevel.HIGH
-            score >= 0.6f -> ConfidenceLevel.MEDIUM
-            else -> ConfidenceLevel.LOW
-        }
+        get() =
+            when {
+                score >= 0.85f -> ConfidenceLevel.HIGH
+                score >= 0.6f -> ConfidenceLevel.MEDIUM
+                else -> ConfidenceLevel.LOW
+            }
 }
 
 data class TransactionCandidate(

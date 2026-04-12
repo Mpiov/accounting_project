@@ -10,8 +10,8 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import javax.inject.Singleton
 import net.sqlcipher.database.SupportFactory
+import javax.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -29,8 +29,7 @@ object DatabaseModule {
     }
 
     @Provides
-    fun provideNotificationEventDao(database: AutobookDatabase): NotificationEventDao =
-        database.notificationEventDao()
+    fun provideNotificationEventDao(database: AutobookDatabase): NotificationEventDao = database.notificationEventDao()
 
     @Provides
     fun provideLedgerEntryDao(database: AutobookDatabase): LedgerEntryDao = database.ledgerEntryDao()

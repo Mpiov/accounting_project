@@ -8,5 +8,6 @@ import dagger.hilt.components.SingletonComponent
 @InstallIn(SingletonComponent::class)
 interface ServiceDependenciesEntryPoint {
     fun notificationIngestor(): NotificationIngestor
+
     fun captureCoordinator(): CaptureCoordinator
 }

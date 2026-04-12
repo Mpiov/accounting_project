@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -58,10 +57,11 @@ fun LedgerScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(20.dp),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -97,9 +97,10 @@ fun LedgerScreen(
                     items(state.entries, key = { it.id }) { entry ->
                         Card {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

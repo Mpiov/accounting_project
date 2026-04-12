@@ -13,10 +13,11 @@ object SettingsIntents {
 
 object PermissionStatusChecker {
     fun hasNotificationAccess(context: Context): Boolean {
-        val enabled = Settings.Secure.getString(
-            context.contentResolver,
-            "enabled_notification_listeners",
-        ) ?: return false
+        val enabled =
+            Settings.Secure.getString(
+                context.contentResolver,
+                "enabled_notification_listeners",
+            ) ?: return false
         return enabled.contains(context.packageName)
     }
 
@@ -24,10 +25,11 @@ object PermissionStatusChecker {
         context: Context,
         serviceClassName: String,
     ): Boolean {
-        val enabled = Settings.Secure.getString(
-            context.contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-        ) ?: return false
+        val enabled =
+            Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+            ) ?: return false
         val expected = ComponentName(context.packageName, serviceClassName).flattenToString()
         return enabled.contains(expected)
     }

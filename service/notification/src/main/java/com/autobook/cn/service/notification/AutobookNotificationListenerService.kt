@@ -17,18 +17,20 @@ class AutobookNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val extras = sbn.notification.extras
-        val event = NotificationEvent(
-            packageName = sbn.packageName,
-            title = extras?.getCharSequence("android.title")?.toString(),
-            text = extras?.getCharSequence("android.text")?.toString(),
-            postedAt = sbn.postTime,
-        )
+        val event =
+            NotificationEvent(
+                packageName = sbn.packageName,
+                title = extras?.getCharSequence("android.title")?.toString(),
+                text = extras?.getCharSequence("android.text")?.toString(),
+                postedAt = sbn.postTime,
+            )
 
         serviceScope.launch {
-            val entryPoint = EntryPointAccessors.fromApplication(
-                applicationContext,
-                ServiceDependenciesEntryPoint::class.java,
-            )
+            val entryPoint =
+                EntryPointAccessors.fromApplication(
+                    applicationContext,
+                    ServiceDependenciesEntryPoint::class.java,
+                )
             val result = entryPoint.notificationIngestor().ingest(event)
             Log.d("AutobookNotifService", "Notification processed: $result")
         }

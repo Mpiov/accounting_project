@@ -18,9 +18,10 @@ class FakeCloudAnalysisApi : CloudAnalysisApi {
     override suspend fun analyze(request: CloudAnalysisRequest): TransactionCandidate? = null
 }
 
-fun NotificationEvent.toCloudRequest(): CloudAnalysisRequest = CloudAnalysisRequest(
-    packageName = packageName,
-    title = title,
-    text = text,
-    timestamp = postedAt,
-)
+fun NotificationEvent.toCloudRequest(): CloudAnalysisRequest =
+    CloudAnalysisRequest(
+        packageName = packageName,
+        title = title,
+        text = text,
+        timestamp = postedAt,
+    )

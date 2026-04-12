@@ -16,6 +16,8 @@ import com.autobook.cn.core.database.entity.PendingEntryEntity
 )
 abstract class AutobookDatabase : RoomDatabase() {
     abstract fun notificationEventDao(): NotificationEventDao
+
     abstract fun ledgerEntryDao(): LedgerEntryDao
+
     abstract fun pendingEntryDao(): PendingEntryDao
 }

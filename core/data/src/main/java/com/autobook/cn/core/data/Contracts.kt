@@ -31,19 +31,26 @@ interface ModelRouter {
 
 interface LedgerRepository {
     fun observeEntries(): Flow<List<LedgerEntry>>
+
     suspend fun add(entry: LedgerEntry): Long
 }
 
 interface PendingRepository {
     fun observeEntries(): Flow<List<PendingEntry>>
+
     suspend fun add(entry: PendingEntry): Long
+
     suspend fun confirm(id: Long): PendingEntry?
+
     suspend fun ignore(id: Long)
 }
 
 interface SettingsRepository {
     val settings: Flow<AppSettings>
+
     suspend fun setOnboardingCompleted(completed: Boolean)
+
     suspend fun setAutoAccountingEnabled(enabled: Boolean)
+
     suspend fun setCloudAnalysisEnabled(enabled: Boolean)
 }

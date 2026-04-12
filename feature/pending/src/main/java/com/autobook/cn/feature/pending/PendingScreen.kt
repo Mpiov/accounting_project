@@ -55,10 +55,11 @@ fun PendingScreen(
         },
     ) { padding ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(20.dp),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (state.items.isEmpty()) {
@@ -74,9 +75,10 @@ fun PendingScreen(
                 items(state.items, key = { it.id }) { item ->
                     Card {
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

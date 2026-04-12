@@ -10,45 +10,49 @@ import com.autobook.cn.core.model.NotificationEvent
 import com.autobook.cn.core.model.NotificationProcessOutcome
 import com.autobook.cn.core.model.OperationResult
 import com.autobook.cn.core.model.ProcessDestination
-import javax.inject.Inject
 import kotlinx.coroutines.flow.first
+import javax.inject.Inject
 
-class TransactionProcessingPipeline @Inject constructor(
-    private val modelRouter: ModelRouter,
-    private val ledgerRepository: LedgerRepository,
-    private val pendingRepository: PendingRepository,
-    private val settingsRepository: SettingsRepository,
-) {
-    suspend fun process(
-        notificationId: Long,
-        event: NotificationEvent,
-    ): OperationResult<NotificationProcessOutcome> {
-        return when (val candidateResult = modelRouter.route(event)) {
-            is OperationResult.Success -> {
-                val candidate = candidateResult.data
-                val settings = settingsRepository.settings.first()
-                val shouldAutoLedger = settings.autoAccountingEnabled &&
-                    candidate.confidence.score >= 0.85f
-                if (shouldAutoLedger) {
-                    ledgerRepository.add(candidate.toLedgerEntry())
-                    OperationResult.Success(
-                        NotificationProcessOutcome(notificationId, ProcessDestination.LEDGER),
-                    )
-                } else {
-                    val reason = if (!settings.autoAccountingEnabled) {
-                        "Auto accounting disabled"
+class TransactionProcessingPipeline
+    @Inject
+    constructor(
+        private val modelRouter: ModelRouter,
+        private val ledgerRepository: LedgerRepository,
+        private val pendingRepository: PendingRepository,
+        private val settingsRepository: SettingsRepository,
+    ) {
+        suspend fun process(
+            notificationId: Long,
+            event: NotificationEvent,
+        ): OperationResult<NotificationProcessOutcome> {
+            return when (val candidateResult = modelRouter.route(event)) {
+                is OperationResult.Success -> {
+                    val candidate = candidateResult.data
+                    val settings = settingsRepository.settings.first()
+                    val shouldAutoLedger =
+                        settings.autoAccountingEnabled &&
+                            candidate.confidence.score >= 0.85f
+                    if (shouldAutoLedger) {
+                        ledgerRepository.add(candidate.toLedgerEntry())
+                        OperationResult.Success(
+                            NotificationProcessOutcome(notificationId, ProcessDestination.LEDGER),
+                        )
                     } else {
-                        "Low confidence"
+                        val reason =
+                            if (!settings.autoAccountingEnabled) {
+                                "Auto accounting disabled"
+                            } else {
+                                "Low confidence"
+                            }
+                        pendingRepository.add(candidate.toPendingEntry(reason = reason))
+                        OperationResult.Success(
+                            NotificationProcessOutcome(notificationId, ProcessDestination.PENDING),
+                        )
                     }
-                    pendingRepository.add(candidate.toPendingEntry(reason = reason))
-                    OperationResult.Success(
-                        NotificationProcessOutcome(notificationId, ProcessDestination.PENDING),
-                    )
                 }
-            }
 
-            is OperationResult.RetryableFailure -> candidateResult
-            is OperationResult.TerminalFailure -> candidateResult
+                is OperationResult.RetryableFailure -> candidateResult
+                is OperationResult.TerminalFailure -> candidateResult
+            }
         }
     }
-}
