@@ -70,10 +70,22 @@ class ModelRouterImpl @Inject constructor(
                     )
                 }
 
-                is OperationResult.RetryableFailure -> ocrText
-                is OperationResult.TerminalFailure -> ocrText
+                is OperationResult.RetryableFailure -> {
+                    OperationResult.RetryableFailure(ocrText.message, ocrText.cause)
+                }
+                is OperationResult.TerminalFailure -> {
+                    OperationResult.TerminalFailure(ocrText.message, ocrText.cause)
+                }
             }
         }
-        return captureResult
+        return when (captureResult) {
+            is OperationResult.RetryableFailure -> {
+                OperationResult.RetryableFailure(captureResult.message, captureResult.cause)
+            }
+            is OperationResult.TerminalFailure -> {
+                OperationResult.TerminalFailure(captureResult.message, captureResult.cause)
+            }
+            is OperationResult.Success -> error("captureResult success branch should have already returned")
+        }
     }
 }

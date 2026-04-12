@@ -9,6 +9,7 @@ set APP_BASE_NAME=%~n0
 for %%i in ("%DIRNAME%") do set APP_HOME=%%~fi
 
 set CLASSPATH=%APP_HOME%\gradle\wrapper\gradle-wrapper.jar
+if not defined GRADLE_USER_HOME set GRADLE_USER_HOME=%APP_HOME%\.gradle-home
 
 if defined JAVA_HOME goto findJavaFromJavaHome
 

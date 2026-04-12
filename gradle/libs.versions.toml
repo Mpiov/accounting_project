@@ -21,6 +21,7 @@ activityCompose = "1.9.2"
 coreKtx = "1.13.1"
 lifecycle = "2.8.5"
 splashscreen = "1.0.1"
+material = "1.12.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -38,6 +39,7 @@ compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview"
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
+google-material = { module = "com.google.android.material:material", version.ref = "material" }
 compose-material-icons = { module = "androidx.compose.material:material-icons-extended" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
 

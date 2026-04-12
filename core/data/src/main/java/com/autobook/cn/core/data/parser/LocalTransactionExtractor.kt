@@ -87,7 +87,7 @@ class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
             .firstNotNullOfOrNull { pattern -> pattern.find(body)?.groupValues?.getOrNull(1)?.trim() }
         return when {
             !detected.isNullOrBlank() -> detected
-            !event.title.isNullOrBlank() -> event.title
+            !event.title.isNullOrBlank() -> event.title.orEmpty()
             else -> channelLabel(sourceApp)
         }
     }
