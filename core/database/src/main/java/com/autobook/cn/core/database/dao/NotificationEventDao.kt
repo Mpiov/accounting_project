@@ -7,6 +7,7 @@ import androidx.room.Query
 import com.autobook.cn.core.database.entity.NotificationEventEntity
 import kotlinx.coroutines.flow.Flow
 
+/** 原始通知及其处理状态的 Room 访问接口。 */
 @Dao
 interface NotificationEventDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)

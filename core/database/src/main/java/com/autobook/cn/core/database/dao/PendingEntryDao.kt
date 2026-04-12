@@ -8,6 +8,7 @@ import androidx.room.Update
 import com.autobook.cn.core.database.entity.PendingEntryEntity
 import kotlinx.coroutines.flow.Flow
 
+/** 待确认记录的 Room 访问接口。 */
 @Dao
 interface PendingEntryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)

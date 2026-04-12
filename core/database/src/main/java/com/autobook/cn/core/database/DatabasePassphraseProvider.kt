@@ -10,6 +10,7 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 
+/** 使用 Android Keystore 生成并恢复 SQLCipher 数据库口令。 */
 internal class DatabasePassphraseProvider(
     private val context: Context,
 ) {
@@ -21,6 +22,7 @@ internal class DatabasePassphraseProvider(
             return decrypt(encrypted, iv)
         }
 
+        // 首次运行时生成随机口令，并尝试使用设备密钥包装保存。
         val generated = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
         return runCatching {
             val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -32,6 +34,7 @@ internal class DatabasePassphraseProvider(
                 .apply()
             generated
         }.getOrElse {
+            // 如果包装失败，则退回到兼容路径，至少保证数据库仍可启动。
             preferences.edit()
                 .putString(KEY_LEGACY, Base64.encodeToString(generated, Base64.NO_WRAP))
                 .apply()
@@ -52,6 +55,7 @@ internal class DatabasePassphraseProvider(
             )
             cipher.doFinal(Base64.decode(encrypted, Base64.NO_WRAP))
         }.getOrElse {
+            // 解密失败时优先尝试旧版本明文口令，再不行就回退到新的随机值。
             val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             preferences.getString(KEY_LEGACY, null)?.let { legacy ->
                 Base64.decode(legacy, Base64.NO_WRAP)
@@ -68,6 +72,7 @@ internal class DatabasePassphraseProvider(
             return existing
         }
 
+        // 仅在本地还没有密钥时才创建新的 Keystore 密钥。
         val keyGenerator = KeyGenerator.getInstance(
             KeyProperties.KEY_ALGORITHM_AES,
             ANDROID_KEYSTORE,

@@ -69,6 +69,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.splashscreen)
+    implementation(libs.android.material)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.hilt.android)
     implementation(libs.androidx.navigation.compose)

@@ -10,11 +10,13 @@ import com.autobook.cn.core.model.TransactionCandidate
 import java.util.Locale
 import javax.inject.Inject
 
+/** 基于本地规则从通知正文中提取交易候选。 */
 class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
     private val amountRegex = Regex("""(?:人民币|RMB|CNY|￥|¥)?\s*([0-9]+(?:\.[0-9]{1,2})?)""")
     private val orderIdRegex = Regex("""(?:订单号|交易单号|单号|订单)\s*[:：]?\s*([A-Za-z0-9-]{6,})""")
 
     override suspend fun extract(event: NotificationEvent): OperationResult<TransactionCandidate> {
+        // 标题和正文在不同应用里承载的信息不一致，这里合并后统一解析。
         val body = listOfNotNull(event.title, event.text)
             .joinToString(separator = " ")
             .trim()
@@ -78,6 +80,8 @@ class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
         body: String,
         sourceApp: NotificationSourceApp,
     ): String {
+        val title = event.title
+        // 商户名优先从正文模式中提取，失败时再退回标题或来源名称。
         val merchantPatterns = listOf(
             Regex("""向(.+?)付款"""),
             Regex("""商户[:：]?\s*(.+?)(?:\s|$)"""),
@@ -87,7 +91,11 @@ class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
             .firstNotNullOfOrNull { pattern -> pattern.find(body)?.groupValues?.getOrNull(1)?.trim() }
         return when {
             !detected.isNullOrBlank() -> detected
+<<<<<<< HEAD
             !event.title.isNullOrBlank() -> event.title.orEmpty()
+=======
+            !title.isNullOrBlank() -> title
+>>>>>>> 0f99404 (增加了中文注释，并可以正常安装app，但目前有闪退问题)
             else -> channelLabel(sourceApp)
         }
     }
@@ -111,6 +119,7 @@ class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
         orderId: String?,
         merchant: String,
     ): ConfidenceDecision {
+        // 先给不同来源一个基础分，再根据成功关键词、订单号等结构化线索加分。
         var score = when (sourceApp) {
             NotificationSourceApp.WECHAT -> 0.84f
             NotificationSourceApp.ALIPAY -> 0.84f
@@ -139,6 +148,7 @@ class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
     }
 }
 
+/** 仅在解析器内部使用的置信度中间结果。 */
 private data class ConfidenceDecision(
     val score: Float,
     val reason: String,

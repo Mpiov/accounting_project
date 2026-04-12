@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.autobook.cn.app.viewmodel.SettingsUiState
 import com.autobook.cn.core.model.NotificationSourceApp
 
+/** 设置页，集中管理自动记账、回退能力和数据留存策略。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -146,6 +147,7 @@ private fun SettingSwitchCard(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
+    /** 统一的开关卡片样式，避免页面内重复拼装。 */
     Card {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -163,6 +165,7 @@ private fun SettingSwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
+    /** 单行标题加开关，用于卡片内复用。 */
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -180,6 +183,7 @@ private fun RetentionCard(
     range: IntRange,
     onValueChange: (Int) -> Unit,
 ) {
+    /** 留存天数卡片，使用滑杆在预设区间内调整。 */
     Card {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -196,6 +200,7 @@ private fun RetentionCard(
     }
 }
 
+/** 将来源枚举映射为设置页可读文案。 */
 private fun NotificationSourceApp.label(): String = when (this) {
     NotificationSourceApp.WECHAT -> "微信支付"
     NotificationSourceApp.ALIPAY -> "支付宝"

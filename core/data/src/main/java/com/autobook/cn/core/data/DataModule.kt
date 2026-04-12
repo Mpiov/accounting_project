@@ -17,6 +17,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
+/** 为数据层抽象提供 Hilt 绑定。 */
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class DataBindingsModule {
@@ -45,6 +46,7 @@ abstract class DataBindingsModule {
     abstract fun bindOcrEngine(impl: FakeOcrEngine): OcrEngine
 }
 
+/** 为暂时不需要接口绑定的具体类型提供实例。 */
 @Module
 @InstallIn(SingletonComponent::class)
 object DataProvisionModule {

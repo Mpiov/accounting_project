@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/** 设置页 ViewModel，负责设置项读写和账本导出预览。 */
 data class SettingsUiState(
     val autoAccountingEnabled: Boolean = true,
     val cloudAnalysisEnabled: Boolean = false,
@@ -32,6 +33,7 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
     private val exportPreview = MutableStateFlow("")
 
+    /** 把持久化设置与导出预览组合为设置页状态。 */
     val uiState: StateFlow<SettingsUiState> = settingsRepository.settings
         .combine(exportPreview) { settings, preview ->
             SettingsUiState(
@@ -84,6 +86,7 @@ class SettingsViewModel @Inject constructor(
 
     fun loadExportPreview() {
         viewModelScope.launch {
+            // 按需生成，避免每次进入设置页都做 CSV 拼装。
             exportPreview.value = ledgerRepository.exportCsv()
         }
     }

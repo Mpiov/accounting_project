@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 
+/** 账本首页 ViewModel，负责筛选、汇总和映射展示模型。 */
 @HiltViewModel
 class LedgerViewModel @Inject constructor(
     ledgerRepository: LedgerRepository,
@@ -28,6 +29,7 @@ class LedgerViewModel @Inject constructor(
     private val searchQuery = MutableStateFlow("")
     private val selectedRange = MutableStateFlow(LedgerRangeFilter.TODAY)
 
+    /** 把账本记录、待确认数量和筛选条件组合成首页状态。 */
     val uiState: StateFlow<LedgerUiState> = combine(
         ledgerRepository.observeEntries(),
         pendingRepository.observeEntries(),
@@ -72,6 +74,7 @@ class LedgerViewModel @Inject constructor(
     }
 }
 
+/** 按关键词过滤商户、分类和备注。 */
 private fun List<LedgerEntry>.filterByQuery(query: String): List<LedgerEntry> {
     if (query.isBlank()) return this
     val normalized = query.trim()
@@ -82,6 +85,7 @@ private fun List<LedgerEntry>.filterByQuery(query: String): List<LedgerEntry> {
     }
 }
 
+/** 按日期范围过滤账本记录。 */
 private fun List<LedgerEntry>.filterByRange(range: LedgerRangeFilter): List<LedgerEntry> {
     val now = System.currentTimeMillis()
     val calendar = Calendar.getInstance()

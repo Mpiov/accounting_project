@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+/** 原始通知与处理元数据的数据库实体。 */
 @Entity(
     tableName = "notification_events",
     indices = [
@@ -27,6 +28,7 @@ data class NotificationEventEntity(
     val screenshotRef: String?,
 )
 
+/** 已正式入账的账本实体。 */
 @Entity(tableName = "ledger_entries")
 data class LedgerEntryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
@@ -45,6 +47,7 @@ data class LedgerEntryEntity(
     val editedManually: Boolean,
 )
 
+/** 待人工确认或待排除的队列实体。 */
 @Entity(tableName = "pending_entries")
 data class PendingEntryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,

@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+/** 引导页的界面状态。 */
 data class OnboardingUiState(
     val notificationAccess: Boolean = false,
     val accessibilityAccess: Boolean = false,
@@ -33,6 +34,7 @@ data class OnboardingUiState(
     val onboardingCompleted: Boolean = false,
 )
 
+/** 首次启动引导页，聚合权限说明与核心策略开关。 */
 @Composable
 fun OnboardingScreen(
     state: OnboardingUiState,
@@ -114,6 +116,7 @@ private fun PermissionCard(
     actionLabel: String,
     onAction: () -> Unit,
 ) {
+    /** 权限型卡片，展示状态并引导用户跳转系统设置。 */
     Card {
         Row(
             modifier = Modifier
@@ -147,6 +150,7 @@ private fun ToggleCard(
     icon: @Composable () -> Unit,
     onCheckedChange: (Boolean) -> Unit,
 ) {
+    /** 策略型开关卡片，用于展示可直接在应用内调整的设置。 */
     Card {
         Row(
             modifier = Modifier

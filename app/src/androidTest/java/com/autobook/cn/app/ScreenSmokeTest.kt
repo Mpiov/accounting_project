@@ -17,6 +17,7 @@ import com.autobook.cn.feature.pending.PendingUiState
 import org.junit.Rule
 import org.junit.Test
 
+/** 基础烟雾测试，确保主要页面至少能够正常渲染。 */
 class ScreenSmokeTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()

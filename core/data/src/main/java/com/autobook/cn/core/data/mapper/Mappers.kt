@@ -12,6 +12,7 @@ import com.autobook.cn.core.model.ParseConfidence
 import com.autobook.cn.core.model.PendingEntry
 import com.autobook.cn.core.model.TransactionCandidate
 
+/** 通知领域模型转为 Room 实体。 */
 fun NotificationEvent.toEntity(): NotificationEventEntity = NotificationEventEntity(
     id = id,
     packageName = packageName,
@@ -27,6 +28,7 @@ fun NotificationEvent.toEntity(): NotificationEventEntity = NotificationEventEnt
     screenshotRef = screenshotRef,
 )
 
+/** 通知 Room 实体转回领域模型。 */
 fun NotificationEventEntity.toDomain(): NotificationEvent = NotificationEvent(
     id = id,
     packageName = packageName,
@@ -42,6 +44,7 @@ fun NotificationEventEntity.toDomain(): NotificationEvent = NotificationEvent(
     screenshotRef = screenshotRef,
 )
 
+/** 账本领域模型转为 Room 实体。 */
 fun LedgerEntry.toEntity(): LedgerEntryEntity = LedgerEntryEntity(
     id = id,
     amount = amount,
@@ -59,6 +62,7 @@ fun LedgerEntry.toEntity(): LedgerEntryEntity = LedgerEntryEntity(
     editedManually = editedManually,
 )
 
+/** 账本 Room 实体转回领域模型。 */
 fun LedgerEntryEntity.toDomain(): LedgerEntry = LedgerEntry(
     id = id,
     amount = amount,
@@ -76,6 +80,7 @@ fun LedgerEntryEntity.toDomain(): LedgerEntry = LedgerEntry(
     editedManually = editedManually,
 )
 
+/** 将交易候选提升为正式账本记录，并保留链路追踪字段。 */
 fun TransactionCandidate.toLedgerEntry(
     category: String = categoryHint,
     notificationId: Long? = null,
@@ -97,6 +102,7 @@ fun TransactionCandidate.toLedgerEntry(
     editedManually = editedManually,
 )
 
+/** 将交易候选包装成待确认记录。 */
 fun TransactionCandidate.toPendingEntry(
     reason: String,
     notificationId: Long? = null,
@@ -116,6 +122,7 @@ fun TransactionCandidate.toPendingEntry(
     traceNotificationId = notificationId,
 )
 
+/** 待确认领域模型转为 Room 实体。 */
 fun PendingEntry.toEntity(): PendingEntryEntity = PendingEntryEntity(
     id = id,
     amount = amount,
@@ -135,6 +142,7 @@ fun PendingEntry.toEntity(): PendingEntryEntity = PendingEntryEntity(
     editedManually = editedManually,
 )
 
+/** 待确认 Room 实体转回领域模型。 */
 fun PendingEntryEntity.toDomain(): PendingEntry = PendingEntry(
     id = id,
     amount = amount,

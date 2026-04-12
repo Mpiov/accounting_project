@@ -13,6 +13,7 @@ import com.autobook.cn.core.network.toCloudRequest
 import javax.inject.Inject
 import kotlinx.coroutines.flow.first
 
+/** 在本地规则、OCR 回退与云端分析之间做逐级兜底。 */
 class ModelRouterImpl @Inject constructor(
     private val localExtractor: TransactionExtractor,
     private val cloudAnalysisApi: CloudAnalysisApi,
@@ -21,6 +22,7 @@ class ModelRouterImpl @Inject constructor(
     private val ocrEngine: OcrEngine,
 ) : ModelRouter {
     override suspend fun route(event: NotificationEvent): OperationResult<TransactionCandidate> {
+        // 优先走本地解析，保持主链路离线且低延迟。
         val local = localExtractor.extract(event)
         if (local is OperationResult.Success) {
             return local
@@ -32,6 +34,7 @@ class ModelRouterImpl @Inject constructor(
             return ocrRecovered
         }
 
+        // 只有用户显式开启云端分析时，才允许继续升级到网络兜底。
         if (!settings.cloudAnalysisEnabled) {
             return when {
                 ocrRecovered is OperationResult.RetryableFailure -> ocrRecovered
@@ -53,31 +56,42 @@ class ModelRouterImpl @Inject constructor(
             return OperationResult.RetryableFailure("OCR fallback disabled")
         }
 
+        // 先申请截图会话，再走截图与 OCR，两步都成功后才重试本地解析。
         val session = when (val sessionResult = captureCoordinator.requestAuthorization("notification-ocr-fallback")) {
             is OperationResult.Success -> sessionResult.data
             is OperationResult.RetryableFailure -> return sessionResult
             is OperationResult.TerminalFailure -> return sessionResult
         }
-        val captureResult = captureCoordinator.capture(session.sessionId)
-        if (captureResult is OperationResult.Success) {
-            return when (val ocrText = ocrEngine.extractText(captureResult.data)) {
-                is OperationResult.Success -> {
-                    localExtractor.extract(
-                        event.copy(
-                            text = listOfNotNull(event.text, ocrText.data).joinToString(separator = " "),
-                            screenshotRef = captureResult.data,
-                        ),
-                    )
-                }
+        return when (val captureResult = captureCoordinator.capture(session.sessionId)) {
+            is OperationResult.Success -> {
+                when (val ocrText = ocrEngine.extractText(captureResult.data)) {
+                    is OperationResult.Success -> {
+                        // 把 OCR 文本拼回原通知正文，提高第二次本地解析命中率。
+                        localExtractor.extract(
+                            event.copy(
+                                text = listOfNotNull(event.text, ocrText.data).joinToString(separator = " "),
+                                screenshotRef = captureResult.data,
+                            ),
+                        )
+                    }
 
+<<<<<<< HEAD
                 is OperationResult.RetryableFailure -> {
                     OperationResult.RetryableFailure(ocrText.message, ocrText.cause)
                 }
                 is OperationResult.TerminalFailure -> {
                     OperationResult.TerminalFailure(ocrText.message, ocrText.cause)
+=======
+                    is OperationResult.RetryableFailure -> ocrText
+                    is OperationResult.TerminalFailure -> ocrText
+>>>>>>> 0f99404 (增加了中文注释，并可以正常安装app，但目前有闪退问题)
                 }
             }
+
+            is OperationResult.RetryableFailure -> captureResult
+            is OperationResult.TerminalFailure -> captureResult
         }
+<<<<<<< HEAD
         return when (captureResult) {
             is OperationResult.RetryableFailure -> {
                 OperationResult.RetryableFailure(captureResult.message, captureResult.cause)
@@ -87,5 +101,7 @@ class ModelRouterImpl @Inject constructor(
             }
             is OperationResult.Success -> error("captureResult success branch should have already returned")
         }
+=======
+>>>>>>> 0f99404 (增加了中文注释，并可以正常安装app，但目前有闪退问题)
     }
 }

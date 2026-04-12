@@ -13,6 +13,7 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 import net.sqlcipher.database.SupportFactory
 
+/** 构建加密数据库并通过 Hilt 暴露各个 DAO。 */
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -21,6 +22,7 @@ object DatabaseModule {
     fun provideDatabase(
         @ApplicationContext context: Context,
     ): AutobookDatabase {
+        // SQLCipher 需要二进制口令，这里统一从受保护的本地存储中取出。
         val passphrase = DatabasePassphraseProvider(context).getOrCreate()
         val factory = SupportFactory(passphrase)
         return Room.databaseBuilder(context, AutobookDatabase::class.java, "autobook.db")

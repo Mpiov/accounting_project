@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
+/** 验证低置信度候选会进入待确认队列而不是直接入账。 */
 class TransactionPipelineTest {
     @Test
     fun `routes low confidence candidates to pending`() = runTest {

@@ -1,5 +1,6 @@
 package com.autobook.cn.app.navigation
 
+/** 应用内所有导航目的地的统一定义。 */
 sealed class AutobookDestination(val route: String) {
     data object Onboarding : AutobookDestination("onboarding")
     data object Ledger : AutobookDestination("ledger")

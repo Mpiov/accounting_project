@@ -8,6 +8,7 @@ import androidx.room.Update
 import com.autobook.cn.core.database.entity.LedgerEntryEntity
 import kotlinx.coroutines.flow.Flow
 
+/** 已入账记录的 Room 访问接口。 */
 @Dao
 interface LedgerEntryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -28,6 +29,7 @@ interface LedgerEntryDao {
     @Query(
         """
         SELECT * FROM ledger_entries
+        -- 优先命中订单号完全一致的记录；缺少订单号时再退回短时间窗模糊匹配。
         WHERE (:orderId IS NOT NULL AND orderId = :orderId)
            OR (amount = :amount AND merchant = :merchant AND timestamp BETWEEN :windowStart AND :windowEnd)
         ORDER BY timestamp DESC

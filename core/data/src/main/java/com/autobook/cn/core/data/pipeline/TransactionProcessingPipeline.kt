@@ -14,6 +14,7 @@ import com.autobook.cn.core.model.ProcessDestination
 import javax.inject.Inject
 import kotlinx.coroutines.flow.first
 
+/** 决定候选交易是自动入账还是进入待确认队列。 */
 class TransactionProcessingPipeline @Inject constructor(
     private val modelRouter: ModelRouter,
     private val ledgerRepository: LedgerRepository,
@@ -28,6 +29,7 @@ class TransactionProcessingPipeline @Inject constructor(
             is OperationResult.Success -> {
                 val candidate = candidateResult.data
                 val settings = settingsRepository.settings.first()
+                // 只要命中疑似重复，就优先交给人工确认而不是直接入账。
                 val duplicate = ledgerRepository.findPotentialDuplicate(candidate) != null ||
                     candidate.isDuplicateCandidate
                 if (duplicate) {
@@ -88,4 +90,5 @@ class TransactionProcessingPipeline @Inject constructor(
     }
 }
 
+/** 超过该阈值的候选记录允许直接自动入账。 */
 private const val AUTO_LEDGER_THRESHOLD = 0.85f

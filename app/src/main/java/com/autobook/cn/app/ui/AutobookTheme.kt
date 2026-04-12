@@ -7,6 +7,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
+/** 亮色主题配色，偏向纸张感与记账工具气质。 */
 private val LightColors = lightColorScheme(
     primary = Color(0xFF0B6E4F),
     secondary = Color(0xFF2F4B7C),
@@ -15,6 +16,7 @@ private val LightColors = lightColorScheme(
     surface = Color(0xFFFFFBF5),
 )
 
+/** 暗色主题配色，保持与亮色主题相同的品牌倾向。 */
 private val DarkColors = darkColorScheme(
     primary = Color(0xFF7ED9B7),
     secondary = Color(0xFF92A8D1),
@@ -27,6 +29,7 @@ private val DarkColors = darkColorScheme(
 fun AutobookTheme(
     content: @Composable () -> Unit,
 ) {
+    /** 根据系统深浅色模式切换整套 Material3 颜色方案。 */
     MaterialTheme(
         colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
         content = content,

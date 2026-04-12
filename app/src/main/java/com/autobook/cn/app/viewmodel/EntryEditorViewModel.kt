@@ -15,12 +15,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/** 编辑页的工作模式：新建、编辑账本、处理待确认。 */
 enum class EntryEditorMode {
     CREATE,
     EDIT_LEDGER,
     RESOLVE_PENDING,
 }
 
+/** 编辑页 UI 状态，覆盖三种模式的公共表单字段。 */
 data class EntryEditorUiState(
     val mode: EntryEditorMode = EntryEditorMode.CREATE,
     val title: String = "新建手动记账",
@@ -35,6 +37,7 @@ data class EntryEditorUiState(
     val finished: Boolean = false,
 )
 
+/** 手动记账与编辑流程的 ViewModel。 */
 @HiltViewModel
 class EntryEditorViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -46,6 +49,7 @@ class EntryEditorViewModel @Inject constructor(
     private var editingLedger: LedgerEntry? = null
     private var resolvingPending: PendingEntry? = null
 
+    /** 根据路由参数决定当前是新建、编辑还是处理待确认。 */
     private val _uiState = MutableStateFlow(
         EntryEditorUiState(
             mode = when {
@@ -125,6 +129,7 @@ class EntryEditorViewModel @Inject constructor(
                 }
 
                 EntryEditorMode.RESOLVE_PENDING -> {
+                    // 待确认项保存后写入账本，并从待确认队列中移除。
                     val pending = resolvingPending ?: return@launch
                     ledgerRepository.add(
                         LedgerEntry(
@@ -164,6 +169,7 @@ class EntryEditorViewModel @Inject constructor(
     }
 
     private suspend fun loadData() {
+        // 进入页面时按模式回填已有数据，保证表单可以编辑原始值。
         when {
             ledgerId != null -> {
                 editingLedger = ledgerRepository.getById(ledgerId)

@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 
+/** 无障碍服务占位实现，当前仅预留拉起通知栏的能力。 */
 class AutobookAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -25,5 +26,6 @@ class AutobookAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
+    /** 通过系统全局动作拉起通知栏，供后续自动化链路使用。 */
     fun openNotificationShade(): Boolean = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
 }

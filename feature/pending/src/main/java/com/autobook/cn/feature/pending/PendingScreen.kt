@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+/** 待确认列表单项的展示模型。 */
 data class PendingItemUiModel(
     val id: Long,
     val merchant: String,
@@ -30,10 +31,12 @@ data class PendingItemUiModel(
     val orderId: String?,
 )
 
+/** 待确认页的界面状态。 */
 data class PendingUiState(
     val items: List<PendingItemUiModel> = emptyList(),
 )
 
+/** 待确认页，承接低置信度或疑似重复的记录。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PendingScreen(

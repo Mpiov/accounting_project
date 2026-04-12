@@ -27,12 +27,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+/** 账本首页支持的时间范围筛选。 */
 enum class LedgerRangeFilter {
     TODAY,
     MONTH,
     ALL,
 }
 
+/** 账本列表单项的展示模型。 */
 data class LedgerItemUiModel(
     val id: Long,
     val merchant: String,
@@ -43,6 +45,7 @@ data class LedgerItemUiModel(
     val isManual: Boolean,
 )
 
+/** 账本首页的完整界面状态。 */
 data class LedgerUiState(
     val incomeSummary: String = "¥0.00",
     val expenseSummary: String = "¥0.00",
@@ -52,6 +55,7 @@ data class LedgerUiState(
     val entries: List<LedgerItemUiModel> = emptyList(),
 )
 
+/** 账本首页，展示汇总、筛选条件和账本列表。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LedgerScreen(
@@ -187,6 +191,7 @@ private fun SummaryCard(
     value: String,
     modifier: Modifier = Modifier,
 ) {
+    /** 收入/支出汇总卡片的复用组件。 */
     Card(modifier = modifier) {
         Column(
             modifier = Modifier.padding(16.dp),

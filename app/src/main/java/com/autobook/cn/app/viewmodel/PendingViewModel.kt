@@ -17,11 +17,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/** 待确认页 ViewModel，负责把待确认项映射成可展示状态。 */
 @HiltViewModel
 class PendingViewModel @Inject constructor(
     private val pendingRepository: PendingRepository,
     private val ledgerRepository: LedgerRepository,
 ) : ViewModel() {
+    /** 把待确认仓库中的领域模型转换成 UI 模型。 */
     val uiState: StateFlow<PendingUiState> = pendingRepository.observeEntries()
         .map { entries ->
             PendingUiState(
@@ -46,6 +48,7 @@ class PendingViewModel @Inject constructor(
 
     fun confirmPending(id: Long) {
         viewModelScope.launch {
+            // 确认后立即转成正式账本记录，保留原始追踪字段。
             val item = pendingRepository.confirm(id) ?: return@launch
             ledgerRepository.add(
                 LedgerEntry(

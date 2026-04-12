@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
+/** 验证路由器会优先采用本地解析成功结果。 */
 class ModelRouterTest {
     @Test
     fun `uses local result before cloud`() = runTest {

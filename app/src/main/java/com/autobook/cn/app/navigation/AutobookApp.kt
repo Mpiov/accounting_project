@@ -24,6 +24,7 @@ import com.autobook.cn.feature.ledger.LedgerScreen
 import com.autobook.cn.feature.onboarding.OnboardingScreen
 import com.autobook.cn.feature.pending.PendingScreen
 
+/** 应用主导航图，负责把各个页面和对应 ViewModel 串起来。 */
 @Composable
 fun AutobookApp() {
     val navController = rememberNavController()
@@ -38,6 +39,7 @@ fun AutobookApp() {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
 
             LifecycleResumeEffect(Unit) {
+                // 每次回到前台都刷新权限状态，避免用户从系统设置页返回后界面不更新。
                 viewModel.refreshPermissionStatus()
                 onPauseOrDispose { }
             }
@@ -150,6 +152,7 @@ private fun EntryEditorRoute(
     onBack: () -> Unit,
 ) {
     LaunchedEffect(state.finished) {
+        // 保存或删除完成后消费一次性状态，再统一返回上一个页面。
         if (state.finished) {
             viewModel.consumeFinished()
             onBack()

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
+/** 验证本地解析器能从典型通知中抽取金额与分类。 */
 class LocalTransactionExtractorTest {
     @Test
     fun `extracts amount channel and category from wechat notification`() = runTest {

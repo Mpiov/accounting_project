@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.autobook.cn.app.viewmodel.EntryEditorUiState
 import com.autobook.cn.core.model.MoneyDirection
 
+/** 手动新建、编辑账本记录、处理待确认项共用的编辑页。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EntryEditorScreen(

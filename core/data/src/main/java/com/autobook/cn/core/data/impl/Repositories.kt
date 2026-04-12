@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.map
 
 private val Context.settingsDataStore by preferencesDataStore(name = "autobook_settings")
 
+/** 基于 Room 的账本仓储实现。 */
 @Singleton
 class LedgerRepositoryImpl @Inject constructor(
     private val ledgerEntryDao: LedgerEntryDao,
@@ -62,6 +63,7 @@ class LedgerRepositoryImpl @Inject constructor(
     override suspend fun getById(id: Long): LedgerEntry? = ledgerEntryDao.getById(id)?.toDomain()
 
     override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? {
+        // 订单号优先精确匹配；缺少订单号时再用时间窗做近似查重。
         val duplicate = ledgerEntryDao.findPotentialDuplicate(
             orderId = candidate.orderId,
             amount = candidate.amount,
@@ -75,6 +77,7 @@ class LedgerRepositoryImpl @Inject constructor(
     override suspend fun exportCsv(): String {
         val rows = observeEntries().first()
         return buildString {
+            // 导出时保留 trace 字段，便于后续排查记录来源。
             appendLine("id,timestamp,direction,amount,merchant,channel,category,orderId,note,traceSource")
             rows.forEach { entry ->
                 appendLine(
@@ -96,6 +99,7 @@ class LedgerRepositoryImpl @Inject constructor(
     }
 }
 
+/** 基于 Room 的待确认仓储实现。 */
 @Singleton
 class PendingRepositoryImpl @Inject constructor(
     private val pendingEntryDao: PendingEntryDao,
@@ -113,6 +117,7 @@ class PendingRepositoryImpl @Inject constructor(
     override suspend fun getById(id: Long): PendingEntry? = pendingEntryDao.getById(id)?.toDomain()
 
     override suspend fun confirm(id: Long): PendingEntry? {
+        // 确认时直接删除待确认项，并把最后状态交给上层转成账本记录。
         val item = getById(id) ?: return null
         pendingEntryDao.deleteById(id)
         return item
@@ -128,10 +133,12 @@ class PendingRepositoryImpl @Inject constructor(
     }
 }
 
+/** 基于 DataStore 的设置仓储实现。 */
 @Singleton
 class SettingsRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : SettingsRepository {
+    /** 所有设置键统一收口，避免散落字符串常量。 */
     private object Keys {
         val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
         val autoAccountingEnabled = booleanPreferencesKey("auto_accounting_enabled")
@@ -144,6 +151,7 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override val settings: Flow<AppSettings> = context.settingsDataStore.data.map { preferences ->
+        // 读取来源列表时过滤未知枚举值，避免旧数据导致崩溃。
         val sourceNames = preferences[Keys.enabledSources] ?: DEFAULT_SOURCES.mapTo(mutableSetOf()) { it.name }
         AppSettings(
             onboardingCompleted = preferences[Keys.onboardingCompleted] ?: false,
@@ -201,6 +209,7 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 }
 
+/** 通知入库与处理流水线的总协调器。 */
 @Singleton
 class NotificationIngestorImpl @Inject constructor(
     private val notificationEventDao: NotificationEventDao,
@@ -213,6 +222,7 @@ class NotificationIngestorImpl @Inject constructor(
         val persisted = enriched.copy(id = id)
         val settings = settingsRepository.settings.first()
 
+        // 用户已经关闭的来源在这里直接短路，不再继续进入后续流水线。
         if (persisted.sourceApp !in settings.enabledSources) {
             return completeSuccessfully(
                 notificationId = id,
@@ -228,6 +238,7 @@ class NotificationIngestorImpl @Inject constructor(
             dedupeKey = persisted.dedupeKey,
             excludeId = id,
         )
+        // 去重命中后直接写入重复状态，避免重复入账或重复进入待确认。
         if (duplicate != null) {
             return completeSuccessfully(
                 notificationId = id,
@@ -283,6 +294,7 @@ class NotificationIngestorImpl @Inject constructor(
         }
     }
 
+    /** 过滤、去重等成功分支共用的状态回写逻辑。 */
     private suspend fun completeSuccessfully(
         notificationId: Long,
         destination: ProcessDestination,
@@ -309,6 +321,7 @@ class NotificationIngestorImpl @Inject constructor(
     }
 }
 
+/** MediaProjection 尚未接入前的截图协调器占位实现。 */
 @Singleton
 class PlaceholderCaptureCoordinator @Inject constructor() : CaptureCoordinator {
     override suspend fun requestAuthorization(reason: String): OperationResult<CaptureSession> {
@@ -330,6 +343,7 @@ class PlaceholderCaptureCoordinator @Inject constructor() : CaptureCoordinator {
     override suspend fun reportFailure(sessionId: String, message: String) = Unit
 }
 
+/** OCR 尚未接入前的占位实现。 */
 @Singleton
 class FakeOcrEngine @Inject constructor() : OcrEngine {
     override suspend fun extractText(imageRef: String): OperationResult<String> {
@@ -337,19 +351,23 @@ class FakeOcrEngine @Inject constructor() : OcrEngine {
     }
 }
 
+/** 首次安装时默认开启的通知来源。 */
 private val DEFAULT_SOURCES = setOf(
     NotificationSourceApp.WECHAT,
     NotificationSourceApp.ALIPAY,
     NotificationSourceApp.BANK_SMS,
 )
 
+/** 缺少订单号时用于模糊去重的时间窗口。 */
 private const val DUPLICATE_WINDOW_MS = 2 * 60 * 1000L
 
+/** 为 CSV 导出做最小转义，避免逗号和引号破坏结构。 */
 private fun csvEscape(value: Any?): String {
     val text = value?.toString().orEmpty()
     return "\"${text.replace("\"", "\"\"")}\""
 }
 
+/** 写入失败信息前做一次脱敏，避免长数字直接持久化。 */
 private fun sanitize(message: String): String {
     return message.replace(Regex("""\d{6,}"""), "******")
 }
