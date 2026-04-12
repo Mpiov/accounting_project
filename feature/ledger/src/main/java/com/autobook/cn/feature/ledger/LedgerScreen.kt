@@ -1,16 +1,20 @@
 package com.autobook.cn.feature.ledger
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ChevronLeft
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.PendingActions
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Card
@@ -22,17 +26,33 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import java.time.LocalDate
 
 /** 账本首页支持的时间范围筛选。 */
 enum class LedgerRangeFilter {
     TODAY,
     MONTH,
+    CALENDAR,
     ALL,
 }
+
+/** 月历中的单个日期格子展示模型。 */
+data class LedgerCalendarDayUiModel(
+    val date: LocalDate,
+    val label: String,
+    val isCurrentMonth: Boolean,
+    val hasEntries: Boolean,
+    val isSelected: Boolean,
+    val isToday: Boolean,
+)
 
 /** 账本列表单项的展示模型。 */
 data class LedgerItemUiModel(
@@ -52,6 +72,9 @@ data class LedgerUiState(
     val pendingCount: Int = 0,
     val searchQuery: String = "",
     val selectedRange: LedgerRangeFilter = LedgerRangeFilter.TODAY,
+    val calendarMonthLabel: String = "",
+    val selectedDateSummary: String? = null,
+    val calendarDays: List<LedgerCalendarDayUiModel> = emptyList(),
     val entries: List<LedgerItemUiModel> = emptyList(),
 )
 
@@ -66,6 +89,9 @@ fun LedgerScreen(
     onSettingsClick: () -> Unit,
     onAddClick: () -> Unit,
     onEntryClick: (Long) -> Unit,
+    onPreviousMonthClick: () -> Unit,
+    onNextMonthClick: () -> Unit,
+    onCalendarDateClick: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -127,12 +153,29 @@ fun LedgerScreen(
                                 when (range) {
                                     LedgerRangeFilter.TODAY -> "今日"
                                     LedgerRangeFilter.MONTH -> "本月"
+                                    LedgerRangeFilter.CALENDAR -> "日历"
                                     LedgerRangeFilter.ALL -> "全部"
                                 },
                             )
                         },
                     )
                 }
+            }
+            if (state.selectedRange == LedgerRangeFilter.CALENDAR) {
+                CalendarOverviewCard(
+                    monthLabel = state.calendarMonthLabel,
+                    days = state.calendarDays,
+                    onPreviousMonthClick = onPreviousMonthClick,
+                    onNextMonthClick = onNextMonthClick,
+                    onDateClick = onCalendarDateClick,
+                )
+            }
+            state.selectedDateSummary?.let { summary ->
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
             LazyColumn(
                 modifier = Modifier.weight(1f),
@@ -142,7 +185,11 @@ fun LedgerScreen(
                     item {
                         Card {
                             Text(
-                                text = "还没有符合筛选条件的记账记录。你可以手动新增，或者等待通知自动入账。",
+                                text = when (state.selectedRange) {
+                                    LedgerRangeFilter.CALENDAR ->
+                                        "所选日期还没有记账记录。你可以切换其它日期，或手动补记一笔。"
+                                    else -> "还没有符合筛选条件的记账记录。你可以手动新增，或者等待通知自动入账。"
+                                },
                                 modifier = Modifier.padding(16.dp),
                             )
                         }
@@ -199,6 +246,119 @@ private fun SummaryCard(
         ) {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Text(value, style = MaterialTheme.typography.headlineSmall)
+        }
+    }
+}
+
+@Composable
+private fun CalendarOverviewCard(
+    monthLabel: String,
+    days: List<LedgerCalendarDayUiModel>,
+    onPreviousMonthClick: () -> Unit,
+    onNextMonthClick: () -> Unit,
+    onDateClick: (LocalDate) -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = monthLabel,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row {
+                    IconButton(onClick = onPreviousMonthClick) {
+                        Icon(Icons.Outlined.ChevronLeft, contentDescription = "上个月")
+                    }
+                    IconButton(onClick = onNextMonthClick) {
+                        Icon(Icons.Outlined.ChevronRight, contentDescription = "下个月")
+                    }
+                }
+            }
+            Row(modifier = Modifier.fillMaxWidth()) {
+                listOf("一", "二", "三", "四", "五", "六", "日").forEach { weekday ->
+                    Text(
+                        text = weekday,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            days.chunked(7).forEach { week ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    week.forEach { day ->
+                        CalendarDayCell(
+                            day = day,
+                            onClick = { onDateClick(day.date) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarDayCell(
+    day: LedgerCalendarDayUiModel,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val containerColor = when {
+        day.isSelected -> MaterialTheme.colorScheme.primaryContainer
+        day.isToday -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    }
+    val contentColor = when {
+        day.isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+        day.isToday -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        color = containerColor,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = day.label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (day.isCurrentMonth) contentColor else contentColor.copy(alpha = 0.55f),
+                fontWeight = if (day.isSelected || day.isToday) FontWeight.SemiBold else FontWeight.Normal,
+            )
+            Box(
+                modifier = Modifier.height(12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (day.hasEntries) {
+                    Text(
+                        text = "●",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (day.isCurrentMonth) MaterialTheme.colorScheme.primary else contentColor.copy(alpha = 0.55f),
+                    )
+                }
+            }
         }
     }
 }

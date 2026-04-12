@@ -75,6 +75,9 @@ fun AutobookApp() {
                 onEntryClick = { entryId ->
                     navController.navigate(AutobookDestination.EntryEdit.createRoute(entryId))
                 },
+                onPreviousMonthClick = viewModel::showPreviousMonth,
+                onNextMonthClick = viewModel::showNextMonth,
+                onCalendarDateClick = viewModel::selectCalendarDate,
             )
         }
         composable(AutobookDestination.Pending.route) {
