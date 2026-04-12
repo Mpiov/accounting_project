@@ -35,6 +35,23 @@ data class EntryEditorUiState(
     val canDelete: Boolean = false,
     val errorMessage: String? = null,
     val finished: Boolean = false,
+    val templates: List<EntryTemplateUiModel> = ENTRY_TEMPLATE_MODELS,
+)
+
+/** 编辑页快捷模板的展示模型。 */
+data class EntryTemplateUiModel(
+    val id: String,
+    val label: String,
+)
+
+/** 模板应用到表单前的内部定义。 */
+internal data class EntryTemplate(
+    val id: String,
+    val label: String,
+    val direction: MoneyDirection,
+    val category: String,
+    val defaultMerchant: String = "",
+    val defaultNote: String = "",
 )
 
 /** 手动记账与编辑流程的 ViewModel。 */
@@ -79,6 +96,7 @@ class EntryEditorViewModel @Inject constructor(
     fun updateNote(value: String) = updateState { copy(note = value, errorMessage = null) }
     fun updateOrderId(value: String) = updateState { copy(orderId = value, errorMessage = null) }
     fun updateDirection(value: MoneyDirection) = updateState { copy(direction = value, errorMessage = null) }
+    fun applyTemplate(templateId: String) = updateState { applyEntryTemplate(templateId) }
 
     fun save() {
         viewModelScope.launch {
@@ -204,4 +222,74 @@ class EntryEditorViewModel @Inject constructor(
     private fun updateState(transform: EntryEditorUiState.() -> EntryEditorUiState) {
         _uiState.value = _uiState.value.transform()
     }
+}
+
+/** 快捷模板只预填常用字段，避免覆盖用户已确认的金额和订单号。 */
+internal fun EntryEditorUiState.applyEntryTemplate(templateId: String): EntryEditorUiState {
+    val template = ENTRY_TEMPLATES.firstOrNull { it.id == templateId } ?: return this
+    return copy(
+        direction = template.direction,
+        category = template.category,
+        merchant = merchant.ifBlank { template.defaultMerchant },
+        note = note.ifBlank { template.defaultNote },
+        errorMessage = null,
+    )
+}
+
+private val ENTRY_TEMPLATES = listOf(
+    EntryTemplate(
+        id = "breakfast",
+        label = "早餐",
+        direction = MoneyDirection.EXPENSE,
+        category = "餐饮",
+        defaultMerchant = "早餐",
+        defaultNote = "晨间用餐",
+    ),
+    EntryTemplate(
+        id = "lunch",
+        label = "午餐",
+        direction = MoneyDirection.EXPENSE,
+        category = "餐饮",
+        defaultMerchant = "午餐",
+        defaultNote = "工作日用餐",
+    ),
+    EntryTemplate(
+        id = "taxi",
+        label = "打车",
+        direction = MoneyDirection.EXPENSE,
+        category = "交通",
+        defaultMerchant = "滴滴出行",
+        defaultNote = "城市出行",
+    ),
+    EntryTemplate(
+        id = "shopping",
+        label = "购物",
+        direction = MoneyDirection.EXPENSE,
+        category = "购物",
+        defaultMerchant = "日常购物",
+        defaultNote = "生活消费",
+    ),
+    EntryTemplate(
+        id = "salary",
+        label = "工资",
+        direction = MoneyDirection.INCOME,
+        category = "工资",
+        defaultMerchant = "工资入账",
+        defaultNote = "固定收入",
+    ),
+    EntryTemplate(
+        id = "transfer",
+        label = "转账",
+        direction = MoneyDirection.EXPENSE,
+        category = "转账",
+        defaultMerchant = "银行卡转账",
+        defaultNote = "账户间转移",
+    ),
+)
+
+private val ENTRY_TEMPLATE_MODELS = ENTRY_TEMPLATES.map { template ->
+    EntryTemplateUiModel(
+        id = template.id,
+        label = template.label,
+    )
 }

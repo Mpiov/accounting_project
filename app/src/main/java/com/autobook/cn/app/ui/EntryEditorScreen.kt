@@ -2,6 +2,8 @@ package com.autobook.cn.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,20 +13,23 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.autobook.cn.app.viewmodel.EntryTemplateUiModel
 import com.autobook.cn.app.viewmodel.EntryEditorUiState
 import com.autobook.cn.core.model.MoneyDirection
 
 /** 手动新建、编辑账本记录、处理待确认项共用的编辑页。 */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EntryEditorScreen(
     state: EntryEditorUiState,
@@ -35,6 +40,7 @@ fun EntryEditorScreen(
     onNoteChange: (String) -> Unit,
     onOrderIdChange: (String) -> Unit,
     onDirectionChange: (MoneyDirection) -> Unit,
+    onApplyTemplate: (String) -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
@@ -76,6 +82,10 @@ fun EntryEditorScreen(
                     )
                 }
             }
+            TemplateSection(
+                templates = state.templates,
+                onApplyTemplate = onApplyTemplate,
+            )
             OutlinedTextField(
                 value = state.amount,
                 onValueChange = onAmountChange,
@@ -123,6 +133,37 @@ fun EntryEditorScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("保存")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TemplateSection(
+    templates: List<EntryTemplateUiModel>,
+    onApplyTemplate: (String) -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("快捷模板", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "一键预填方向、分类和常用备注，不会覆盖金额和订单号；已填写的商户也会保留。",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                templates.forEach { template ->
+                    SuggestionChip(
+                        onClick = { onApplyTemplate(template.id) },
+                        label = { Text(template.label) },
+                    )
+                }
             }
         }
     }

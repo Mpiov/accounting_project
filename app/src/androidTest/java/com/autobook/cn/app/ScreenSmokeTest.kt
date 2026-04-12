@@ -143,11 +143,13 @@ class ScreenSmokeTest {
                 onNoteChange = {},
                 onOrderIdChange = {},
                 onDirectionChange = {},
+                onApplyTemplate = {},
                 onSave = {},
                 onDelete = {},
             )
         }
 
         composeRule.onNodeWithText("新建手动记账").assertIsDisplayed()
+        composeRule.onNodeWithText("快捷模板").assertIsDisplayed()
     }
 }

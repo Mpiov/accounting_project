@@ -171,6 +171,7 @@ private fun EntryEditorRoute(
         onNoteChange = viewModel::updateNote,
         onOrderIdChange = viewModel::updateOrderId,
         onDirectionChange = viewModel::updateDirection,
+        onApplyTemplate = viewModel::applyTemplate,
         onSave = viewModel::save,
         onDelete = viewModel::delete,
     )
