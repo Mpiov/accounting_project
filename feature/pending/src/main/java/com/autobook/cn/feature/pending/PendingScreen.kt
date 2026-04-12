@@ -26,6 +26,8 @@ data class PendingItemUiModel(
     val amount: String,
     val subtitle: String,
     val reason: String,
+    val categoryHint: String,
+    val orderId: String?,
 )
 
 data class PendingUiState(
@@ -38,7 +40,9 @@ fun PendingScreen(
     state: PendingUiState,
     onBack: () -> Unit,
     onConfirm: (Long) -> Unit,
+    onEdit: (Long) -> Unit,
     onIgnore: (Long) -> Unit,
+    onFalsePositive: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -83,17 +87,33 @@ fun PendingScreen(
                                 Text(item.merchant, style = MaterialTheme.typography.titleMedium)
                                 Text(item.subtitle, style = MaterialTheme.typography.bodyMedium)
                                 Text(item.amount, style = MaterialTheme.typography.headlineSmall)
-                                Text("原因：${item.reason}", style = MaterialTheme.typography.labelLarge)
+                                Text("建议分类：${item.categoryHint}", style = MaterialTheme.typography.labelLarge)
+                                item.orderId?.let { Text("订单号：$it", style = MaterialTheme.typography.labelLarge) }
+                                Text("原因：${item.reason}", style = MaterialTheme.typography.bodyMedium)
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Button(onClick = { onConfirm(item.id) }, modifier = Modifier.weight(1f)) {
                                     Text("确认入账")
                                 }
                                 TextButton(
+                                    onClick = { onEdit(item.id) },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("编辑后入账")
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                TextButton(
                                     onClick = { onIgnore(item.id) },
                                     modifier = Modifier.weight(1f),
                                 ) {
                                     Text("忽略")
+                                }
+                                TextButton(
+                                    onClick = { onFalsePositive(item.id) },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("标记误报")
                                 }
                             }
                         }

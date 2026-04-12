@@ -7,12 +7,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.autobook.cn.app.ui.EntryEditorScreen
+import com.autobook.cn.app.ui.SettingsScreen
+import com.autobook.cn.app.viewmodel.EntryEditorViewModel
 import com.autobook.cn.app.viewmodel.LedgerViewModel
 import com.autobook.cn.app.viewmodel.OnboardingViewModel
 import com.autobook.cn.app.viewmodel.PendingViewModel
+import com.autobook.cn.app.viewmodel.SettingsViewModel
 import com.autobook.cn.core.common.SettingsIntents
 import com.autobook.cn.feature.ledger.LedgerScreen
 import com.autobook.cn.feature.onboarding.OnboardingScreen
@@ -59,7 +65,14 @@ fun AutobookApp() {
 
             LedgerScreen(
                 state = state,
+                onSearchChange = viewModel::setSearchQuery,
+                onRangeChange = viewModel::setRange,
                 onPendingClick = { navController.navigate(AutobookDestination.Pending.route) },
+                onSettingsClick = { navController.navigate(AutobookDestination.Settings.route) },
+                onAddClick = { navController.navigate(AutobookDestination.EntryCreate.route) },
+                onEntryClick = { entryId ->
+                    navController.navigate(AutobookDestination.EntryEdit.createRoute(entryId))
+                },
             )
         }
         composable(AutobookDestination.Pending.route) {
@@ -70,8 +83,89 @@ fun AutobookApp() {
                 state = state,
                 onBack = { navController.popBackStack() },
                 onConfirm = viewModel::confirmPending,
+                onEdit = { pendingId ->
+                    navController.navigate(AutobookDestination.PendingResolve.createRoute(pendingId))
+                },
                 onIgnore = viewModel::ignorePending,
+                onFalsePositive = viewModel::markFalsePositive,
+            )
+        }
+        composable(AutobookDestination.Settings.route) {
+            val viewModel: SettingsViewModel = hiltViewModel()
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            SettingsScreen(
+                state = state,
+                onBack = { navController.popBackStack() },
+                onAutoAccountingChanged = viewModel::setAutoAccountingEnabled,
+                onCloudAnalysisChanged = viewModel::setCloudAnalysisEnabled,
+                onCaptureEnabledChanged = viewModel::setCaptureEnabled,
+                onOcrEnabledChanged = viewModel::setOcrEnabled,
+                onNotificationRetentionChanged = viewModel::setNotificationRetentionDays,
+                onScreenshotRetentionChanged = viewModel::setScreenshotRetentionDays,
+                onSourceEnabledChanged = viewModel::setSourceEnabled,
+                onLoadExportPreview = viewModel::loadExportPreview,
+            )
+        }
+        composable(AutobookDestination.EntryCreate.route) {
+            val viewModel: EntryEditorViewModel = hiltViewModel()
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+            EntryEditorRoute(
+                state = state,
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = AutobookDestination.EntryEdit.route,
+            arguments = listOf(navArgument("ledgerId") { type = NavType.StringType }),
+        ) {
+            val viewModel: EntryEditorViewModel = hiltViewModel()
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+            EntryEditorRoute(
+                state = state,
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = AutobookDestination.PendingResolve.route,
+            arguments = listOf(navArgument("pendingId") { type = NavType.StringType }),
+        ) {
+            val viewModel: EntryEditorViewModel = hiltViewModel()
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+            EntryEditorRoute(
+                state = state,
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
             )
         }
     }
+}
+
+@Composable
+private fun EntryEditorRoute(
+    state: com.autobook.cn.app.viewmodel.EntryEditorUiState,
+    viewModel: EntryEditorViewModel,
+    onBack: () -> Unit,
+) {
+    LaunchedEffect(state.finished) {
+        if (state.finished) {
+            viewModel.consumeFinished()
+            onBack()
+        }
+    }
+
+    EntryEditorScreen(
+        state = state,
+        onBack = onBack,
+        onAmountChange = viewModel::updateAmount,
+        onMerchantChange = viewModel::updateMerchant,
+        onCategoryChange = viewModel::updateCategory,
+        onNoteChange = viewModel::updateNote,
+        onOrderIdChange = viewModel::updateOrderId,
+        onDirectionChange = viewModel::updateDirection,
+        onSave = viewModel::save,
+        onDelete = viewModel::delete,
+    )
 }

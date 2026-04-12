@@ -8,6 +8,7 @@ import com.autobook.cn.core.data.mapper.toLedgerEntry
 import com.autobook.cn.core.data.mapper.toPendingEntry
 import com.autobook.cn.core.model.NotificationEvent
 import com.autobook.cn.core.model.NotificationProcessOutcome
+import com.autobook.cn.core.model.NotificationProcessStatus
 import com.autobook.cn.core.model.OperationResult
 import com.autobook.cn.core.model.ProcessDestination
 import javax.inject.Inject
@@ -27,22 +28,56 @@ class TransactionProcessingPipeline @Inject constructor(
             is OperationResult.Success -> {
                 val candidate = candidateResult.data
                 val settings = settingsRepository.settings.first()
+                val duplicate = ledgerRepository.findPotentialDuplicate(candidate) != null ||
+                    candidate.isDuplicateCandidate
+                if (duplicate) {
+                    pendingRepository.add(
+                        candidate.toPendingEntry(
+                            reason = "可能是重复交易，请人工确认",
+                            notificationId = notificationId,
+                        ),
+                    )
+                    return OperationResult.Success(
+                        NotificationProcessOutcome(
+                            notificationId = notificationId,
+                            destination = ProcessDestination.PENDING,
+                            status = NotificationProcessStatus.PENDING_REVIEW,
+                            message = "Routed to pending review because it looks duplicated",
+                        ),
+                    )
+                }
+
                 val shouldAutoLedger = settings.autoAccountingEnabled &&
-                    candidate.confidence.score >= 0.85f
+                    candidate.confidence.score >= AUTO_LEDGER_THRESHOLD
                 if (shouldAutoLedger) {
-                    ledgerRepository.add(candidate.toLedgerEntry())
+                    ledgerRepository.add(candidate.toLedgerEntry(notificationId = notificationId))
                     OperationResult.Success(
-                        NotificationProcessOutcome(notificationId, ProcessDestination.LEDGER),
+                        NotificationProcessOutcome(
+                            notificationId = notificationId,
+                            destination = ProcessDestination.LEDGER,
+                            status = NotificationProcessStatus.LEDGER_POSTED,
+                            message = "Auto-posted with confidence ${candidate.confidence.score}",
+                        ),
                     )
                 } else {
                     val reason = if (!settings.autoAccountingEnabled) {
-                        "Auto accounting disabled"
+                        "自动记账已关闭"
                     } else {
-                        "Low confidence"
+                        "置信度不足：${candidate.confidenceReason}"
                     }
-                    pendingRepository.add(candidate.toPendingEntry(reason = reason))
+                    pendingRepository.add(
+                        candidate.toPendingEntry(
+                            reason = reason,
+                            notificationId = notificationId,
+                        ),
+                    )
                     OperationResult.Success(
-                        NotificationProcessOutcome(notificationId, ProcessDestination.PENDING),
+                        NotificationProcessOutcome(
+                            notificationId = notificationId,
+                            destination = ProcessDestination.PENDING,
+                            status = NotificationProcessStatus.PENDING_REVIEW,
+                            message = reason,
+                        ),
                     )
                 }
             }
@@ -52,3 +87,5 @@ class TransactionProcessingPipeline @Inject constructor(
         }
     }
 }
+
+private const val AUTO_LEDGER_THRESHOLD = 0.85f

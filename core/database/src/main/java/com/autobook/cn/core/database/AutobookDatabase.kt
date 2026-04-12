@@ -11,7 +11,7 @@ import com.autobook.cn.core.database.entity.PendingEntryEntity
 
 @Database(
     entities = [NotificationEventEntity::class, LedgerEntryEntity::class, PendingEntryEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AutobookDatabase : RoomDatabase() {

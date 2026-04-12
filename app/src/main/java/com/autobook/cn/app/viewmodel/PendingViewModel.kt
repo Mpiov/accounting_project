@@ -32,6 +32,8 @@ class PendingViewModel @Inject constructor(
                         amount = CurrencyFormatter.format(entry.amount),
                         subtitle = "${entry.channel} · ${TimeFormatter.format(entry.timestamp)}",
                         reason = entry.reason,
+                        categoryHint = entry.categoryHint,
+                        orderId = entry.orderId,
                     )
                 },
             )
@@ -52,10 +54,13 @@ class PendingViewModel @Inject constructor(
                     merchant = item.merchant,
                     channel = item.channel,
                     timestamp = item.timestamp,
-                    category = "待分类",
+                    category = item.categoryHint,
+                    orderId = item.orderId,
                     traceSource = item.rawSource,
                     tracePath = item.parsePath,
                     traceModelVersion = item.modelVersion,
+                    traceNotificationId = item.traceNotificationId,
+                    editedManually = item.editedManually,
                 ),
             )
         }
@@ -64,6 +69,12 @@ class PendingViewModel @Inject constructor(
     fun ignorePending(id: Long) {
         viewModelScope.launch {
             pendingRepository.ignore(id)
+        }
+    }
+
+    fun markFalsePositive(id: Long) {
+        viewModelScope.launch {
+            pendingRepository.markFalsePositive(id)
         }
     }
 }

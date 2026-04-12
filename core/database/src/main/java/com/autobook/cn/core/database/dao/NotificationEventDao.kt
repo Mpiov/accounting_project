@@ -12,6 +12,37 @@ interface NotificationEventDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(event: NotificationEventEntity): Long
 
+    @Query(
+        """
+        SELECT * FROM notification_events
+        WHERE dedupeKey = :dedupeKey AND id != :excludeId
+        ORDER BY postedAt DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun findLatestDuplicate(
+        dedupeKey: String,
+        excludeId: Long,
+    ): NotificationEventEntity?
+
+    @Query(
+        """
+        UPDATE notification_events
+        SET processStatus = :processStatus,
+            lastError = :lastError,
+            retryCount = :retryCount,
+            screenshotRef = :screenshotRef
+        WHERE id = :id
+        """,
+    )
+    suspend fun updateProcessingState(
+        id: Long,
+        processStatus: String,
+        lastError: String?,
+        retryCount: Int,
+        screenshotRef: String?,
+    )
+
     @Query("SELECT * FROM notification_events ORDER BY postedAt DESC")
     fun observeAll(): Flow<List<NotificationEventEntity>>
 }

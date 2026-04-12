@@ -3,6 +3,7 @@ package com.autobook.cn.service.notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.autobook.cn.core.common.SafeLogFormatter
 import com.autobook.cn.core.data.ServiceDependenciesEntryPoint
 import com.autobook.cn.core.model.NotificationEvent
 import dagger.hilt.android.EntryPointAccessors
@@ -30,7 +31,32 @@ class AutobookNotificationListenerService : NotificationListenerService() {
                 ServiceDependenciesEntryPoint::class.java,
             )
             val result = entryPoint.notificationIngestor().ingest(event)
-            Log.d("AutobookNotifService", "Notification processed: $result")
+            when (result) {
+                is com.autobook.cn.core.model.OperationResult.Success -> {
+                    Log.d(
+                        "AutobookNotifService",
+                        "Notification processed ${SafeLogFormatter.forOutcome(result.data)}",
+                    )
+                }
+
+                is com.autobook.cn.core.model.OperationResult.RetryableFailure -> {
+                    val sanitizedMessage = SafeLogFormatter.forFailure(result.message)
+                    val notificationSummary = SafeLogFormatter.forNotification(event)
+                    Log.w(
+                        "AutobookNotifService",
+                        "Retryable failure $sanitizedMessage for $notificationSummary",
+                    )
+                }
+
+                is com.autobook.cn.core.model.OperationResult.TerminalFailure -> {
+                    val sanitizedMessage = SafeLogFormatter.forFailure(result.message)
+                    val notificationSummary = SafeLogFormatter.forNotification(event)
+                    Log.e(
+                        "AutobookNotifService",
+                        "Terminal failure $sanitizedMessage for $notificationSummary",
+                    )
+                }
+            }
         }
     }
 

@@ -21,7 +21,8 @@ object DatabaseModule {
     fun provideDatabase(
         @ApplicationContext context: Context,
     ): AutobookDatabase {
-        val factory = SupportFactory("autobook-placeholder".toByteArray())
+        val passphrase = DatabasePassphraseProvider(context).getOrCreate()
+        val factory = SupportFactory(passphrase)
         return Room.databaseBuilder(context, AutobookDatabase::class.java, "autobook.db")
             .openHelperFactory(factory)
             .fallbackToDestructiveMigration()

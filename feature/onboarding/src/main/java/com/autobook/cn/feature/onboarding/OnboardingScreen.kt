@@ -55,12 +55,12 @@ fun OnboardingScreen(
             style = MaterialTheme.typography.headlineMedium,
         )
         Text(
-            text = "先完成权限与策略设置，然后我们就可以进入自动记账主流程。",
+            text = "先完成权限与策略设置，然后就可以进入自动记账主流程。你也可以稍后再到设置页调整。",
             style = MaterialTheme.typography.bodyLarge,
         )
         PermissionCard(
             title = "通知读取",
-            summary = "读取微信、支付宝与短信通知，提取交易线索。",
+            summary = "读取微信、支付宝和银行卡短信通知，提取交易线索。",
             enabled = state.notificationAccess,
             icon = { Icon(Icons.Outlined.Notifications, contentDescription = null) },
             actionLabel = "去开启",
@@ -68,15 +68,15 @@ fun OnboardingScreen(
         )
         PermissionCard(
             title = "无障碍自动化",
-            summary = "在需要时拉起通知栏，不做其他自动化操作。",
+            summary = "仅在需要时拉起通知栏，不做其他自动化操作。",
             enabled = state.accessibilityAccess,
             icon = { Icon(Icons.Outlined.AdminPanelSettings, contentDescription = null) },
             actionLabel = "去开启",
             onAction = onOpenAccessibilitySettings,
         )
         PermissionCard(
-            title = "截屏分析",
-            summary = "骨架阶段先预留能力入口，后续接入 MediaProjection。",
+            title = "截图分析",
+            summary = "当前版本先预留能力入口，后续接入 MediaProjection 和 OCR。",
             enabled = false,
             icon = { Icon(Icons.Outlined.ScreenshotMonitor, contentDescription = null) },
             actionLabel = "后续接入",
@@ -91,7 +91,7 @@ fun OnboardingScreen(
         )
         ToggleCard(
             title = "云端分析",
-            summary = "默认关闭，仅在未来接入后端时作为补充回退路径。",
+            summary = "默认关闭，仅在后续接入后端时作为补充回退路径。",
             checked = state.cloudAnalysisEnabled,
             icon = { Icon(Icons.Outlined.Cloud, contentDescription = null) },
             onCheckedChange = onToggleCloudAnalysis,
