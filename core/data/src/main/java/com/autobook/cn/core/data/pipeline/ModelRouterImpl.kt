@@ -75,33 +75,13 @@ class ModelRouterImpl @Inject constructor(
                         )
                     }
 
-<<<<<<< HEAD
-                is OperationResult.RetryableFailure -> {
-                    OperationResult.RetryableFailure(ocrText.message, ocrText.cause)
-                }
-                is OperationResult.TerminalFailure -> {
-                    OperationResult.TerminalFailure(ocrText.message, ocrText.cause)
-=======
                     is OperationResult.RetryableFailure -> ocrText
                     is OperationResult.TerminalFailure -> ocrText
->>>>>>> 0f99404 (增加了中文注释，并可以正常安装app，但目前有闪退问题)
                 }
             }
 
             is OperationResult.RetryableFailure -> captureResult
             is OperationResult.TerminalFailure -> captureResult
         }
-<<<<<<< HEAD
-        return when (captureResult) {
-            is OperationResult.RetryableFailure -> {
-                OperationResult.RetryableFailure(captureResult.message, captureResult.cause)
-            }
-            is OperationResult.TerminalFailure -> {
-                OperationResult.TerminalFailure(captureResult.message, captureResult.cause)
-            }
-            is OperationResult.Success -> error("captureResult success branch should have already returned")
-        }
-=======
->>>>>>> 0f99404 (增加了中文注释，并可以正常安装app，但目前有闪退问题)
     }
 }

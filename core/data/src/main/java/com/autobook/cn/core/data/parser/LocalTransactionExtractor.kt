@@ -91,11 +91,7 @@ class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
             .firstNotNullOfOrNull { pattern -> pattern.find(body)?.groupValues?.getOrNull(1)?.trim() }
         return when {
             !detected.isNullOrBlank() -> detected
-<<<<<<< HEAD
             !event.title.isNullOrBlank() -> event.title.orEmpty()
-=======
-            !title.isNullOrBlank() -> title
->>>>>>> 0f99404 (增加了中文注释，并可以正常安装app，但目前有闪退问题)
             else -> channelLabel(sourceApp)
         }
     }
