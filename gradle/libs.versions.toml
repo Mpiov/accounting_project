@@ -1,14 +1,14 @@
 [versions]
-agp = "8.5.2"
-kotlin = "1.9.24"
+agp = "9.1.0"
+kotlin = "2.0.20"
 composeBom = "2024.09.00"
-composeCompiler = "1.5.14"
+#composeCompiler = "1.5.14"
 coroutines = "1.8.1"
-hilt = "2.51.1"
+hilt = "2.59.2"
 hiltNavigation = "1.2.0"
-room = "2.6.1"
+room = "2.7.0-alpha11"
 navigation = "2.8.0"
-ksp = "1.9.24-1.0.20"
+ksp = "2.0.20-1.0.25"
 ktlint = "12.1.1"
 datastore = "1.1.1"
 sqlcipher = "4.5.4"
@@ -73,3 +73,4 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
