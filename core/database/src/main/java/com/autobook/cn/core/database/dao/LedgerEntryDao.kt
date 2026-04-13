@@ -29,9 +29,14 @@ interface LedgerEntryDao {
     @Query(
         """
         SELECT * FROM ledger_entries
-        -- 优先命中订单号完全一致的记录；缺少订单号时再退回短时间窗模糊匹配。
+        -- 优先命中订单号完全一致的记录；缺少订单号时再退回“同方向 + 同金额 + 同商户 + 极短时间窗”模糊匹配。
         WHERE (:orderId IS NOT NULL AND orderId = :orderId)
-           OR (amount = :amount AND merchant = :merchant AND timestamp BETWEEN :windowStart AND :windowEnd)
+           OR (
+                amount = :amount
+                AND direction = :direction
+                AND merchant = :merchant
+                AND timestamp BETWEEN :windowStart AND :windowEnd
+           )
         ORDER BY timestamp DESC
         LIMIT 1
         """,
@@ -39,6 +44,7 @@ interface LedgerEntryDao {
     suspend fun findPotentialDuplicate(
         orderId: String?,
         amount: Double,
+        direction: String,
         merchant: String,
         windowStart: Long,
         windowEnd: Long,

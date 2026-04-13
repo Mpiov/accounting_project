@@ -33,6 +33,7 @@ class TransactionPipelineTest {
                         timestamp = event.postedAt,
                         confidence = ParseConfidence(0.7f),
                         confidenceReason = "Confidence below auto-post threshold",
+                        screenshotRef = "/tmp/pending.png",
                         rawSource = "notification",
                         parsePath = "local-parser",
                         sourceApp = NotificationSourceApp.ALIPAY,
@@ -90,7 +91,9 @@ class TransactionPipelineTest {
             ),
         )
 
-        assertEquals(ProcessDestination.PENDING, (outcome as OperationResult.Success).data.destination)
+        val data = (outcome as OperationResult.Success).data
+        assertEquals(ProcessDestination.PENDING, data.destination)
+        assertEquals("/tmp/pending.png", data.screenshotRef)
         assertEquals(1, pendingCount)
     }
 }

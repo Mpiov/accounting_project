@@ -27,4 +27,7 @@ dependencies {
     implementation(project(":core:data"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.hilt.android)
+
+    testImplementation(libs.junit5.api)
+    testRuntimeOnly(libs.junit5.engine)
 }

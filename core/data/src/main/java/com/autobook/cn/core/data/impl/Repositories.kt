@@ -63,10 +63,11 @@ class LedgerRepositoryImpl @Inject constructor(
     override suspend fun getById(id: Long): LedgerEntry? = ledgerEntryDao.getById(id)?.toDomain()
 
     override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? {
-        // 订单号优先精确匹配；缺少订单号时再用时间窗做近似查重。
+        // 订单号优先精确匹配；缺少订单号时只在极短时间窗内做同方向近似查重，避免“刚收一笔又付一笔同额”被误杀。
         val duplicate = ledgerEntryDao.findPotentialDuplicate(
             orderId = candidate.orderId,
             amount = candidate.amount,
+            direction = candidate.direction.name,
             merchant = candidate.merchant,
             windowStart = candidate.timestamp - DUPLICATE_WINDOW_MS,
             windowEnd = candidate.timestamp + DUPLICATE_WINDOW_MS,
@@ -265,7 +266,7 @@ class NotificationIngestorImpl @Inject constructor(
                     processStatus = result.data.status.name,
                     lastError = result.data.message,
                     retryCount = persisted.retryCount,
-                    screenshotRef = persisted.screenshotRef,
+                    screenshotRef = result.data.screenshotRef ?: persisted.screenshotRef,
                 )
                 result
             }
@@ -315,6 +316,7 @@ class NotificationIngestorImpl @Inject constructor(
                 notificationId = notificationId,
                 destination = destination,
                 status = status,
+                screenshotRef = screenshotRef,
                 message = message,
             ),
         )
@@ -358,8 +360,8 @@ private val DEFAULT_SOURCES = setOf(
     NotificationSourceApp.BANK_SMS,
 )
 
-/** 缺少订单号时用于模糊去重的时间窗口。 */
-private const val DUPLICATE_WINDOW_MS = 2 * 60 * 1000L
+/** 缺少订单号时用于模糊去重的时间窗口，仅保留 5 秒避免误判连续同额交易。 */
+private const val DUPLICATE_WINDOW_MS = 5 * 1000L
 
 /** 为 CSV 导出做最小转义，避免逗号和引号破坏结构。 */
 private fun csvEscape(value: Any?): String {

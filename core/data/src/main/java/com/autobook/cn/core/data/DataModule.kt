@@ -1,10 +1,10 @@
 package com.autobook.cn.core.data
 
 import com.autobook.cn.core.data.impl.LedgerRepositoryImpl
-import com.autobook.cn.core.data.impl.FakeOcrEngine
+import com.autobook.cn.core.data.impl.AccessibilityCaptureCoordinator
+import com.autobook.cn.core.data.impl.MlKitOcrEngine
 import com.autobook.cn.core.data.impl.NotificationIngestorImpl
 import com.autobook.cn.core.data.impl.PendingRepositoryImpl
-import com.autobook.cn.core.data.impl.PlaceholderCaptureCoordinator
 import com.autobook.cn.core.data.impl.SettingsRepositoryImpl
 import com.autobook.cn.core.data.parser.LocalTransactionExtractor
 import com.autobook.cn.core.data.pipeline.ModelRouterImpl
@@ -34,7 +34,7 @@ abstract class DataBindingsModule {
     abstract fun bindNotificationIngestor(impl: NotificationIngestorImpl): NotificationIngestor
 
     @Binds
-    abstract fun bindCaptureCoordinator(impl: PlaceholderCaptureCoordinator): CaptureCoordinator
+    abstract fun bindCaptureCoordinator(impl: AccessibilityCaptureCoordinator): CaptureCoordinator
 
     @Binds
     abstract fun bindTransactionExtractor(impl: LocalTransactionExtractor): TransactionExtractor
@@ -43,7 +43,7 @@ abstract class DataBindingsModule {
     abstract fun bindModelRouter(impl: ModelRouterImpl): ModelRouter
 
     @Binds
-    abstract fun bindOcrEngine(impl: FakeOcrEngine): OcrEngine
+    abstract fun bindOcrEngine(impl: MlKitOcrEngine): OcrEngine
 }
 
 /** 为暂时不需要接口绑定的具体类型提供实例。 */

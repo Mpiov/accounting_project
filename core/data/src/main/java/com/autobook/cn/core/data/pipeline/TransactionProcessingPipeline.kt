@@ -44,6 +44,7 @@ class TransactionProcessingPipeline @Inject constructor(
                             notificationId = notificationId,
                             destination = ProcessDestination.PENDING,
                             status = NotificationProcessStatus.PENDING_REVIEW,
+                            screenshotRef = candidate.screenshotRef,
                             message = "Routed to pending review because it looks duplicated",
                         ),
                     )
@@ -58,6 +59,7 @@ class TransactionProcessingPipeline @Inject constructor(
                             notificationId = notificationId,
                             destination = ProcessDestination.LEDGER,
                             status = NotificationProcessStatus.LEDGER_POSTED,
+                            screenshotRef = candidate.screenshotRef,
                             message = "Auto-posted with confidence ${candidate.confidence.score}",
                         ),
                     )
@@ -78,6 +80,7 @@ class TransactionProcessingPipeline @Inject constructor(
                             notificationId = notificationId,
                             destination = ProcessDestination.PENDING,
                             status = NotificationProcessStatus.PENDING_REVIEW,
+                            screenshotRef = candidate.screenshotRef,
                             message = reason,
                         ),
                     )

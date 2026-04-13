@@ -80,13 +80,13 @@ fun SettingsScreen(
             )
             SettingSwitchCard(
                 title = "截图分析",
-                summary = "预留 MediaProjection 能力入口，默认关闭。",
+                summary = "默认关闭。开启后会在本地拉起通知栏截图，供 OCR 补全文本。",
                 checked = state.captureEnabled,
                 onCheckedChange = onCaptureEnabledChanged,
             )
             SettingSwitchCard(
                 title = "OCR 识别",
-                summary = "配合截图分析使用，当前为可替换架构占位。",
+                summary = "默认关闭。开启后使用端内 OCR 识别截图文字，不依赖云端。",
                 checked = state.ocrEnabled,
                 onCheckedChange = onOcrEnabledChanged,
             )

@@ -1,20 +1,53 @@
 package com.autobook.cn.service.automation
 
 import android.accessibilityservice.AccessibilityService
+import android.graphics.Bitmap
+import android.os.Build
 import android.util.Log
+import android.view.Display
 import android.view.accessibility.AccessibilityEvent
+import com.autobook.cn.core.data.automation.AutomationRuntime
+import com.autobook.cn.core.data.automation.AutomationRuntimeRegistry
+import com.autobook.cn.core.model.OperationResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
-/** 无障碍服务占位实现，当前仅预留拉起通知栏的能力。 */
+/**
+ * 无障碍自动化服务。
+ *
+ * 用途说明：
+ * - 提供打开通知栏、执行系统截图、收起系统面板等 OCR 回退所需能力。
+ * - 服务连接成功后会把能力注册进运行时注册表，供数据层的截图协调器调用。
+ *
+ * 参数说明：
+ * - AccessibilityService 由系统创建，本类无显式构造参数。
+ */
 class AutobookAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /**
+     * 对外暴露给数据层的自动化运行时实现。
+     *
+     * 说明：
+     * - 保持在 service 内部定义，便于直接复用当前 service 的系统能力。
+     * - 数据层只依赖接口，不感知具体 service 类型。
+     */
+    private val runtime = object : AutomationRuntime {
+        override fun openNotificationShade(): Boolean = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+
+        override suspend fun captureScreenshot(): OperationResult<Bitmap> = captureCurrentDisplay()
+
+        override fun collapseSystemUi(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.d("AutobookAccessService", "Accessibility service connected")
+        AutomationRuntimeRegistry.register(runtime)
+        Log.d(LOG_TAG, "Accessibility automation service connected")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
@@ -22,10 +55,94 @@ class AutobookAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
+        AutomationRuntimeRegistry.unregister(runtime)
         serviceScope.cancel()
         super.onDestroy()
     }
 
-    /** 通过系统全局动作拉起通知栏，供后续自动化链路使用。 */
-    fun openNotificationShade(): Boolean = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+    /**
+     * 通过系统截图 API 抓取当前显示内容。
+     *
+     * 说明：
+     * - AccessibilityService 返回的是 HardwareBuffer，必须复制成普通 ARGB_8888 位图后再交给上层保存。
+     * - 这样既能避免硬件缓冲区生命周期问题，也便于后续 PNG 落盘与 OCR 识别。
+     */
+    private suspend fun captureCurrentDisplay(): OperationResult<Bitmap> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return OperationResult.TerminalFailure("Accessibility screenshot requires Android 11 or above")
+        }
+
+        return suspendCancellableCoroutine { continuation ->
+            takeScreenshot(
+                Display.DEFAULT_DISPLAY,
+                mainExecutor,
+                object : TakeScreenshotCallback {
+                    override fun onSuccess(screenshot: ScreenshotResult) {
+                        val hardwareBuffer = screenshot.hardwareBuffer
+                        try {
+                            val wrappedBitmap = Bitmap.wrapHardwareBuffer(
+                                hardwareBuffer,
+                                screenshot.colorSpace,
+                            )
+                            if (wrappedBitmap == null) {
+                                continuation.resume(
+                                    OperationResult.TerminalFailure("Accessibility screenshot bitmap was null"),
+                                )
+                                return
+                            }
+
+                            // 复制为普通软件位图，避免 OCR 读取硬件位图时出现兼容性问题。
+                            val copiedBitmap = wrappedBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                            wrappedBitmap.recycle()
+                            if (copiedBitmap == null) {
+                                continuation.resume(
+                                    OperationResult.TerminalFailure("Accessibility screenshot copy failed"),
+                                )
+                                return
+                            }
+                            continuation.resume(OperationResult.Success(copiedBitmap))
+                        } catch (error: Throwable) {
+                            continuation.resume(
+                                OperationResult.RetryableFailure(
+                                    message = "Accessibility screenshot crashed",
+                                    cause = error,
+                                ),
+                            )
+                        } finally {
+                            // 截图结果底层持有硬件缓冲区，这里及时关闭以避免资源泄漏。
+                            hardwareBuffer.close()
+                        }
+                    }
+
+                    override fun onFailure(errorCode: Int) {
+                        continuation.resume(
+                            OperationResult.RetryableFailure(
+                                message = "Accessibility screenshot failed: ${screenshotFailureMessage(errorCode)}",
+                            ),
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    /**
+     * 把系统错误码转换成更可读的错误摘要，便于后续 logcat 排查。
+     *
+     * 参数说明：
+     * - errorCode：系统截图 API 返回的失败码。
+     */
+    private fun screenshotFailureMessage(errorCode: Int): String {
+        return when (errorCode) {
+            ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR -> "internal_error"
+            ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT -> "interval_too_short"
+            ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY -> "invalid_display"
+            ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS -> "accessibility_access_lost"
+            else -> "unknown_error_code_$errorCode"
+        }
+    }
+
+    companion object {
+        private const val LOG_TAG = "AutobookAccessService"
+    }
 }

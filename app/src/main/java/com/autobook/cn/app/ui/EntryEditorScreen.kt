@@ -74,7 +74,8 @@ fun EntryEditorScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MoneyDirection.entries.forEach { direction ->
+                // 手动编辑页只展示可直接落账的方向，未知方向交给待确认流程要求用户二选一。
+                listOf(MoneyDirection.EXPENSE, MoneyDirection.INCOME).forEach { direction ->
                     FilterChip(
                         selected = state.direction == direction,
                         onClick = { onDirectionChange(direction) },

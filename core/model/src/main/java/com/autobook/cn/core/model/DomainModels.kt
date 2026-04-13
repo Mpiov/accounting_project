@@ -40,6 +40,7 @@ enum class NotificationProcessStatus {
 enum class MoneyDirection {
     INCOME,
     EXPENSE,
+    UNKNOWN,
 }
 
 /** 基于原始解析分数映射出的展示级置信度等级。 */
@@ -74,6 +75,7 @@ data class TransactionCandidate(
     val confidenceReason: String,
     val categoryHint: String = "待分类",
     val isDuplicateCandidate: Boolean = false,
+    val screenshotRef: String? = null,
     val rawSource: String,
     val parsePath: String,
     val modelVersion: String = "local-mock-v1",
@@ -139,6 +141,7 @@ data class NotificationProcessOutcome(
     val notificationId: Long,
     val destination: ProcessDestination,
     val status: NotificationProcessStatus,
+    val screenshotRef: String? = null,
     val message: String? = null,
 )
 

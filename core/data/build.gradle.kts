@@ -33,6 +33,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.google.mlkit.text.recognition.chinese)
     implementation(libs.hilt.android)
 
     ksp(libs.hilt.compiler)

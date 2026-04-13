@@ -110,6 +110,11 @@ class EntryEditorViewModel @Inject constructor(
                 updateState { copy(errorMessage = "请输入商户或备注对象") }
                 return@launch
             }
+            if (state.direction == MoneyDirection.UNKNOWN) {
+                // 自动解析无法确定方向时，要求用户在编辑页里显式确认收入或支出。
+                updateState { copy(errorMessage = "请选择收支方向") }
+                return@launch
+            }
 
             when (state.mode) {
                 EntryEditorMode.CREATE -> {
