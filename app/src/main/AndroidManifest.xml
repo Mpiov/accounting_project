@@ -4,14 +4,23 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+        应用入口配置：
+        1. Application 与 Activity 的包路径需要和 Kotlin 源码中的真实包名保持一致。
+        2. 当前入口类位于 com.autobook.cn.app 包下，因此这里显式写成 .app 前缀，避免系统按根包 com.autobook.cn 去查找导致启动闪退。
+    -->
     <application
-        android:name=".AutobookApplication"
+        android:name=".app.AutobookApplication"
         android:allowBackup="false"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Autobook">
+        <!--
+            主界面入口：
+            MainActivity 同样位于 com.autobook.cn.app 包下，这里同步修正为真实类路径。
+        -->
         <activity
-            android:name=".MainActivity"
+            android:name=".app.MainActivity"
             android:exported="true"
             android:theme="@style/Theme.Autobook">
             <intent-filter>
