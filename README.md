@@ -43,7 +43,7 @@ Autobook is an Android-first accounting app for notification-driven bookkeeping 
 - Users can keep using the app with manual bookkeeping even if notification or accessibility permissions are not granted.
 - Notification events are normalized with source tagging, dedupe keys, process status tracking, and retry metadata.
 - Notification auto-bookkeeping now uses text parsing plus local semantic enhancement, without OCR in the notification path.
-- High-confidence parsed transactions are written to the ledger, while low-confidence or possible-duplicate candidates are routed to the pending queue.
+- High-confidence parsed transactions are written to the ledger, medium-confidence or possible-duplicate candidates are routed to the pending queue, and low-confidence candidates are filtered out.
 - Ledger now supports basic search, day/month/all filters, manual add/edit/delete, and a settings page for source selection and retention controls.
 - Image import bookkeeping supports real image picking and suggestion prefill.
 - When cloud analysis is enabled, image import can directly call Gemini from the app during development.

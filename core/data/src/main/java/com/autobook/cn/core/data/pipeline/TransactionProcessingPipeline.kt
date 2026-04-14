@@ -6,6 +6,7 @@ import com.autobook.cn.core.data.PendingRepository
 import com.autobook.cn.core.data.SettingsRepository
 import com.autobook.cn.core.data.mapper.toLedgerEntry
 import com.autobook.cn.core.data.mapper.toPendingEntry
+import com.autobook.cn.core.model.ConfidenceLevel
 import com.autobook.cn.core.model.NotificationEvent
 import com.autobook.cn.core.model.NotificationProcessOutcome
 import com.autobook.cn.core.model.NotificationProcessStatus
@@ -21,6 +22,17 @@ class TransactionProcessingPipeline @Inject constructor(
     private val pendingRepository: PendingRepository,
     private val settingsRepository: SettingsRepository,
 ) {
+    /**
+     * 执行通知候选的最终分流。
+     *
+     * 用途说明：
+     * - 接收路由层返回的标准化交易候选，并在这里统一决定是直接过滤、进入待确认，还是正式写入账本。
+     * - 当前策略调整为“低置信度直接视为与交易无关”，只保留中高置信度候选参与后续人工确认或自动入账。
+     *
+     * 参数说明：
+     * - notificationId：当前通知事件在本地数据库中的主键，用于把后续账本/待确认记录与原始通知关联起来。
+     * - event：当前待处理的原始通知事件；这里主要用于透传给下游，便于保持统一处理入口。
+     */
     suspend fun process(
         notificationId: Long,
         event: NotificationEvent,
@@ -29,6 +41,19 @@ class TransactionProcessingPipeline @Inject constructor(
             is OperationResult.Success -> {
                 val candidate = candidateResult.data
                 val settings = settingsRepository.settings.first()
+                // 低置信度说明当前通知更像“非交易消息”或“结构信息严重不足”，直接过滤，不再打扰用户做待确认。
+                if (candidate.confidence.level == ConfidenceLevel.LOW) {
+                    return OperationResult.Success(
+                        NotificationProcessOutcome(
+                            notificationId = notificationId,
+                            destination = ProcessDestination.FILTERED,
+                            status = NotificationProcessStatus.FILTERED_OUT,
+                            screenshotRef = candidate.screenshotRef,
+                            message = "低置信度候选已过滤：${candidate.confidenceReason}",
+                        ),
+                    )
+                }
+
                 // 只要命中疑似重复，就优先交给人工确认而不是直接入账。
                 val duplicate = ledgerRepository.findPotentialDuplicate(candidate) != null ||
                     candidate.isDuplicateCandidate
