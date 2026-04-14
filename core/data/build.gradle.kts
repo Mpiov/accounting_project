@@ -27,11 +27,13 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:common"))
+    implementation(project(":core:llm"))
     implementation(project(":core:database"))
     implementation(project(":core:network"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.google.mlkit.text.recognition.chinese)
     implementation(libs.hilt.android)

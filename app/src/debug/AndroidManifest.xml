@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+            仅在 debug 构建下暴露通知注入入口，便于 adb 广播直接驱动完整记账链路。
+            正式版不会合并这个 Receiver，因此不会额外增加攻击面或上架风险。
+        -->
+        <receiver
+            android:name=".app.debug.DebugNotificationInjectReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.autobook.cn.debug.INJECT_NOTIFICATION" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+            仅在 debug 构建下启用后台注入 Service，用于承接本地 LLM 推理等重任务，
+            避免在 BroadcastReceiver 生命周期内直接执行导致系统判定为广播 ANR。
+        -->
+        <service
+            android:name=".app.debug.DebugNotificationInjectService"
+            android:enabled="true"
+            android:exported="false" />
+    </application>
+
+</manifest>

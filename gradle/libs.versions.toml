@@ -4,6 +4,7 @@ kotlin = "1.9.24"
 composeBom = "2024.09.00"
 composeCompiler = "1.5.14"
 coroutines = "1.8.1"
+serialization = "1.7.3"
 hilt = "2.51.1"
 hiltNavigation = "1.2.0"
 room = "2.6.1"
@@ -50,6 +51,7 @@ androidx-hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-com
 
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }

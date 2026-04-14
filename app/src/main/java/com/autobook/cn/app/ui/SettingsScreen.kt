@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -25,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.autobook.cn.app.viewmodel.SettingsUiState
+import com.autobook.cn.core.model.LocalModelInstallStatus
 import com.autobook.cn.core.model.NotificationSourceApp
 
 /** 设置页，集中管理自动记账、回退能力和数据留存策略。 */
@@ -37,6 +39,14 @@ fun SettingsScreen(
     onCloudAnalysisChanged: (Boolean) -> Unit,
     onCaptureEnabledChanged: (Boolean) -> Unit,
     onOcrEnabledChanged: (Boolean) -> Unit,
+    /** 切换本地语义增强的状态回调，enabled 为 true 时进入中置信度二次复核链路。 */
+    onLocalLlmConfidenceBoostChanged: (Boolean) -> Unit,
+    /** 切换当前选中的本地模型。 */
+    onSelectedLocalModelChanged: (String) -> Unit,
+    /** 下载当前选中的本地模型。 */
+    onDownloadSelectedLocalModel: () -> Unit,
+    /** 刷新本地模型状态。 */
+    onRefreshLocalModelState: () -> Unit,
     onNotificationRetentionChanged: (Int) -> Unit,
     onScreenshotRetentionChanged: (Int) -> Unit,
     onSourceEnabledChanged: (NotificationSourceApp, Boolean) -> Unit,
@@ -89,6 +99,19 @@ fun SettingsScreen(
                 summary = "默认关闭。开启后使用端内 OCR 识别截图文字，不依赖云端。",
                 checked = state.ocrEnabled,
                 onCheckedChange = onOcrEnabledChanged,
+            )
+            /** 中置信度通知时允许本地语义增强复盘关键字段，当前使用启发式占位分析，后续可直接替换为端侧本地 LLM；开关名强调预留态以免误解。 */
+            SettingSwitchCard(
+                title = "本地语义增强（LLM 预留）",
+                summary = "在中置信度的银行转账通知上打开本地语义复核链路，当前启用启发式文本增强作为占位实现，后续可替换为真正的本地 LLM。",
+                checked = state.localLlmConfidenceBoostEnabled,
+                onCheckedChange = onLocalLlmConfidenceBoostChanged,
+            )
+            LocalModelCard(
+                state = state,
+                onSelectedLocalModelChanged = onSelectedLocalModelChanged,
+                onDownloadSelectedLocalModel = onDownloadSelectedLocalModel,
+                onRefreshLocalModelState = onRefreshLocalModelState,
             )
             RetentionCard(
                 title = "通知原文保留天数",
@@ -164,6 +187,75 @@ fun SettingsScreen(
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalModelCard(
+    state: SettingsUiState,
+    onSelectedLocalModelChanged: (String) -> Unit,
+    onDownloadSelectedLocalModel: () -> Unit,
+    onRefreshLocalModelState: () -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("本地模型", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "当前推荐 Qwen3 1.7B GGUF，通过运行时下载到应用私有目录，不会打进 APK。当前已接入 llama.cpp + GGUF 真本地推理，模型就绪后会优先走端侧语义增强，并在失败时回退到启发式兜底。",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            state.availableLocalModels.forEach { model ->
+                val selected = model.id == state.selectedLocalModelId
+                TextButton(
+                    onClick = { onSelectedLocalModelChanged(model.id) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = buildModelRowLabel(model.displayName, selected, model.isRecommended),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            Text(
+                text = state.localModelStatusMessage,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (state.localModelDownloadProgressPercent != null) {
+                LinearProgressIndicator(
+                    progress = { state.localModelDownloadProgressPercent / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (state.selectedLocalModelPath != null) {
+                Text(
+                    text = "模型文件：${state.selectedLocalModelPath}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = onDownloadSelectedLocalModel,
+                    enabled = state.localModelInstallStatus != LocalModelInstallStatus.DOWNLOADING,
+                ) {
+                    Text(
+                        when (state.localModelInstallStatus) {
+                            LocalModelInstallStatus.READY -> "重新校验模型"
+                            LocalModelInstallStatus.DOWNLOADING -> "下载中"
+                            LocalModelInstallStatus.FAILED -> "重新下载"
+                            LocalModelInstallStatus.NOT_DOWNLOADED -> "下载选中模型"
+                        },
+                    )
+                }
+                TextButton(onClick = onRefreshLocalModelState) {
+                    Text("刷新状态")
                 }
             }
         }
@@ -281,6 +373,17 @@ private fun buildPreviewSnippet(csv: String): String {
 }
 
 private const val PREVIEW_MAX_LINES = 12
+
+/** 生成模型行文案，强调当前选中项和推荐项。 */
+private fun buildModelRowLabel(
+    displayName: String,
+    selected: Boolean,
+    recommended: Boolean,
+): String {
+    val prefix = if (selected) "当前选择" else "切换到"
+    val suffix = if (recommended) "（推荐）" else ""
+    return "$prefix $displayName$suffix"
+}
 
 /** 将来源枚举映射为设置页可读文案。 */
 private fun NotificationSourceApp.label(): String = when (this) {

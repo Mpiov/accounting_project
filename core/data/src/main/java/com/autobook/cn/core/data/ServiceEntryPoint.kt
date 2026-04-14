@@ -10,4 +10,8 @@ import dagger.hilt.components.SingletonComponent
 interface ServiceDependenciesEntryPoint {
     fun notificationIngestor(): NotificationIngestor
     fun captureCoordinator(): CaptureCoordinator
+    fun settingsRepository(): SettingsRepository
+    fun localModelRepository(): LocalModelRepository
+    fun pendingRepository(): PendingRepository
+    fun ledgerRepository(): LedgerRepository
 }

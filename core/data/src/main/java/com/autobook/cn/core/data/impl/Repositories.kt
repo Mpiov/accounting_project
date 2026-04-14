@@ -22,6 +22,7 @@ import com.autobook.cn.core.database.dao.PendingEntryDao
 import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.CaptureSession
 import com.autobook.cn.core.model.CaptureSessionState
+import com.autobook.cn.core.model.DEFAULT_LOCAL_MODEL_ID
 import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.NotificationEvent
 import com.autobook.cn.core.model.NotificationProcessOutcome
@@ -144,6 +145,10 @@ class SettingsRepositoryImpl @Inject constructor(
         val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
         val autoAccountingEnabled = booleanPreferencesKey("auto_accounting_enabled")
         val cloudAnalysisEnabled = booleanPreferencesKey("cloud_analysis_enabled")
+        /** 本地语义增强（LLM 预留）开关的持久化键，暂时用于启发式通路，后续替换真机 LLM 时可直接复用。 */
+        val localLlmConfidenceBoostEnabled = booleanPreferencesKey("local_llm_confidence_boost_enabled")
+        /** 当前选择的本地模型标识，默认指向推荐的 Qwen3 1.7B 量化模型。 */
+        val selectedLocalModelId = androidx.datastore.preferences.core.stringPreferencesKey("selected_local_model_id")
         val captureEnabled = booleanPreferencesKey("capture_enabled")
         val ocrEnabled = booleanPreferencesKey("ocr_enabled")
         val notificationRetentionDays = intPreferencesKey("notification_retention_days")
@@ -158,6 +163,8 @@ class SettingsRepositoryImpl @Inject constructor(
             onboardingCompleted = preferences[Keys.onboardingCompleted] ?: false,
             autoAccountingEnabled = preferences[Keys.autoAccountingEnabled] ?: true,
             cloudAnalysisEnabled = preferences[Keys.cloudAnalysisEnabled] ?: false,
+            localLlmConfidenceBoostEnabled = preferences[Keys.localLlmConfidenceBoostEnabled] ?: false,
+            selectedLocalModelId = preferences[Keys.selectedLocalModelId] ?: DEFAULT_LOCAL_MODEL_ID,
             captureEnabled = preferences[Keys.captureEnabled] ?: false,
             ocrEnabled = preferences[Keys.ocrEnabled] ?: false,
             notificationRetentionDays = preferences[Keys.notificationRetentionDays] ?: 30,
@@ -178,6 +185,16 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setCloudAnalysisEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { it[Keys.cloudAnalysisEnabled] = enabled }
+    }
+
+    /** 写入本地语义增强开关，opened 时可触发占位语义分析链路并为后续真 LLM 保持一致接口。 */
+    override suspend fun setLocalLlmConfidenceBoostEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.localLlmConfidenceBoostEnabled] = enabled }
+    }
+
+    /** 写入当前选中的本地模型标识，供下载器和推理引擎统一读取。 */
+    override suspend fun setSelectedLocalModelId(modelId: String) {
+        context.settingsDataStore.edit { it[Keys.selectedLocalModelId] = modelId }
     }
 
     override suspend fun setCaptureEnabled(enabled: Boolean) {

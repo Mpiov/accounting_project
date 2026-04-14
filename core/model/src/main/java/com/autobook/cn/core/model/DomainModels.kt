@@ -79,6 +79,8 @@ data class TransactionCandidate(
     val rawSource: String,
     val parsePath: String,
     val modelVersion: String = "local-mock-v1",
+    /** 记录本地 LLM 是否建议自动入账；为空代表当前候选未经过本地 LLM 决策。 */
+    val llmSuggestedAutoPost: Boolean? = null,
     val sourceApp: NotificationSourceApp = NotificationSourceApp.UNKNOWN,
 )
 
@@ -125,6 +127,8 @@ data class AppSettings(
     val onboardingCompleted: Boolean = false,
     val autoAccountingEnabled: Boolean = true,
     val cloudAnalysisEnabled: Boolean = false,
+    val localLlmConfidenceBoostEnabled: Boolean = false,
+    val selectedLocalModelId: String = DEFAULT_LOCAL_MODEL_ID,
     val captureEnabled: Boolean = false,
     val ocrEnabled: Boolean = false,
     val notificationRetentionDays: Int = 30,
@@ -168,3 +172,64 @@ enum class CaptureSessionState {
     CANCELLED,
     FAILED,
 }
+
+/**
+ * 本地模型规格描述。
+ *
+ * 用途说明：
+ * - 统一描述可供下载和选择的端侧模型，便于设置页、下载器和推理适配层共享同一份元数据。
+ *
+ * 参数说明：
+ * - id：模型唯一标识。
+ * - displayName：设置页展示名称。
+ * - family：模型家族名称，例如 Qwen3。
+ * - quantization：量化规格。
+ * - runtimeHint：推荐运行时，例如 llama.cpp。
+ * - estimatedSizeBytes：模型文件预计大小。
+ * - downloadUrl：下载地址。
+ * - isRecommended：是否为当前推荐模型。
+ */
+data class LocalModelSpec(
+    val id: String,
+    val displayName: String,
+    val family: String,
+    val quantization: String,
+    val runtimeHint: String,
+    val estimatedSizeBytes: Long,
+    val downloadUrl: String,
+    val isRecommended: Boolean = false,
+)
+
+/** 本地模型当前安装状态。 */
+enum class LocalModelInstallStatus {
+    NOT_DOWNLOADED,
+    DOWNLOADING,
+    READY,
+    FAILED,
+}
+
+/**
+ * 本地模型快照。
+ *
+ * 用途说明：
+ * - 为设置页和推理层提供单一来源的模型状态，包括当前选择、安装状态和下载进度。
+ *
+ * 参数说明：
+ * - availableModels：当前可选模型列表。
+ * - selectedModelId：当前设置中选中的模型。
+ * - selectedModelPath：已落地的模型文件路径；未下载时为空。
+ * - installStatus：当前安装状态。
+ * - downloadProgressPercent：下载进度，未知时为空。
+ * - statusMessage：面向 UI 的状态说明。
+ */
+data class LocalModelSnapshot(
+    val availableModels: List<LocalModelSpec> = emptyList(),
+    val selectedModelId: String = DEFAULT_LOCAL_MODEL_ID,
+    val selectedModelPath: String? = null,
+    val installStatus: LocalModelInstallStatus = LocalModelInstallStatus.NOT_DOWNLOADED,
+    val downloadProgressPercent: Int? = null,
+    val statusMessage: String = "尚未下载本地模型",
+)
+
+/** 当前默认推荐的本地模型标识。 */
+const val DEFAULT_LOCAL_MODEL_ID: String = "qwen3_1_7b_q8_0"

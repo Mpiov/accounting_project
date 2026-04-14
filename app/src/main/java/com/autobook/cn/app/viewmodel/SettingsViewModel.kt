@@ -5,9 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.autobook.cn.core.common.CurrencyFormatter
 import com.autobook.cn.core.common.TimeFormatter
 import com.autobook.cn.core.data.LedgerRepository
+import com.autobook.cn.core.data.LocalModelRepository
 import com.autobook.cn.core.data.PendingRepository
 import com.autobook.cn.core.data.SettingsRepository
 import com.autobook.cn.core.model.LedgerEntry
+import com.autobook.cn.core.model.LocalModelInstallStatus
+import com.autobook.cn.core.model.LocalModelSnapshot
+import com.autobook.cn.core.model.LocalModelSpec
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.NotificationSourceApp
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -34,6 +38,20 @@ data class SettingsUiState(
     val notificationRetentionDays: Int = 30,
     val screenshotRetentionDays: Int = 7,
     val enabledSources: Set<NotificationSourceApp> = emptySet(),
+    /** 是否启用本地语义增强通路，当前使用启发式分析作为占位，后续可直接切换为端侧本地 LLM。 */
+    val localLlmConfidenceBoostEnabled: Boolean = false,
+    /** 当前模型清单，供设置页展示推荐模型与轻量备选模型。 */
+    val availableLocalModels: List<LocalModelSpec> = emptyList(),
+    /** 当前选中的本地模型标识。 */
+    val selectedLocalModelId: String = "",
+    /** 当前模型安装状态。 */
+    val localModelInstallStatus: LocalModelInstallStatus = LocalModelInstallStatus.NOT_DOWNLOADED,
+    /** 当前模型文件路径。 */
+    val selectedLocalModelPath: String? = null,
+    /** 当前模型下载进度。 */
+    val localModelDownloadProgressPercent: Int? = null,
+    /** 当前模型状态说明。 */
+    val localModelStatusMessage: String = "尚未下载本地模型",
     val totalEntries: Int = 0,
     val manualEntries: Int = 0,
     val autoEntries: Int = 0,
@@ -48,6 +66,7 @@ data class SettingsUiState(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
+    private val localModelRepository: LocalModelRepository,
     private val ledgerRepository: LedgerRepository,
     private val pendingRepository: PendingRepository,
 ) : ViewModel() {
@@ -56,10 +75,11 @@ class SettingsViewModel @Inject constructor(
     /** 把持久化设置与导出预览组合为设置页状态。 */
     val uiState: StateFlow<SettingsUiState> = combine(
         settingsRepository.settings,
+        localModelRepository.snapshot,
         ledgerRepository.observeEntries(),
         pendingRepository.observeEntries(),
         exportPreview,
-    ) { settings, entries, pendingEntries, preview ->
+    ) { settings, localModelSnapshot, entries, pendingEntries, preview ->
         val overview = buildSettingsOverview(entries = entries, pendingCount = pendingEntries.size)
             SettingsUiState(
                 autoAccountingEnabled = settings.autoAccountingEnabled,
@@ -69,6 +89,13 @@ class SettingsViewModel @Inject constructor(
                 notificationRetentionDays = settings.notificationRetentionDays,
                 screenshotRetentionDays = settings.screenshotRetentionDays,
                 enabledSources = settings.enabledSources,
+                localLlmConfidenceBoostEnabled = settings.localLlmConfidenceBoostEnabled,
+                availableLocalModels = localModelSnapshot.availableModels,
+                selectedLocalModelId = localModelSnapshot.selectedModelId,
+                localModelInstallStatus = localModelSnapshot.installStatus,
+                selectedLocalModelPath = localModelSnapshot.selectedModelPath,
+                localModelDownloadProgressPercent = localModelSnapshot.downloadProgressPercent,
+                localModelStatusMessage = localModelSnapshot.statusMessage,
                 totalEntries = overview.totalEntries,
                 manualEntries = overview.manualEntries,
                 autoEntries = overview.autoEntries,
@@ -100,6 +127,26 @@ class SettingsViewModel @Inject constructor(
 
     fun setOcrEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setOcrEnabled(enabled) }
+    }
+
+    /** 控制本地语义增强通路的开关，enabled 为 true 时允许启用占位语义强化，并保持与未来本地 LLM 适配器一致的接口。 */
+    fun setLocalLlmConfidenceBoostEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setLocalLlmConfidenceBoostEnabled(enabled) }
+    }
+
+    /** 切换当前选中的本地模型。 */
+    fun setSelectedLocalModelId(modelId: String) {
+        viewModelScope.launch { localModelRepository.selectModel(modelId) }
+    }
+
+    /** 下载当前选中的本地模型。 */
+    fun downloadSelectedLocalModel() {
+        viewModelScope.launch { localModelRepository.downloadSelectedModel() }
+    }
+
+    /** 主动刷新本地模型状态，便于识别外部脚本或手动下载后的文件。 */
+    fun refreshLocalModelState() {
+        viewModelScope.launch { localModelRepository.refresh() }
     }
 
     fun setNotificationRetentionDays(days: Int) {
