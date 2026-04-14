@@ -19,6 +19,8 @@ sealed class AutobookDestination(val route: String) {
 
     data object MainSettings : AutobookDestination("main/settings")
 
+    data object BudgetSettings : AutobookDestination("budget/settings")
+
     data object RecordsAll : AutobookDestination("records/all")
 
     data object SearchResults : AutobookDestination("records/search?query={query}") {

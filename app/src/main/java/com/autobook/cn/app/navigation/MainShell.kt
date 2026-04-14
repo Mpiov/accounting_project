@@ -104,7 +104,7 @@ fun MainShell(
                     state = state,
                     onRangeChange = viewModel::setRange,
                     onOpenAllRecords = { rootNavController.navigate(AutobookDestination.RecordsAll.route) },
-                    onOpenSettings = { shellNavController.navigateToMainTab(MainShellTab.Settings) },
+                    onOpenBudgetSettings = { rootNavController.navigate(AutobookDestination.BudgetSettings.route) },
                     onOpenEntry = { ledgerId ->
                         rootNavController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
                     },
@@ -191,14 +191,6 @@ fun MainShell(
             onIncomeClick = {
                 showQuickActionSheet = false
                 rootNavController.navigate(AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.INCOME))
-            },
-            onTemplateClick = { templateId ->
-                showQuickActionSheet = false
-                rootNavController.navigate(AutobookDestination.EntryCreate.createRoute(templateId = templateId))
-            },
-            onPendingSupplementClick = {
-                showQuickActionSheet = false
-                shellNavController.navigateToMainTab(MainShellTab.Pending)
             },
         )
     }

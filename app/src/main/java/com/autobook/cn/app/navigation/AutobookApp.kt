@@ -15,11 +15,13 @@ import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.autobook.cn.app.ui.BudgetSettingsScreen
 import com.autobook.cn.app.ui.EntryEditorScreen
 import com.autobook.cn.app.ui.RecordsTimelineScreen
 import com.autobook.cn.app.viewmodel.EntryEditorViewModel
 import com.autobook.cn.app.viewmodel.OnboardingViewModel
 import com.autobook.cn.app.viewmodel.RecordsBrowserViewModel
+import com.autobook.cn.app.viewmodel.SettingsViewModel
 import com.autobook.cn.core.common.SettingsIntents
 import com.autobook.cn.feature.onboarding.OnboardingScreen
 
@@ -62,6 +64,16 @@ fun AutobookApp() {
         }
         composable(AutobookDestination.MainShell.route) {
             MainShell(rootNavController = navController)
+        }
+        composable(AutobookDestination.BudgetSettings.route) {
+            val viewModel: SettingsViewModel = hiltViewModel()
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            BudgetSettingsScreen(
+                state = state,
+                onBack = { navController.popBackStack() },
+                onSaveBudget = viewModel::saveCurrentMonthBudget,
+            )
         }
         composable(AutobookDestination.RecordsAll.route) {
             val viewModel: RecordsBrowserViewModel = hiltViewModel()

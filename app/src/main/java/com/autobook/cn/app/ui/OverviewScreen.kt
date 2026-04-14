@@ -6,15 +6,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.feature.ledger.LedgerItemUiModel
@@ -54,7 +56,7 @@ import java.time.YearMonth
  * - state：总览页界面状态。
  * - onRangeChange：切换本年、本月、本周、本日账单的回调。
  * - onOpenAllRecords：进入详细记录页的回调。
- * - onOpenSettings：进入设置页的回调。
+ * - onOpenBudgetSettings：进入预算设置页的回调。
  * - onOpenEntry：打开单条账单的回调。
  * - onCreateEntry：空状态下记一笔的回调。
  * - modifier：外层修饰符。
@@ -64,7 +66,7 @@ fun OverviewScreen(
     state: LedgerUiState,
     onRangeChange: (LedgerRangeFilter) -> Unit,
     onOpenAllRecords: () -> Unit,
-    onOpenSettings: () -> Unit,
+    onOpenBudgetSettings: () -> Unit,
     onOpenEntry: (Long) -> Unit,
     onCreateEntry: () -> Unit,
     modifier: Modifier = Modifier,
@@ -89,7 +91,7 @@ fun OverviewScreen(
         item(key = "budget") {
             BudgetOverviewCard(
                 state = state,
-                onOpenSettings = onOpenSettings,
+                onOpenSettings = onOpenBudgetSettings,
             )
         }
         item(key = "recent_header") {
@@ -353,7 +355,7 @@ private fun RecentRecordsTimeline(
     entries: List<LedgerItemUiModel>,
     onOpenEntry: (Long) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
         entries.forEachIndexed { index, entry ->
             OverviewTimelineItem(
                 entry = entry,
@@ -376,34 +378,36 @@ private fun OverviewTimelineItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .padding(bottom = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier.height(94.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        Box(
+            modifier = Modifier
+                .width(20.dp)
+                .height(98.dp),
+            contentAlignment = Alignment.Center,
         ) {
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .size(1.dp)
-                    .background(if (showTopConnector) MaterialTheme.colorScheme.outline.copy(alpha = 0.6f) else Color.Transparent),
+                    .fillMaxHeight()
+                    .width(1.dp)
+                    .background(
+                        color = when {
+                            showTopConnector || showBottomConnector -> MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+                            else -> Color.Transparent
+                        },
+                    ),
             )
             Box(
                 modifier = Modifier
                     .size(16.dp)
                     .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
             )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .size(1.dp)
-                    .background(if (showBottomConnector) MaterialTheme.colorScheme.outline.copy(alpha = 0.6f) else Color.Transparent),
-            )
         }
         Card(
             modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         ) {
             Row(
@@ -459,7 +463,7 @@ private fun SummaryMetricCard(
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
@@ -469,7 +473,7 @@ private fun SummaryMetricCard(
             )
             Text(
                 text = value,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp),
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

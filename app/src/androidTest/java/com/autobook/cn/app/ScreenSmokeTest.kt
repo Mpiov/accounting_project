@@ -48,7 +48,7 @@ class ScreenSmokeTest {
                 state = LedgerUiState(),
                 onRangeChange = {},
                 onOpenAllRecords = {},
-                onOpenSettings = {},
+                onOpenBudgetSettings = {},
                 onOpenEntry = {},
                 onCreateEntry = {},
             )

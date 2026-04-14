@@ -60,13 +60,21 @@ fun ChartDashboardScreen(
     var selectedPeriod by rememberSaveable { mutableStateOf(ChartPeriod.WEEK) }
 
     val filteredEntries = state.entries.filter { entry ->
-        entry.direction == selectedDirection.toMoneyDirection()
+        when (selectedDirection) {
+            ChartDirection.EXPENSE -> entry.direction == MoneyDirection.EXPENSE
+            ChartDirection.INCOME -> entry.direction == MoneyDirection.INCOME
+            ChartDirection.NET -> true
+        }
     }
     val trendPoints = buildChartPoints(
         entries = filteredEntries,
         period = selectedPeriod,
+        direction = selectedDirection,
     )
-    val categoryBreakdown = buildChartCategories(filteredEntries)
+    val categoryBreakdown = buildChartCategories(
+        entries = filteredEntries,
+        direction = selectedDirection,
+    )
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -179,7 +187,7 @@ private fun TrendChartCard(
                 verticalAlignment = Alignment.Bottom,
             ) {
                 points.forEach { point ->
-                    val ratio = if (point.maxAmount == 0.0) 0f else (point.amount / point.maxAmount).toFloat()
+                    val ratio = if (point.maxAmount == 0.0) 0f else (kotlin.math.abs(point.amount) / point.maxAmount).toFloat()
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -305,32 +313,44 @@ private fun CategoryDonutChart(
 private fun buildChartPoints(
     entries: List<ChartEntryUiModel>,
     period: ChartPeriod,
+    direction: ChartDirection,
 ): List<ChartTrendPoint> {
     val today = LocalDate.now()
     val buckets = when (period) {
-        ChartPeriod.WEEK -> (6L downTo 0L).map { today.minusDays(it) to today.minusDays(it).format(java.time.format.DateTimeFormatter.ofPattern("M-d", java.util.Locale.CHINA)) }
-        ChartPeriod.MONTH -> {
-            val month = YearMonth.from(today)
-            (0 until month.lengthOfMonth()).map { offset ->
-                val date = month.atDay(offset + 1)
-                date to date.dayOfMonth.toString()
-            }
+        ChartPeriod.WEEK -> (5 downTo 0).map { weekOffset ->
+            val weekStart = today.minusWeeks(weekOffset.toLong()).with(DayOfWeek.MONDAY)
+            ChartBucket(
+                anchorDate = weekStart,
+                label = if (weekOffset == 0) "本周" else "上${weekOffset}周",
+            )
         }
-        ChartPeriod.YEAR -> (11L downTo 0L).map {
-            val month = YearMonth.from(today).minusMonths(it)
-            month.atDay(1) to "${month.monthValue}月"
+
+        ChartPeriod.MONTH -> (1..12).map { monthValue ->
+            ChartBucket(
+                anchorDate = LocalDate.of(today.year, monthValue, 1),
+                label = "${monthValue}月",
+            )
+        }
+
+        ChartPeriod.YEAR -> (4 downTo 0).map { yearOffset ->
+            val year = today.year - yearOffset
+            ChartBucket(
+                anchorDate = LocalDate.of(year, 1, 1),
+                label = "${year}年",
+            )
         }
     }
-    val maxAmount = buckets.maxOfOrNull { (anchorDate, _) ->
-        entries.sumForPeriod(period, anchorDate)
+
+    val maxAmount = buckets.maxOfOrNull { bucket ->
+        kotlin.math.abs(entries.sumForPeriod(period, bucket.anchorDate, direction))
     } ?: 0.0
-    val currentAnchor = buckets.lastOrNull()?.first
-    return buckets.map { (anchorDate, label) ->
+    val currentAnchor = buckets.lastOrNull()?.anchorDate
+    return buckets.map { bucket ->
         ChartTrendPoint(
-            label = label,
-            amount = entries.sumForPeriod(period, anchorDate),
+            label = bucket.label,
+            amount = entries.sumForPeriod(period, bucket.anchorDate, direction),
             maxAmount = maxAmount,
-            isCurrent = anchorDate == currentAnchor,
+            isCurrent = bucket.anchorDate == currentAnchor,
         )
     }
 }
@@ -338,7 +358,19 @@ private fun buildChartPoints(
 /** 统计图表页分类占比。 */
 private fun buildChartCategories(
     entries: List<ChartEntryUiModel>,
+    direction: ChartDirection,
 ): List<ChartCategoryItem> {
+    if (direction == ChartDirection.NET) {
+        val totalIncome = entries.filter { it.direction == MoneyDirection.INCOME }.sumOf { it.amount }
+        val totalExpense = entries.filter { it.direction == MoneyDirection.EXPENSE }.sumOf { it.amount }
+        val total = totalIncome + totalExpense
+        if (total <= 0.0) return emptyList()
+        return listOf(
+            ChartCategoryItem("收入", totalIncome, (totalIncome / total).toFloat(), "${((totalIncome / total) * 100).toInt()}%", Color(0xFFB07454)),
+            ChartCategoryItem("支出", totalExpense, (totalExpense / total).toFloat(), "${((totalExpense / total) * 100).toInt()}%", Color(0xFFD6A95F)),
+        )
+    }
+
     val total = entries.sumOf { it.amount }
     if (total <= 0.0) return emptyList()
 
@@ -372,10 +404,25 @@ private fun buildChartCategories(
 private fun List<ChartEntryUiModel>.sumForPeriod(
     period: ChartPeriod,
     anchorDate: LocalDate,
+    direction: ChartDirection,
 ): Double {
     return when (period) {
-        ChartPeriod.WEEK, ChartPeriod.MONTH -> filter { it.date == anchorDate }.sumOf { it.amount }
-        ChartPeriod.YEAR -> filter { it.date.year == anchorDate.year && it.date.monthValue == anchorDate.monthValue }.sumOf { it.amount }
+        ChartPeriod.WEEK -> {
+            val weekEnd = anchorDate.plusDays(6)
+            filter { it.date >= anchorDate && it.date <= weekEnd }.sumOf { it.amountForDirection(direction) }
+        }
+
+        ChartPeriod.MONTH -> filter { it.date.year == anchorDate.year && it.date.monthValue == anchorDate.monthValue }.sumOf { it.amountForDirection(direction) }
+
+        ChartPeriod.YEAR -> filter { it.date.year == anchorDate.year }.sumOf { it.amountForDirection(direction) }
+    }
+}
+
+/** 根据当前图表模式决定金额正负。 */
+private fun ChartEntryUiModel.amountForDirection(direction: ChartDirection): Double {
+    return when (direction) {
+        ChartDirection.EXPENSE, ChartDirection.INCOME -> amount
+        ChartDirection.NET -> if (this.direction == MoneyDirection.EXPENSE) -amount else amount
     }
 }
 
@@ -384,12 +431,8 @@ private enum class ChartDirection(
 ) {
     EXPENSE("支出"),
     INCOME("收入"),
+    NET("结余"),
     ;
-
-    fun toMoneyDirection(): MoneyDirection = when (this) {
-        EXPENSE -> MoneyDirection.EXPENSE
-        INCOME -> MoneyDirection.INCOME
-    }
 }
 
 private enum class ChartPeriod(
@@ -405,6 +448,11 @@ private data class ChartTrendPoint(
     val amount: Double,
     val maxAmount: Double,
     val isCurrent: Boolean,
+)
+
+private data class ChartBucket(
+    val anchorDate: LocalDate,
+    val label: String,
 )
 
 private data class ChartCategoryItem(

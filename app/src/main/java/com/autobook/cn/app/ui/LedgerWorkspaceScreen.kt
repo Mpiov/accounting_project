@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -135,7 +136,7 @@ private fun LedgerCalendarOverviewCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(
@@ -202,6 +203,12 @@ private fun LedgerSearchCard(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("搜索商户、分类、备注") },
                 singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.background,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.background,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                ),
                 trailingIcon = {
                     androidx.compose.material3.Icon(
                         imageVector = Icons.Outlined.Search,
@@ -283,19 +290,19 @@ private fun LedgerCalendarDayCard(
 
     Card(
         modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(88.dp)
-                .padding(horizontal = 6.dp, vertical = 8.dp),
+                .height(60.dp)
+                .padding(horizontal = 4.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
                 text = day.label,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = if (day.isToday || day.isSelected) FontWeight.Bold else FontWeight.Medium,
                 color = if (day.isCurrentMonth) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
             )
@@ -304,7 +311,7 @@ private fun LedgerCalendarDayCard(
                     Text(
                         text = income,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = Color(0xFF4A8C59),
                         maxLines = 1,
                     )
                 }
@@ -312,7 +319,7 @@ private fun LedgerCalendarDayCard(
                     Text(
                         text = expense,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        color = Color(0xFFB35B45),
                         maxLines = 1,
                     )
                 }
@@ -320,7 +327,7 @@ private fun LedgerCalendarDayCard(
                     Text(
                         text = net,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,
                     )
                 }

@@ -3,8 +3,6 @@ package com.autobook.cn.app.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -14,11 +12,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowCircleDown
 import androidx.compose.material.icons.outlined.ArrowCircleUp
-import androidx.compose.material.icons.outlined.PendingActions
-import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -38,17 +33,13 @@ import androidx.compose.ui.unit.dp
  * - onDismiss：关闭面板回调。
  * - onExpenseClick：快速记支出回调。
  * - onIncomeClick：快速记收入回调。
- * - onTemplateClick：直接套用模板回调。
- * - onPendingSupplementClick：跳到待确认补录回调。
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickActionSheet(
     onDismiss: () -> Unit,
     onExpenseClick: () -> Unit,
     onIncomeClick: () -> Unit,
-    onTemplateClick: (String) -> Unit,
-    onPendingSupplementClick: () -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -86,59 +77,6 @@ fun QuickActionSheet(
                     modifier = Modifier.weight(1f),
                 )
             }
-            Card(shape = RoundedCornerShape(24.dp)) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            modifier = Modifier.size(34.dp),
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                        ) {
-                            androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Style,
-                                    contentDescription = "模板",
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                )
-                            }
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(
-                                text = "套用模板",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                text = "直接预填常用消费或收入模板。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        QUICK_TEMPLATE_IDS.forEach { template ->
-                            FilterChip(
-                                selected = false,
-                                onClick = { onTemplateClick(template.id) },
-                                label = { Text(template.label) },
-                            )
-                        }
-                    }
-                }
-            }
-            ActionCard(
-                title = "从待确认补录",
-                summary = "先去复核低置信度记录，再决定是否编辑后入账。",
-                icon = Icons.Outlined.PendingActions,
-                onClick = onPendingSupplementClick,
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
     }
 }
@@ -163,13 +101,13 @@ private fun ActionCard(
             Surface(
                 modifier = Modifier.size(38.dp),
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f),
             ) {
                 androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = icon,
                         contentDescription = title,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
             }
@@ -186,16 +124,3 @@ private fun ActionCard(
         }
     }
 }
-
-/** 快速模板只选取高频模板，避免面板信息过载。 */
-private val QUICK_TEMPLATE_IDS = listOf(
-    QuickTemplate("breakfast", "早餐"),
-    QuickTemplate("taxi", "打车"),
-    QuickTemplate("shopping", "购物"),
-    QuickTemplate("salary", "工资"),
-)
-
-private data class QuickTemplate(
-    val id: String,
-    val label: String,
-)

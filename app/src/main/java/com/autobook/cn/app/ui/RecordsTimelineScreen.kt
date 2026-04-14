@@ -96,7 +96,7 @@ fun RecordsTimelineScreen(
                 top = innerPadding.calculateTopPadding() + 8.dp,
                 bottom = 32.dp,
             ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             item(key = "summary") {
                 RecordsSummaryCard(summary = summary)
@@ -195,35 +195,36 @@ private fun TimelineEntryCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick),
+                .clickable(onClick = onClick)
+                .padding(bottom = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(
+            Box(
                 modifier = Modifier
                     .width(24.dp)
                     .height(96.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                contentAlignment = Alignment.Center,
             ) {
                 Box(
                     modifier = Modifier
-                        .padding(top = 4.dp)
+                        .fillMaxHeight()
+                        .width(1.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                        ),
+                )
+                Box(
+                    modifier = Modifier
                         .size(14.dp)
                         .background(
                             color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                             shape = CircleShape,
                         ),
                 )
-                Box(
-                    modifier = Modifier
-                        .padding(top = 6.dp)
-                        .fillMaxHeight()
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.55f))
-                        .size(width = 1.dp, height = 72.dp),
-                )
             }
             Card(
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = if (selected) {
                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
