@@ -258,6 +258,9 @@ internal fun buildLedgerCalendarDays(
             isToday = date == today,
             incomeLabel = summary.income.takeIf { it > 0.0 }?.let { "+${formatCompactCurrency(it)}" },
             expenseLabel = summary.expense.takeIf { it > 0.0 }?.let { "-${formatCompactCurrency(it)}" },
+            netLabel = summary.net.takeIf { it != 0.0 }?.let { netAmount ->
+                if (netAmount > 0.0) "+${formatCompactCurrency(netAmount)}" else "-${formatCompactCurrency(netAmount.absoluteValue)}"
+            },
         )
     }
 }
@@ -571,8 +574,8 @@ private fun buildBudgetState(
         return LedgerBudgetState(
             amountLabel = null,
             spentLabel = CurrencyFormatter.format(spentAmount),
-            remainingLabel = "去设置预算",
-            summary = "${month.format(MONTH_LABEL_FORMATTER)}还没有设置预算，去设置页补充后这里会自动追踪。",
+            remainingLabel = "未设置",
+            summary = "设置预算后会自动更新本月进度。",
             ratio = 0f,
             exceeded = false,
         )

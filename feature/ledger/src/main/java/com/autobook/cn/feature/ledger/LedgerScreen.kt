@@ -86,6 +86,8 @@ data class LedgerCalendarDayUiModel(
     val isToday: Boolean,
     val incomeLabel: String? = null,
     val expenseLabel: String? = null,
+    /** 当天净额，正数代表结余，负数代表支出高于收入。 */
+    val netLabel: String? = null,
 )
 
 /** 账本列表单项的展示模型。 */

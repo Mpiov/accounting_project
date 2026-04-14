@@ -183,7 +183,7 @@ private fun PendingResolveCard(
                     text = item.amount,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFC65D21),
+                    color = MaterialTheme.colorScheme.tertiary,
                 )
             }
             PendingHintCard(
@@ -274,13 +274,13 @@ private fun PendingEmptyCard(
                 Surface(
                     modifier = Modifier.size(42.dp),
                     shape = CircleShape,
-                    color = Color(0xFFE6F6EE),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         androidx.compose.material3.Icon(
                             imageVector = Icons.Outlined.DoneAll,
                             contentDescription = "完成",
-                            tint = Color(0xFF0B6E4F),
+                            tint = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }

@@ -86,22 +86,11 @@ fun SettingsWorkspaceScreen(
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item(key = "settings_hero") {
-            SettingsHeroCard(
-                state = state,
-                modifier = Modifier.statusBarsPadding(),
-            )
-        }
-        item(key = "budget_card") {
-            BudgetPlannerCard(
-                state = state,
-                onSaveCurrentMonthBudget = onSaveCurrentMonthBudget,
-            )
-        }
         item(key = "ability_section") {
             SettingsSectionTitle(
                 title = "记账能力",
-                summary = "把自动记账相关的核心能力集中管理，减少开关分散造成的理解成本。",
+                summary = "自动记账相关开关。",
+                modifier = Modifier.statusBarsPadding(),
             )
         }
         item(key = "ability_card") {
@@ -146,7 +135,7 @@ fun SettingsWorkspaceScreen(
         item(key = "source_section") {
             SettingsSectionTitle(
                 title = "来源管理",
-                summary = "只保留真正需要监听的来源，能让待确认列表和统计更干净。",
+                summary = "控制要监听的通知来源。",
             )
         }
         item(key = "source_card") {
@@ -171,7 +160,7 @@ fun SettingsWorkspaceScreen(
         item(key = "retention_section") {
             SettingsSectionTitle(
                 title = "数据留存",
-                summary = "按风险和排查需求分别控制原文与截图保留时长。",
+                summary = "控制通知原文与截图保留时长。",
             )
         }
         item(key = "retention_card") {
@@ -198,7 +187,7 @@ fun SettingsWorkspaceScreen(
         item(key = "model_section") {
             SettingsSectionTitle(
                 title = "本地模型",
-                summary = "模型管理单独成组，避免和普通开关混在一起。",
+                summary = "端侧模型下载与状态。",
             )
         }
         item(key = "model_card") {
@@ -212,11 +201,8 @@ fun SettingsWorkspaceScreen(
         item(key = "overview_section") {
             SettingsSectionTitle(
                 title = "数据工具",
-                summary = "把账本概览和导出入口放在一组，更符合“配置 + 工具”的页面定位。",
+                summary = "账本导出与备份。",
             )
-        }
-        item(key = "overview_card") {
-            DataOverviewCard(state = state)
         }
         item(key = "export_card") {
             ExportPreviewCard(
@@ -368,8 +354,9 @@ private fun BudgetPlannerCard(
 private fun SettingsSectionTitle(
     title: String,
     summary: String,
+    modifier: Modifier = Modifier,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge,
@@ -436,7 +423,8 @@ private fun RetentionSlider(
             value = value.toFloat(),
             onValueChange = { onValueChange(it.toInt()) },
             valueRange = range.first.toFloat()..range.last.toFloat(),
-            steps = range.last - range.first - 1,
+            // 说明：不再显示密集刻度点，保留更干净的滑动线条。
+            steps = 0,
         )
     }
 }

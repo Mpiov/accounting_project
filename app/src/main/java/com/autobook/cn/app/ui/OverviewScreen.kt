@@ -1,155 +1,120 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-
 package com.autobook.cn.app.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.autobook.cn.core.model.MoneyDirection
-import com.autobook.cn.feature.ledger.LedgerInsightUiModel
-import com.autobook.cn.feature.ledger.LedgerCategoryBreakdownUiModel
 import com.autobook.cn.feature.ledger.LedgerItemUiModel
-import com.autobook.cn.feature.ledger.LedgerTrendPointUiModel
+import com.autobook.cn.feature.ledger.LedgerRangeFilter
 import com.autobook.cn.feature.ledger.LedgerUiState
+import java.time.YearMonth
 
 /**
- * 总览页只负责展示关键指标和高频动作。
+ * 总览页。
+ *
+ * 用途说明：
+ * - 首页只保留“看账单状态 + 看预算 + 看最近几笔”三类高频信息。
+ * - 删除待确认横条、快捷动作宫格和解释型长文案，保证首屏更简洁。
  *
  * 参数说明：
- * - state：来自账本聚合层的界面状态。
- * - onCreateEntry：点击“记一笔”时的回调。
- * - onOpenLedger：进入账本页的回调。
- * - onOpenPending：进入待确认页的回调。
+ * - state：总览页界面状态。
+ * - onRangeChange：切换本年、本月、本周、本日账单的回调。
+ * - onOpenAllRecords：进入详细记录页的回调。
  * - onOpenSettings：进入设置页的回调。
- * - onOpenEntry：打开某条账本记录详情的回调。
+ * - onOpenEntry：打开单条账单的回调。
+ * - onCreateEntry：空状态下记一笔的回调。
  * - modifier：外层修饰符。
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OverviewScreen(
     state: LedgerUiState,
-    onCreateEntry: () -> Unit,
-    onOpenLedger: () -> Unit,
-    onOpenPending: () -> Unit,
+    onRangeChange: (LedgerRangeFilter) -> Unit,
+    onOpenAllRecords: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenEntry: (Long) -> Unit,
+    onCreateEntry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    /** 首页只切换“看什么”，不把跳转动作堆在首屏。 */
-    var selectedPanel by rememberSaveable { mutableStateOf(OverviewPanel.SUMMARY) }
-
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item(key = "overview_hero") {
+        item(key = "hero") {
             OverviewHeroCard(
                 state = state,
                 modifier = Modifier.statusBarsPadding(),
             )
         }
-        item(key = "overview_panel_switcher") {
-            OverviewPanelSwitcher(
-                selectedPanel = selectedPanel,
-                onPanelSelected = { panel -> selectedPanel = panel },
+        item(key = "range_switcher") {
+            OverviewRangeSwitcher(
+                selectedRange = state.selectedRange,
+                onRangeChange = onRangeChange,
             )
         }
-        item(key = "overview_panel_content") {
-            when (selectedPanel) {
-                OverviewPanel.SUMMARY -> {
-                    OverviewSummaryPanel(
-                        state = state,
-                        onOpenSettings = onOpenSettings,
-                    )
-                }
-
-                OverviewPanel.TREND -> {
-                    OverviewTrendPanel(
-                        title = state.trendTitle,
-                        points = state.trendPoints,
-                        highlightMessage = state.highlightMessage,
-                        onOpenLedger = onOpenLedger,
-                    )
-                }
-
-                OverviewPanel.CATEGORY -> {
-                    OverviewCategoryPanel(
-                        categories = state.categoryBreakdown,
-                        onOpenLedger = onOpenLedger,
-                    )
-                }
-            }
+        item(key = "budget") {
+            BudgetOverviewCard(
+                state = state,
+                onOpenSettings = onOpenSettings,
+            )
         }
-        item(key = "recent_entries_header") {
-            OverviewSectionHeader(
+        item(key = "recent_header") {
+            RecordsHeader(
                 title = "最近记录",
-                summary = "保留最近几笔，回看更直接。",
+                actionLabel = "详细记录",
+                onActionClick = onOpenAllRecords,
             )
         }
         if (state.entries.isEmpty()) {
-            item(key = "overview_empty") {
+            item(key = "empty") {
                 EmptyOverviewCard(onCreateEntry = onCreateEntry)
             }
         } else {
-            items(
-                items = state.entries.take(3),
-                key = { entry -> entry.id },
-            ) { entry ->
-                OverviewEntryCard(
-                    entry = entry,
-                    onClick = { onOpenEntry(entry.id) },
+            item(key = "recent_timeline") {
+                RecentRecordsTimeline(
+                    entries = state.entries.take(4),
+                    onOpenEntry = onOpenEntry,
                 )
             }
         }
     }
 }
 
-/**
- * 顶部总卡承接本月收支和一句重点提示。
- *
- * 这里把金额字号略微下调，并限制为单行，避免用户提到的大金额换行问题再次出现。
- */
+/** 顶部总览卡只保留标题与三项关键金额。 */
 @Composable
 private fun OverviewHeroCard(
     state: LedgerUiState,
@@ -157,89 +122,344 @@ private fun OverviewHeroCard(
 ) {
     val backgroundBrush = Brush.linearGradient(
         colors = listOf(
-            Color(0xFFFFF0C2),
-            Color(0xFFFFF9EE),
+            MaterialTheme.colorScheme.tertiaryContainer,
             MaterialTheme.colorScheme.surface,
         ),
     )
-    val netColor = if (state.netPositive) Color(0xFF0B6E4F) else Color(0xFFC65D21)
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(30.dp))
-            .background(backgroundBrush)
-            .padding(22.dp),
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
     ) {
-        Box(
+        Column(
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .size(132.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.36f)),
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = "总览",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = state.periodTitle,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = buildOverviewSubtitle(state),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OverviewMetricCard(
-                    label = "收入",
-                    value = state.incomeSummary,
-                    valueColor = Color(0xFF0B6E4F),
-                    modifier = Modifier.weight(1f),
-                )
-                OverviewMetricCard(
-                    label = "支出",
-                    value = state.expenseSummary,
-                    valueColor = Color(0xFFC65D21),
-                    modifier = Modifier.weight(1f),
-                )
-                OverviewMetricCard(
-                    label = "结余",
-                    value = state.netSummary,
-                    valueColor = netColor,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+                .background(backgroundBrush)
+                .padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
             Text(
-                text = state.rangeSummary,
+                text = "总览",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = state.periodTitle,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = buildOverviewSummary(state),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SummaryMetricCard(
+                    label = "收入",
+                    value = state.incomeSummary,
+                    modifier = Modifier.weight(1f),
+                )
+                SummaryMetricCard(
+                    label = "支出",
+                    value = state.expenseSummary,
+                    modifier = Modifier.weight(1f),
+                )
+                SummaryMetricCard(
+                    label = "结余",
+                    value = state.netSummary,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+/** 首页账期切换按钮。 */
+@Composable
+private fun OverviewRangeSwitcher(
+    selectedRange: LedgerRangeFilter,
+    onRangeChange: (LedgerRangeFilter) -> Unit,
+) {
+    Card(shape = RoundedCornerShape(18.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            overviewRanges().forEach { range ->
+                FilterChip(
+                    selected = selectedRange == range,
+                    onClick = { onRangeChange(range) },
+                    label = { Text(range.overviewLabel()) },
+                )
+            }
+        }
+    }
+}
+
+/** 预算卡改成圆环图 + 设置入口的并排布局。 */
+@Composable
+private fun BudgetOverviewCard(
+    state: LedgerUiState,
+    onOpenSettings: () -> Unit,
+) {
+    val monthLabel = YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("MM月", java.util.Locale.CHINA))
+    Card(shape = RoundedCornerShape(18.dp)) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "${monthLabel}总预算",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Surface(
+                    modifier = Modifier.clickable(onClick = onOpenSettings),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.tertiary,
+                ) {
+                    Text(
+                        text = "去设置",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onTertiary,
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                BudgetRingChart(
+                    ratio = state.budgetUsageRatio,
+                    remainingText = if (state.budgetAmountLabel == null) "0%" else "${((1 - state.budgetUsageRatio) * 100).toInt().coerceAtLeast(0)}%",
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    BudgetInfoRow(label = "剩余预算", value = state.budgetRemainingLabel)
+                    BudgetInfoRow(label = "本月预算", value = state.budgetAmountLabel ?: "未设置")
+                    BudgetInfoRow(label = "本月支出", value = state.budgetSpentLabel)
+                }
+            }
+        }
+    }
+}
+
+/** 预算圆环图。 */
+@Composable
+private fun BudgetRingChart(
+    ratio: Float,
+    remainingText: String,
+) {
+    val baseRingColor = MaterialTheme.colorScheme.surfaceVariant
+    val progressColor = MaterialTheme.colorScheme.primary
+    val textColor = MaterialTheme.colorScheme.onSurfaceVariant
+    Box(contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.size(120.dp)) {
+            val strokeWidth = 16.dp.toPx()
+            drawArc(
+                color = baseRingColor,
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                size = Size(size.width, size.height),
+                topLeft = Offset.Zero,
+            )
+            drawArc(
+                color = progressColor,
+                startAngle = -90f,
+                sweepAngle = 360f * (1f - ratio.coerceIn(0f, 1f)),
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                size = Size(size.width, size.height),
+                topLeft = Offset.Zero,
+            )
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "剩余",
+                style = MaterialTheme.typography.labelLarge,
+                color = textColor,
+            )
+            Text(
+                text = remainingText,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
             )
         }
     }
 }
 
-/** 单个指标卡复用相同视觉规则，并压缩金额字号防止换行。 */
+/** 预算信息行。 */
 @Composable
-private fun OverviewMetricCard(
+private fun BudgetInfoRow(
     label: String,
     value: String,
-    valueColor: Color,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+/** 最近记录标题区。 */
+@Composable
+private fun RecordsHeader(
+    title: String,
+    actionLabel: String,
+    onActionClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = actionLabel,
+            modifier = Modifier.clickable(onClick = onActionClick),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+/** 首页只展示少量最近记录，并用时间线样式呈现。 */
+@Composable
+private fun RecentRecordsTimeline(
+    entries: List<LedgerItemUiModel>,
+    onOpenEntry: (Long) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        entries.forEachIndexed { index, entry ->
+            OverviewTimelineItem(
+                entry = entry,
+                showTopConnector = index != 0,
+                showBottomConnector = index != entries.lastIndex,
+                onClick = { onOpenEntry(entry.id) },
+            )
+        }
+    }
+}
+
+/** 总览页时间线单项。 */
+@Composable
+private fun OverviewTimelineItem(
+    entry: LedgerItemUiModel,
+    showTopConnector: Boolean,
+    showBottomConnector: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(
+            modifier = Modifier.height(94.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .size(1.dp)
+                    .background(if (showTopConnector) MaterialTheme.colorScheme.outline.copy(alpha = 0.6f) else Color.Transparent),
+            )
+            Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .size(1.dp)
+                    .background(if (showBottomConnector) MaterialTheme.colorScheme.outline.copy(alpha = 0.6f) else Color.Transparent),
+            )
+        }
+        Card(
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Row(
+                modifier = Modifier.padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = entry.merchant,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = entry.category,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = entry.subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = entry.amount,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (entry.direction == MoneyDirection.INCOME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                )
+            }
+        }
+    }
+}
+
+/** 金额指标卡，字号统一压低以减少换行。 */
+@Composable
+private fun SummaryMetricCard(
+    label: String,
+    value: String,
     modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
@@ -251,7 +471,6 @@ private fun OverviewMetricCard(
                 text = value,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = valueColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -259,259 +478,7 @@ private fun OverviewMetricCard(
     }
 }
 
-/** 首页切换器只控制展示内容，不引入额外跳转动作。 */
-@Composable
-private fun OverviewPanelSwitcher(
-    selectedPanel: OverviewPanel,
-    onPanelSelected: (OverviewPanel) -> Unit,
-) {
-    Card(shape = RoundedCornerShape(24.dp)) {
-        FlowRow(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OverviewPanel.entries.forEach { panel ->
-                FilterChip(
-                    selected = selectedPanel == panel,
-                    onClick = { onPanelSelected(panel) },
-                    label = { Text(panel.label) },
-                )
-            }
-        }
-    }
-}
-
-/** “概览”分段保留预算与两条重点提醒，避免首屏信息过多。 */
-@Composable
-private fun OverviewSummaryPanel(
-    state: LedgerUiState,
-    onOpenSettings: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        CompactBudgetCard(
-            amountLabel = state.budgetAmountLabel,
-            spentLabel = state.budgetSpentLabel,
-            remainingLabel = state.budgetRemainingLabel,
-            usageSummary = state.budgetUsageSummary,
-            usageRatio = state.budgetUsageRatio,
-            exceeded = state.budgetExceeded,
-            onOpenSettings = onOpenSettings,
-        )
-        InsightHighlightRow(insights = state.insights.take(2))
-    }
-}
-
-/** “趋势”分段在首页只展示一个轻量图表和一句提示。 */
-@Composable
-private fun OverviewTrendPanel(
-    title: String,
-    points: List<LedgerTrendPointUiModel>,
-    highlightMessage: String,
-    onOpenLedger: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onOpenLedger),
-        shape = RoundedCornerShape(26.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = highlightMessage,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                points.takeLast(7).forEach { point ->
-                    val barHeight = 16.dp + 72.dp * point.ratio.coerceAtLeast(if (point.amountLabel == "0") 0f else 0.14f)
-                    Box(
-                        modifier = Modifier
-                            .width(22.dp)
-                            .height(barHeight)
-                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                            .background(
-                                if (point.isCurrent) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
-                            ),
-                    )
-                }
-            }
-            Text(
-                text = "点击进入账本查看完整趋势",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-    }
-}
-
-/** “分类”分段只保留最重要的三项支出分类，更符合首页的浏览节奏。 */
-@Composable
-private fun OverviewCategoryPanel(
-    categories: List<LedgerCategoryBreakdownUiModel>,
-    onOpenLedger: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onOpenLedger),
-        shape = RoundedCornerShape(26.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = "支出分类",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            if (categories.isEmpty()) {
-                Text(
-                    text = "先记几笔支出，这里会自动汇总主要分类。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                categories.take(3).forEach { category ->
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = category.category,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                text = category.ratioLabel,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        LinearProgressIndicator(
-                            progress = { category.ratioValue },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 预算卡文案改成用户语气，删掉开发说明式提示。 */
-@Composable
-private fun CompactBudgetCard(
-    amountLabel: String?,
-    spentLabel: String,
-    remainingLabel: String,
-    usageSummary: String,
-    usageRatio: Float,
-    exceeded: Boolean,
-    onOpenSettings: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onOpenSettings),
-        shape = RoundedCornerShape(26.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OverviewMetricCard(
-                    label = "预算",
-                    value = amountLabel ?: "未设置",
-                    valueColor = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                OverviewMetricCard(
-                    label = "已支出",
-                    value = spentLabel,
-                    valueColor = Color(0xFFC65D21),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Text(
-                text = remainingLabel,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = if (exceeded) Color(0xFFC65D21) else Color(0xFF0B6E4F),
-            )
-            LinearProgressIndicator(
-                progress = { usageRatio },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                text = usageSummary,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-/** 把洞察变成两张小卡，保留重点但不讲太多说明。 */
-@Composable
-private fun InsightHighlightRow(
-    insights: List<LedgerInsightUiModel>,
-) {
-    if (insights.isEmpty()) return
-
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        insights.forEach { insight ->
-            Card(
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(22.dp),
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = insight.title,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = insight.value,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = insight.supporting,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** 空状态不只提示“没有数据”，还明确告诉用户下一步该做什么。 */
+/** 空账本时只保留一个简洁的行动提示。 */
 @Composable
 private fun EmptyOverviewCard(
     onCreateEntry: () -> Unit,
@@ -520,115 +487,51 @@ private fun EmptyOverviewCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onCreateEntry),
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(18.dp),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "账本还是空的",
+                text = "先记一笔，开始积累账单",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "先记第一笔，后面总览、趋势和分类卡片就会逐渐丰满起来。",
+                text = "有了记录之后，这里会自动展示预算和最近账单。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
-                text = "点击这里去记一笔",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
         }
     }
 }
 
-/** 最近记录卡片保持轻量展示，同时保留进入详情的点击能力。 */
-@Composable
-private fun OverviewEntryCard(
-    entry: LedgerItemUiModel,
-    onClick: () -> Unit,
-) {
-    val amountColor = if (entry.direction == MoneyDirection.INCOME) Color(0xFF0B6E4F) else Color(0xFFC65D21)
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = entry.merchant,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = entry.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = entry.category,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            Text(
-                text = entry.amount,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = amountColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+/** 首页顶部一句话摘要。 */
+private fun buildOverviewSummary(state: LedgerUiState): String {
+    return when (state.selectedRange) {
+        LedgerRangeFilter.YEAR -> "看全年收支与结余变化"
+        LedgerRangeFilter.MONTH -> "看本月收支状态"
+        LedgerRangeFilter.WEEK -> "看本周开销变化"
+        LedgerRangeFilter.TODAY -> "看今天的收支情况"
+        else -> "看最近账单情况"
     }
 }
 
-/** 首页切换分段定义。 */
-private enum class OverviewPanel(
-    val label: String,
-) {
-    SUMMARY("概览"),
-    TREND("趋势"),
-    CATEGORY("分类"),
-}
+/** 首页展示的 4 个账期按钮。 */
+private fun overviewRanges(): List<LedgerRangeFilter> = listOf(
+    LedgerRangeFilter.YEAR,
+    LedgerRangeFilter.MONTH,
+    LedgerRangeFilter.WEEK,
+    LedgerRangeFilter.TODAY,
+)
 
-/** 把首页副标题改成更贴近用户理解的一句话。 */
-private fun buildOverviewSubtitle(state: LedgerUiState): String {
-    return when {
-        state.entries.isEmpty() -> "还没有记录，先记一笔开始。"
-        state.netPositive -> "这个月还有结余，收支状态比较轻松。"
-        else -> "这个月支出偏高，记得回看趋势和分类。"
-    }
-}
-
-/** 总览页通用区块标题，统一标题与说明层级。 */
-@Composable
-private fun OverviewSectionHeader(
-    title: String,
-    summary: String,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            text = summary,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+/** 总览页账期按钮文案。 */
+private fun LedgerRangeFilter.overviewLabel(): String = when (this) {
+    LedgerRangeFilter.YEAR -> "本年"
+    LedgerRangeFilter.MONTH -> "本月"
+    LedgerRangeFilter.WEEK -> "本周"
+    LedgerRangeFilter.TODAY -> "本日"
+    LedgerRangeFilter.CALENDAR -> "日历"
+    LedgerRangeFilter.ALL -> "全部"
 }

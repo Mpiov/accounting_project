@@ -46,11 +46,11 @@ class ScreenSmokeTest {
         composeRule.setContent {
             OverviewScreen(
                 state = LedgerUiState(),
-                onCreateEntry = {},
-                onOpenLedger = {},
-                onOpenPending = {},
+                onRangeChange = {},
+                onOpenAllRecords = {},
                 onOpenSettings = {},
                 onOpenEntry = {},
+                onCreateEntry = {},
             )
         }
 
@@ -77,19 +77,17 @@ class ScreenSmokeTest {
                     },
                 ),
                 onSearchChange = {},
+                onSearchSubmit = {},
                 onRangeChange = {},
                 onPreviousMonthClick = {},
                 onNextMonthClick = {},
                 onCalendarDateClick = { _ -> },
-                onOpenPending = {},
-                onOpenSettings = {},
-                onAddClick = {},
                 onEntryClick = {},
             )
         }
 
-        composeRule.onNodeWithText("账本").assertIsDisplayed()
         composeRule.onNodeWithText("2026年4月").assertIsDisplayed()
+        composeRule.onNodeWithText("账单时间线").assertIsDisplayed()
     }
 
     @Test
@@ -100,7 +98,6 @@ class ScreenSmokeTest {
                 onConfirm = {},
                 onEdit = {},
                 onIgnore = {},
-                onFalsePositive = {},
                 onOpenLedger = {},
                 onCreateEntry = {},
             )
@@ -130,8 +127,8 @@ class ScreenSmokeTest {
             )
         }
 
-        composeRule.onNodeWithText("设置与工具").assertIsDisplayed()
-        composeRule.onNodeWithText("本月预算").assertIsDisplayed()
+        composeRule.onNodeWithText("记账能力").assertIsDisplayed()
+        composeRule.onNodeWithText("账本导出").assertIsDisplayed()
     }
 
     @Test

@@ -13,9 +13,28 @@ sealed class AutobookDestination(val route: String) {
 
     data object MainLedger : AutobookDestination("main/ledger")
 
+    data object MainCharts : AutobookDestination("main/charts")
+
     data object MainPending : AutobookDestination("main/pending")
 
     data object MainSettings : AutobookDestination("main/settings")
+
+    data object RecordsAll : AutobookDestination("records/all")
+
+    data object SearchResults : AutobookDestination("records/search?query={query}") {
+        const val BASE_ROUTE: String = "records/search"
+
+        /**
+         * 生成搜索结果页路由。
+         *
+         * 参数说明：
+         * - query：用户确认搜索后的关键词。
+         */
+        fun createRoute(query: String): String {
+            val encodedQuery = android.net.Uri.encode(query)
+            return "$BASE_ROUTE?query=$encodedQuery"
+        }
+    }
 
     /**
      * 新建记账页支持携带默认收支方向和模板参数。

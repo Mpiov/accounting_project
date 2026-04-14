@@ -3,6 +3,9 @@ package com.autobook.cn.app.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -13,8 +16,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.autobook.cn.app.ui.EntryEditorScreen
+import com.autobook.cn.app.ui.RecordsTimelineScreen
 import com.autobook.cn.app.viewmodel.EntryEditorViewModel
 import com.autobook.cn.app.viewmodel.OnboardingViewModel
+import com.autobook.cn.app.viewmodel.RecordsBrowserViewModel
 import com.autobook.cn.core.common.SettingsIntents
 import com.autobook.cn.feature.onboarding.OnboardingScreen
 
@@ -57,6 +62,50 @@ fun AutobookApp() {
         }
         composable(AutobookDestination.MainShell.route) {
             MainShell(rootNavController = navController)
+        }
+        composable(AutobookDestination.RecordsAll.route) {
+            val viewModel: RecordsBrowserViewModel = hiltViewModel()
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            RecordsTimelineScreen(
+                title = state.title,
+                summary = state.summary,
+                items = state.items,
+                onSelectEntry = { ledgerId ->
+                    navController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
+                },
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = AutobookDestination.SearchResults.route,
+            arguments = listOf(
+                navArgument("query") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) {
+            val viewModel: RecordsBrowserViewModel = hiltViewModel()
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+            var selectedEntryId by remember(state.items) {
+                mutableLongStateOf(state.items.firstOrNull()?.id ?: 0L)
+            }
+
+            LaunchedEffect(state.items) {
+                if (selectedEntryId == 0L) {
+                    selectedEntryId = state.items.firstOrNull()?.id ?: 0L
+                }
+            }
+
+            RecordsTimelineScreen(
+                title = state.title,
+                summary = state.summary,
+                items = state.items,
+                selectedEntryId = selectedEntryId.takeIf { it != 0L },
+                onSelectEntry = { ledgerId -> selectedEntryId = ledgerId },
+                onBack = { navController.popBackStack() },
+            )
         }
         composable(
             route = AutobookDestination.EntryCreate.route,

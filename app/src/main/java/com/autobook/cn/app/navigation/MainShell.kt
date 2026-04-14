@@ -8,6 +8,7 @@ import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.PendingActions
 import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -16,6 +17,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -32,11 +34,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.autobook.cn.app.ui.ChartDashboardScreen
 import com.autobook.cn.app.ui.LedgerWorkspaceScreen
 import com.autobook.cn.app.ui.OverviewScreen
 import com.autobook.cn.app.ui.PendingWorkspaceScreen
 import com.autobook.cn.app.ui.QuickActionSheet
 import com.autobook.cn.app.ui.SettingsWorkspaceScreen
+import com.autobook.cn.app.viewmodel.ChartViewModel
 import com.autobook.cn.app.viewmodel.LedgerViewModel
 import com.autobook.cn.app.viewmodel.PendingViewModel
 import com.autobook.cn.app.viewmodel.SettingsViewModel
@@ -98,31 +102,46 @@ fun MainShell(
 
                 OverviewScreen(
                     state = state,
-                    onCreateEntry = { rootNavController.navigate(AutobookDestination.EntryCreate.createRoute()) },
-                    onOpenLedger = { shellNavController.navigateToMainTab(MainShellTab.Ledger) },
-                    onOpenPending = { shellNavController.navigateToMainTab(MainShellTab.Pending) },
+                    onRangeChange = viewModel::setRange,
+                    onOpenAllRecords = { rootNavController.navigate(AutobookDestination.RecordsAll.route) },
                     onOpenSettings = { shellNavController.navigateToMainTab(MainShellTab.Settings) },
                     onOpenEntry = { ledgerId ->
                         rootNavController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
                     },
+                    onCreateEntry = { rootNavController.navigate(AutobookDestination.EntryCreate.createRoute()) },
                 )
             }
             composable(AutobookDestination.MainLedger.route) {
                 val viewModel: LedgerViewModel = hiltViewModel()
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
 
+                LaunchedEffect(Unit) {
+                    // 说明：账本页默认从“今日”进入，更符合查当天账单的高频习惯。
+                    viewModel.setRange(com.autobook.cn.feature.ledger.LedgerRangeFilter.TODAY)
+                }
+
                 LedgerWorkspaceScreen(
                     state = state,
                     onSearchChange = viewModel::setSearchQuery,
+                    onSearchSubmit = { query ->
+                        if (query.isNotBlank()) {
+                            rootNavController.navigate(AutobookDestination.SearchResults.createRoute(query))
+                        }
+                    },
                     onRangeChange = viewModel::setRange,
                     onPreviousMonthClick = viewModel::showPreviousMonth,
                     onNextMonthClick = viewModel::showNextMonth,
                     onCalendarDateClick = viewModel::selectCalendarDate,
-                    onAddClick = { rootNavController.navigate(AutobookDestination.EntryCreate.createRoute()) },
                     onEntryClick = { ledgerId ->
                         rootNavController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
                     },
                 )
+            }
+            composable(AutobookDestination.MainCharts.route) {
+                val viewModel: ChartViewModel = hiltViewModel()
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+                ChartDashboardScreen(state = state)
             }
             composable(AutobookDestination.MainPending.route) {
                 val viewModel: PendingViewModel = hiltViewModel()
@@ -200,6 +219,11 @@ private enum class MainShellTab(
         route = AutobookDestination.MainLedger.route,
         label = "账本",
         icon = Icons.Outlined.BarChart,
+    ),
+    Charts(
+        route = AutobookDestination.MainCharts.route,
+        label = "图表",
+        icon = Icons.Outlined.Timeline,
     ),
     Pending(
         route = AutobookDestination.MainPending.route,
