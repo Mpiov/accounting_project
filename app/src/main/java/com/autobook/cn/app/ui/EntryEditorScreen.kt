@@ -41,6 +41,7 @@ fun EntryEditorScreen(
     onOrderIdChange: (String) -> Unit,
     onDirectionChange: (MoneyDirection) -> Unit,
     onApplyTemplate: (String) -> Unit,
+    onImportFromImage: () -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
@@ -83,6 +84,10 @@ fun EntryEditorScreen(
                     )
                 }
             }
+            ImageImportSection(
+                state = state,
+                onImportFromImage = onImportFromImage,
+            )
             TemplateSection(
                 templates = state.templates,
                 onApplyTemplate = onApplyTemplate,
@@ -122,6 +127,24 @@ fun EntryEditorScreen(
                 label = { Text("备注（可选）") },
                 minLines = 3,
             )
+            if (state.imageImportRequiresManualConfirmation) {
+                Card {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = "图片分析结果仅供参考",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "无论当前是 gemini-3.1-pro-preview 建议还是本地图片分析建议，都不会自动入账。请手动核对金额、分类、商户、备注后再保存。",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
             state.errorMessage?.let { message ->
                 Text(
                     text = message,
@@ -133,7 +156,53 @@ fun EntryEditorScreen(
                 onClick = onSave,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("保存")
+                Text(if (state.imageImportRequiresManualConfirmation) "确认并保存" else "保存")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImageImportSection(
+    state: EntryEditorUiState,
+    onImportFromImage: () -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("图片导入记账（预留）", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "当前已接入真实选图入口，但云端分析仍由 gemini-3.1-pro-preview mock 生成；后续可替换为真实 Gemini 云端能力或本地 OCR / 轻量模型。",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Button(
+                onClick = onImportFromImage,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("选择图片并生成建议")
+            }
+            state.importedImageRef?.let { imageRef ->
+                Text(
+                    text = "当前图片：$imageRef",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            state.imageImportMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            state.imageImportTracePath?.let { tracePath ->
+                Text(
+                    text = "分析路径：$tracePath",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

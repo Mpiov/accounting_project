@@ -232,5 +232,48 @@ data class LocalModelSnapshot(
     val statusMessage: String = "尚未下载本地模型",
 )
 
+/**
+ * 图片导入记账的分析路径标识。
+ *
+ * 用途说明：
+ * - 用统一枚举标记本次图片建议是来自 `gemini-3.1-pro-preview` mock、本地 OCR + 轻量模型 mock，还是仅进入手动确认草稿。
+ * - 便于后续在 UI、埋点和审计字段中统一展示来源。
+ */
+enum class ImageImportAnalysisPath {
+    GEMINI_3_1_PRO_PREVIEW_MOCK,
+    OCR_PLUS_LOCAL_LLM_MOCK,
+    MANUAL_CONFIRMATION_REQUIRED,
+}
+
+/**
+ * 图片导入记账建议。
+ *
+ * 用途说明：
+ * - 作为“用户主动上传图片记账”能力的统一输出协议。
+ * - 当前阶段先由 mock 结果驱动编辑页预填，后续可平滑替换为真实 `gemini-3.1-pro-preview` 或本地 OCR/LLM 分析结果。
+ *
+ * 参数说明：
+ * - amount：建议金额；为空表示当前无法可靠提取金额，需要用户手动输入。
+ * - direction：建议收支方向。
+ * - merchant：建议商户或交易对象。
+ * - category：建议分类。
+ * - note：建议备注。
+ * - orderId：建议订单号。
+ * - tracePath：本次建议的分析路径。
+ * - message：面向用户的状态说明。
+ * - requiresManualConfirmation：是否要求用户手动确认后才能保存。
+ */
+data class ImageImportSuggestion(
+    val amount: Double? = null,
+    val direction: MoneyDirection = MoneyDirection.EXPENSE,
+    val merchant: String = "",
+    val category: String = "待分类",
+    val note: String = "",
+    val orderId: String? = null,
+    val tracePath: ImageImportAnalysisPath,
+    val message: String,
+    val requiresManualConfirmation: Boolean = true,
+)
+
 /** 当前默认推荐的本地模型标识。 */
 const val DEFAULT_LOCAL_MODEL_ID: String = "qwen3_1_7b_q8_0"

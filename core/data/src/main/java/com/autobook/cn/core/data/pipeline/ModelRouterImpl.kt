@@ -1,9 +1,7 @@
 package com.autobook.cn.core.data.pipeline
 
-import com.autobook.cn.core.data.CaptureCoordinator
 import com.autobook.cn.core.data.LocalLlmAnalyzer
 import com.autobook.cn.core.data.ModelRouter
-import com.autobook.cn.core.data.OcrEngine
 import com.autobook.cn.core.data.SettingsRepository
 import com.autobook.cn.core.data.TransactionExtractor
 import com.autobook.cn.core.model.AppSettings
@@ -20,29 +18,26 @@ import kotlin.math.abs
 import kotlinx.coroutines.flow.first
 
 /**
- * 在本地规则、端侧 LLM、OCR 回退与云端分析之间做逐级兜底。
+ * 在本地规则、端侧 LLM 与云端分析之间做逐级兜底。
  *
  * 用途说明：
+ * - 通知自动记账链路当前明确只依赖通知文本，不再把 OCR 当成默认兜底层。
  * - 优先尝试本地规则解析，保证主链路离线可用且时延最低。
  * - 当本地规则得到的是“中置信度银行转账候选”时，先进入本地 LLM 复核链路。
- * - 当文本仍然不足时，再退到“截图 + OCR + 本地重试解析”。
  * - 只有用户显式开启云端分析后，才继续升级到网络兜底。
+ * - OCR 后续只作为“用户主动上传图片记账”能力的预留，不再参与通知自动记账路由。
  *
  * 参数说明：
  * - localExtractor：本地规则解析器。
  * - localLlmAnalyzer：本地 LLM 分析器，内部可先尝试 on-device 适配层，再按需回退到 baseline。
  * - cloudAnalysisApi：云端分析占位接口。
  * - settingsRepository：运行时开关与留存配置来源。
- * - captureCoordinator：截图协调器，负责拉起通知栏并产出截图引用。
- * - ocrEngine：端内 OCR 引擎，负责从截图中提取文本。
  */
 class ModelRouterImpl @Inject constructor(
     private val localExtractor: TransactionExtractor,
     private val localLlmAnalyzer: LocalLlmAnalyzer,
     private val cloudAnalysisApi: CloudAnalysisApi,
     private val settingsRepository: SettingsRepository,
-    private val captureCoordinator: CaptureCoordinator,
-    private val ocrEngine: OcrEngine,
 ) : ModelRouter {
     /**
      * 按既定优先级路由当前通知。
@@ -62,17 +57,8 @@ class ModelRouterImpl @Inject constructor(
             return promotedByLocalLlm ?: local
         }
 
-        val ocrRecovered = tryLocalCaptureAndOcr(event = event, settings = settings)
-        if (ocrRecovered is OperationResult.Success) {
-            return ocrRecovered
-        }
-
         if (!settings.cloudAnalysisEnabled) {
-            return when {
-                ocrRecovered is OperationResult.RetryableFailure -> ocrRecovered
-                local is OperationResult.RetryableFailure -> local
-                else -> OperationResult.RetryableFailure("Cloud analysis disabled and local parsing failed")
-            }
+            return local
         }
 
         val cloudCandidate = cloudAnalysisApi.analyze(event.toCloudRequest())
@@ -209,84 +195,6 @@ class ModelRouterImpl @Inject constructor(
             null -> "unknown"
         }
         return "${promotedCandidate.confidenceReason}; validated by local LLM guardrail; autoPost=$autoPostLabel"
-    }
-
-    /**
-     * 当原始通知文本不足以完成结构化解析时，尝试走一条截图与 OCR 回退链路。
-     *
-     * 参数说明：
-     * - event：当前正在处理的通知事件。
-     * - settings：当前运行时设置，用于决定是否允许截图与 OCR。
-     */
-    private suspend fun tryLocalCaptureAndOcr(
-        event: NotificationEvent,
-        settings: AppSettings,
-    ): OperationResult<TransactionCandidate> {
-        if (!settings.captureEnabled || !settings.ocrEnabled) {
-            return OperationResult.RetryableFailure("OCR fallback disabled")
-        }
-
-        val session = when (val sessionResult = captureCoordinator.requestAuthorization("notification-ocr-fallback")) {
-            is OperationResult.Success -> sessionResult.data
-            is OperationResult.RetryableFailure -> return sessionResult
-            is OperationResult.TerminalFailure -> return sessionResult
-        }
-
-        return try {
-            when (val captureResult = captureCoordinator.capture(session.sessionId)) {
-                is OperationResult.Success -> {
-                    when (val ocrText = ocrEngine.extractText(captureResult.data)) {
-                        is OperationResult.Success -> retryLocalParseWithOcr(
-                            event = event,
-                            screenshotRef = captureResult.data,
-                            ocrText = ocrText.data,
-                        )
-
-                        is OperationResult.RetryableFailure -> ocrText
-                        is OperationResult.TerminalFailure -> ocrText
-                    }
-                }
-
-                is OperationResult.RetryableFailure -> captureResult
-                is OperationResult.TerminalFailure -> captureResult
-            }
-        } finally {
-            captureCoordinator.cancel(session.sessionId)
-        }
-    }
-
-    /**
-     * 把 OCR 文本拼接回原通知正文后，再交给本地解析器重试一次。
-     *
-     * 参数说明：
-     * - event：原始通知事件。
-     * - screenshotRef：本次截图保存后的本地引用。
-     * - ocrText：OCR 输出的纯文本。
-     */
-    private suspend fun retryLocalParseWithOcr(
-        event: NotificationEvent,
-        screenshotRef: String,
-        ocrText: String,
-    ): OperationResult<TransactionCandidate> {
-        val mergedEvent = event.copy(
-            text = listOfNotNull(event.text, ocrText).joinToString(separator = " "),
-            screenshotRef = screenshotRef,
-        )
-        return when (val retriedResult = localExtractor.extract(mergedEvent)) {
-            is OperationResult.Success -> {
-                OperationResult.Success(
-                    retriedResult.data.copy(
-                        screenshotRef = screenshotRef,
-                        rawSource = "notification+ocr",
-                        parsePath = "${retriedResult.data.parsePath}+ocr-fallback",
-                        modelVersion = "local-ocr-v1",
-                    ),
-                )
-            }
-
-            is OperationResult.RetryableFailure -> retriedResult
-            is OperationResult.TerminalFailure -> retriedResult
-        }
     }
 }
 

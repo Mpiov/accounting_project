@@ -2,6 +2,7 @@ package com.autobook.cn.core.data
 
 import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.CaptureSession
+import com.autobook.cn.core.model.ImageImportSuggestion
 import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.LocalModelSnapshot
 import com.autobook.cn.core.model.NotificationEvent
@@ -29,6 +30,52 @@ interface CaptureCoordinator {
 /** OCR 能力抽象，便于后续替换真实实现。 */
 interface OcrEngine {
     suspend fun extractText(imageRef: String): OperationResult<String>
+}
+
+/**
+ * 图片导入记账分析器。
+ *
+ * 用途说明：
+ * - 统一封装“用户主动上传图片记账”链路的分析入口。
+ * - 当前阶段允许用 mock 实现模拟云端多模态或本地 OCR/轻量模型路径，后续可替换为真实实现而不改上层页面。
+ *
+ * 参数说明：
+ * - imageRef：图片引用；当前 mock 阶段只作为占位字段保留，后续可替换为 Uri、文件路径或上传后的资源标识。
+ */
+interface ImageImportAnalyzer {
+    suspend fun analyze(imageRef: String): OperationResult<ImageImportSuggestion>
+}
+
+/**
+ * 本地图片 OCR 引擎。
+ *
+ * 用途说明：
+ * - 专门负责“用户主动上传图片记账”链路中的文字提取。
+ * - 与通知自动记账主链路彻底解耦，避免 OCR 再次混入通知解析流程。
+ *
+ * 参数说明：
+ * - imageRef：图片引用；当前阶段可为内容 Uri 或本地缓存路径。
+ */
+interface ImageImportLocalOcrEngine {
+    suspend fun extractText(imageRef: String): OperationResult<String>
+}
+
+/**
+ * 本地图片轻量模型分析器。
+ *
+ * 用途说明：
+ * - 接收 OCR 文本后生成一份结构化记账建议。
+ * - 后续可替换为真正的端侧轻量模型实现，而不改上层图片导入流程。
+ *
+ * 参数说明：
+ * - imageRef：图片引用，用于后续回溯或多模态扩展。
+ * - ocrText：图片 OCR 提取出的文本。
+ */
+interface ImageImportLocalReasoner {
+    suspend fun analyze(
+        imageRef: String,
+        ocrText: String,
+    ): OperationResult<ImageImportSuggestion>
 }
 
 /**

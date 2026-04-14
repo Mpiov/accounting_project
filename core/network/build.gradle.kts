@@ -5,12 +5,27 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+import java.util.Properties
+
 android {
     namespace = "com.autobook.cn.core.network"
     compileSdk = 35
 
     defaultConfig {
         minSdk = 29
+        val localProperties = Properties().apply {
+            val file = rootProject.file("local.properties")
+            if (file.exists()) {
+                file.inputStream().use(::load)
+            }
+        }
+        val geminiApiKey = localProperties.getProperty("gemini.api.key", "")
+        buildConfigField("String", "GEMINI_API_KEY", "\"${geminiApiKey.replace("\"", "\\\"")}\"")
+        buildConfigField("String", "GEMINI_IMAGE_MODEL", "\"gemini-3.1-pro-preview\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {

@@ -2,9 +2,12 @@ package com.autobook.cn.core.data
 
 import android.content.Context
 import com.autobook.cn.core.data.impl.AccessibilityCaptureCoordinator
+import com.autobook.cn.core.data.impl.FakeImageImportLocalOcrEngine
+import com.autobook.cn.core.data.impl.FakeImageImportLocalReasoner
 import com.autobook.cn.core.data.impl.LedgerRepositoryImpl
 import com.autobook.cn.core.data.impl.LlamaCppOnDeviceLlmEngine
 import com.autobook.cn.core.data.impl.LocalModelRepositoryImpl
+import com.autobook.cn.core.data.impl.MockImageImportAnalyzer
 import com.autobook.cn.core.data.impl.MlKitOcrEngine
 import com.autobook.cn.core.data.impl.NotificationIngestorImpl
 import com.autobook.cn.core.data.impl.OnDeviceLocalLlmAnalyzer
@@ -15,7 +18,9 @@ import com.autobook.cn.core.data.pipeline.ModelRouterImpl
 import com.autobook.cn.core.llm.LlamaCppRuntime
 import com.autobook.cn.core.llm.LocalTextGenerationRuntime
 import com.autobook.cn.core.network.CloudAnalysisApi
+import com.autobook.cn.core.network.DirectGeminiImageImportApi
 import com.autobook.cn.core.network.FakeCloudAnalysisApi
+import com.autobook.cn.core.network.GeminiImageImportApi
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -54,6 +59,15 @@ abstract class DataBindingsModule {
 
     @Binds
     abstract fun bindOcrEngine(impl: MlKitOcrEngine): OcrEngine
+
+    @Binds
+    abstract fun bindImageImportAnalyzer(impl: MockImageImportAnalyzer): ImageImportAnalyzer
+
+    @Binds
+    abstract fun bindImageImportLocalOcrEngine(impl: FakeImageImportLocalOcrEngine): ImageImportLocalOcrEngine
+
+    @Binds
+    abstract fun bindImageImportLocalReasoner(impl: FakeImageImportLocalReasoner): ImageImportLocalReasoner
 
     /**
      * 绑定本地 LLM 分析器。
@@ -95,4 +109,10 @@ object DataProvisionModule {
     @Provides
     @Singleton
     fun provideCloudAnalysisApi(): CloudAnalysisApi = FakeCloudAnalysisApi()
+
+    @Provides
+    @Singleton
+    fun provideGeminiImageImportApi(
+        @ApplicationContext context: Context,
+    ): GeminiImageImportApi = DirectGeminiImageImportApi(context)
 }

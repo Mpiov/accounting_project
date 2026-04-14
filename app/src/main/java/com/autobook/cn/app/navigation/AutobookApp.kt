@@ -1,5 +1,7 @@
 package com.autobook.cn.app.navigation
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -158,6 +160,15 @@ private fun EntryEditorRoute(
     viewModel: EntryEditorViewModel,
     onBack: () -> Unit,
 ) {
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri ->
+        uri?.let { selectedUri ->
+            // 当前先直接把内容 Uri 字符串作为图片引用传给 mock 分析器，后续可替换为真实上传或本地缓存路径。
+            viewModel.importFromImage(selectedUri.toString())
+        }
+    }
+
     LaunchedEffect(state.finished) {
         // 保存或删除完成后消费一次性状态，再统一返回上一个页面。
         if (state.finished) {
@@ -176,6 +187,7 @@ private fun EntryEditorRoute(
         onOrderIdChange = viewModel::updateOrderId,
         onDirectionChange = viewModel::updateDirection,
         onApplyTemplate = viewModel::applyTemplate,
+        onImportFromImage = { imagePickerLauncher.launch("image/*") },
         onSave = viewModel::save,
         onDelete = viewModel::delete,
     )

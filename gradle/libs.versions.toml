@@ -15,8 +15,6 @@ navigation = "2.8.0"
 ksp = "2.0.20-1.0.25"
 ktlint = "12.1.1"
 datastore = "1.1.1"
-sqlcipher = "4.5.4"
-sqlite = "2.4.0"
 mlKitTextRecognition = "16.0.1"
 junit5 = "5.10.2"
 junitPlatform = "1.10.2"
@@ -62,8 +60,6 @@ androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
-androidx-sqlite-ktx = { module = "androidx.sqlite:sqlite-ktx", version.ref = "sqlite" }
-sqlcipher-android = { module = "net.zetetic:android-database-sqlcipher", version.ref = "sqlcipher" }
 google-mlkit-text-recognition-chinese = { module = "com.google.mlkit:text-recognition-chinese", version.ref = "mlKitTextRecognition" }
 mlkit-text-recognition-chinese = { module = "com.google.mlkit:text-recognition-chinese", version.ref = "mlkit-text-recognition" }
 

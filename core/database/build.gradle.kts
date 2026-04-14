@@ -28,8 +28,6 @@ dependencies {
     implementation(project(":core:model"))
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    implementation(libs.androidx.sqlite.ktx)
-    implementation(libs.sqlcipher.android)
     implementation(libs.hilt.android)
 
     ksp(libs.androidx.room.compiler)

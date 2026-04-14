@@ -3,8 +3,11 @@ package com.autobook.cn.app.viewmodel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.util.Log
+import com.autobook.cn.core.data.ImageImportAnalyzer
 import com.autobook.cn.core.data.LedgerRepository
 import com.autobook.cn.core.data.PendingRepository
+import com.autobook.cn.core.model.ImageImportAnalysisPath
 import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.PendingEntry
@@ -34,6 +37,11 @@ data class EntryEditorUiState(
     val direction: MoneyDirection = MoneyDirection.EXPENSE,
     val canDelete: Boolean = false,
     val errorMessage: String? = null,
+    val imageImportMessage: String? = null,
+    val imageImportTracePath: ImageImportAnalysisPath? = null,
+    val importedImageRef: String? = null,
+    /** 图片导入分析结果默认只作为建议，是否仍需用户手动确认后保存。 */
+    val imageImportRequiresManualConfirmation: Boolean = false,
     val finished: Boolean = false,
     val templates: List<EntryTemplateUiModel> = ENTRY_TEMPLATE_MODELS,
 )
@@ -58,6 +66,7 @@ internal data class EntryTemplate(
 @HiltViewModel
 class EntryEditorViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
+    private val imageImportAnalyzer: ImageImportAnalyzer,
     private val ledgerRepository: LedgerRepository,
     private val pendingRepository: PendingRepository,
 ) : ViewModel() {
@@ -98,6 +107,85 @@ class EntryEditorViewModel @Inject constructor(
     fun updateDirection(value: MoneyDirection) = updateState { copy(direction = value, errorMessage = null) }
     fun applyTemplate(templateId: String) = updateState { applyEntryTemplate(templateId) }
 
+    /**
+     * 触发一次图片导入记账的 mock 建议填充。
+     *
+     * 用途说明：
+     * - 当前阶段已经接上真实选图入口，但分析器仍然是 mock。
+     * - `imageRef` 当前直接使用图片 Uri 字符串占位，后续可替换为真实上传后的资源标识或本地文件引用。
+     */
+    fun importFromImage(imageRef: String) {
+        viewModelScope.launch {
+            updateState {
+                copy(
+                    importedImageRef = imageRef,
+                    imageImportMessage = "图片分析中，请稍候...",
+                    imageImportTracePath = null,
+                    imageImportRequiresManualConfirmation = true,
+                    errorMessage = null,
+                )
+            }
+
+            try {
+                when (val result = imageImportAnalyzer.analyze(imageRef = imageRef)) {
+                    is com.autobook.cn.core.model.OperationResult.Success -> {
+                        val suggestion = result.data
+                        updateState {
+                            copy(
+                                amount = suggestion.amount?.toString() ?: amount,
+                                direction = suggestion.direction,
+                                merchant = suggestion.merchant.ifBlank { merchant },
+                                category = suggestion.category.ifBlank { category },
+                                note = suggestion.note.ifBlank { note },
+                                orderId = suggestion.orderId ?: orderId,
+                                imageImportMessage = suggestion.message,
+                                imageImportTracePath = suggestion.tracePath,
+                                importedImageRef = imageRef,
+                                imageImportRequiresManualConfirmation = suggestion.requiresManualConfirmation,
+                                errorMessage = null,
+                            )
+                        }
+                    }
+
+                    is com.autobook.cn.core.model.OperationResult.RetryableFailure -> {
+                        updateState {
+                            copy(
+                                imageImportMessage = result.message,
+                                imageImportTracePath = null,
+                                importedImageRef = imageRef,
+                                imageImportRequiresManualConfirmation = true,
+                                errorMessage = null,
+                            )
+                        }
+                    }
+
+                    is com.autobook.cn.core.model.OperationResult.TerminalFailure -> {
+                        updateState {
+                            copy(
+                                imageImportMessage = result.message,
+                                imageImportTracePath = null,
+                                importedImageRef = imageRef,
+                                imageImportRequiresManualConfirmation = true,
+                                errorMessage = null,
+                            )
+                        }
+                    }
+                }
+            } catch (throwable: Throwable) {
+                Log.e(TAG, "Image import analysis failed for $imageRef", throwable)
+                updateState {
+                    copy(
+                        imageImportMessage = "图片分析失败：${throwable.message ?: throwable.javaClass.simpleName}",
+                        imageImportTracePath = null,
+                        importedImageRef = imageRef,
+                        imageImportRequiresManualConfirmation = true,
+                        errorMessage = null,
+                    )
+                }
+            }
+        }
+    }
+
     fun save() {
         viewModelScope.launch {
             val state = _uiState.value
@@ -123,14 +211,14 @@ class EntryEditorViewModel @Inject constructor(
                             amount = amount,
                             direction = state.direction,
                             merchant = state.merchant.trim(),
-                            channel = "手动记账",
+                            channel = if (state.importedImageRef != null) "图片导入" else "手动记账",
                             timestamp = System.currentTimeMillis(),
                             category = state.category.trim().ifBlank { "待分类" },
                             orderId = state.orderId.trim().ifBlank { null },
                             note = state.note.trim().ifBlank { null },
-                            traceSource = "manual",
-                            tracePath = "manual-entry",
-                            traceModelVersion = "manual-v1",
+                            traceSource = if (state.importedImageRef != null) "image-import" else "manual",
+                            tracePath = state.imageImportTracePath?.name?.lowercase() ?: "manual-entry",
+                            traceModelVersion = if (state.importedImageRef != null) "image-import-v1" else "manual-v1",
                             editedManually = true,
                         ),
                     )
@@ -175,7 +263,13 @@ class EntryEditorViewModel @Inject constructor(
                 }
             }
 
-            updateState { copy(finished = true, errorMessage = null) }
+            updateState {
+                copy(
+                    finished = true,
+                    errorMessage = null,
+                    imageImportRequiresManualConfirmation = false,
+                )
+            }
         }
     }
 
@@ -298,3 +392,5 @@ private val ENTRY_TEMPLATE_MODELS = ENTRY_TEMPLATES.map { template ->
         label = template.label,
     )
 }
+
+private const val TAG = "EntryEditorViewModel"

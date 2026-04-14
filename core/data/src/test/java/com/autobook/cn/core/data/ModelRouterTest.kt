@@ -2,8 +2,6 @@ package com.autobook.cn.core.data
 
 import com.autobook.cn.core.data.pipeline.ModelRouterImpl
 import com.autobook.cn.core.model.AppSettings
-import com.autobook.cn.core.model.CaptureSession
-import com.autobook.cn.core.model.CaptureSessionState
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.NotificationEvent
 import com.autobook.cn.core.model.NotificationSourceApp
@@ -19,7 +17,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
-/** 验证路由器会按“本地规则 -> 本地 LLM -> OCR -> 云端”的顺序处理通知。 */
+/** 验证路由器会按“本地规则 -> 本地 LLM -> 云端”的顺序处理通知。 */
 class ModelRouterTest {
     @Test
     fun `uses local result before cloud`() = runTest {
@@ -52,8 +50,6 @@ class ModelRouterTest {
                     localLlmConfidenceBoostEnabled = true,
                 ),
             ),
-            captureCoordinator = disabledCaptureCoordinator(),
-            ocrEngine = disabledOcrEngine(),
         ).route(
             NotificationEvent(
                 packageName = "com.tencent.mm",
@@ -67,83 +63,6 @@ class ModelRouterTest {
         val candidate = (result as OperationResult.Success).data
         assertEquals("local-parser", candidate.parsePath)
         assertEquals("local-mock-v1", candidate.modelVersion)
-    }
-
-    @Test
-    fun `uses ocr fallback when local parser needs more text`() = runTest {
-        val extractor = object : TransactionExtractor {
-            /**
-             * 第一次调用时故意返回可重试失败，第二次在 OCR 补全文本后返回成功结果。
-             *
-             * 参数说明：
-             * - event：当前参与解析的通知事件；当 OCR 文本被拼接回 `text` 后会再次进入这里。
-             */
-            override suspend fun extract(event: NotificationEvent): OperationResult<TransactionCandidate> {
-                return if (event.text?.contains("麦当劳", ignoreCase = true) == true) {
-                    OperationResult.Success(
-                        TransactionCandidate(
-                            amount = 18.0,
-                            direction = MoneyDirection.EXPENSE,
-                            merchant = "麦当劳",
-                            channel = "微信支付",
-                            timestamp = event.postedAt,
-                            confidence = ParseConfidence(0.9f),
-                            confidenceReason = "Matched OCR enriched text",
-                            screenshotRef = event.screenshotRef,
-                            rawSource = "notification",
-                            parsePath = "local-parser",
-                            sourceApp = NotificationSourceApp.WECHAT,
-                        ),
-                    )
-                } else {
-                    OperationResult.RetryableFailure("Need OCR fallback")
-                }
-            }
-        }
-        val captureCoordinator = object : CaptureCoordinator {
-            override suspend fun requestAuthorization(reason: String): OperationResult<CaptureSession> =
-                OperationResult.Success(CaptureSession("ocr-session", CaptureSessionState.AUTHORIZED, reason))
-
-            override suspend fun capture(sessionId: String): OperationResult<String> =
-                OperationResult.Success("/tmp/ocr-session.png")
-
-            override suspend fun cancel(sessionId: String) = Unit
-
-            override suspend fun reportFailure(sessionId: String, message: String) = Unit
-        }
-        val ocrEngine = object : OcrEngine {
-            override suspend fun extractText(imageRef: String): OperationResult<String> =
-                OperationResult.Success("微信支付 麦当劳 支付成功 18.00 元")
-        }
-
-        val result = ModelRouterImpl(
-            localExtractor = extractor,
-            localLlmAnalyzer = noopLocalLlmAnalyzer(),
-            cloudAnalysisApi = mockk(relaxed = true),
-            settingsRepository = buildSettingsRepository(
-                AppSettings(
-                    cloudAnalysisEnabled = false,
-                    captureEnabled = true,
-                    ocrEnabled = true,
-                ),
-            ),
-            captureCoordinator = captureCoordinator,
-            ocrEngine = ocrEngine,
-        ).route(
-            NotificationEvent(
-                packageName = "com.tencent.mm",
-                title = "微信支付",
-                text = "支付成功 18.00 元",
-                postedAt = 1L,
-            ),
-        )
-
-        assertTrue(result is OperationResult.Success)
-        val candidate = (result as OperationResult.Success).data
-        assertEquals("/tmp/ocr-session.png", candidate.screenshotRef)
-        assertEquals("notification+ocr", candidate.rawSource)
-        assertEquals("local-parser+ocr-fallback", candidate.parsePath)
-        assertEquals("local-ocr-v1", candidate.modelVersion)
     }
 
     @Test
@@ -197,8 +116,6 @@ class ModelRouterTest {
             localLlmAnalyzer = llmAnalyzer,
             cloudAnalysisApi = mockk(relaxed = true),
             settingsRepository = buildSettingsRepository(AppSettings(localLlmConfidenceBoostEnabled = true)),
-            captureCoordinator = disabledCaptureCoordinator(),
-            ocrEngine = disabledOcrEngine(),
         ).route(
             NotificationEvent(
                 packageName = "com.bank.app",
@@ -263,8 +180,6 @@ class ModelRouterTest {
             localLlmAnalyzer = llmAnalyzer,
             cloudAnalysisApi = mockk(relaxed = true),
             settingsRepository = buildSettingsRepository(AppSettings(localLlmConfidenceBoostEnabled = true)),
-            captureCoordinator = disabledCaptureCoordinator(),
-            ocrEngine = disabledOcrEngine(),
         ).route(
             NotificationEvent(
                 packageName = "com.bank.app",
@@ -327,8 +242,6 @@ class ModelRouterTest {
             localLlmAnalyzer = llmAnalyzer,
             cloudAnalysisApi = mockk(relaxed = true),
             settingsRepository = buildSettingsRepository(AppSettings(localLlmConfidenceBoostEnabled = true)),
-            captureCoordinator = disabledCaptureCoordinator(),
-            ocrEngine = disabledOcrEngine(),
         ).route(
             NotificationEvent(
                 packageName = "com.bank.app",
@@ -375,28 +288,5 @@ private fun noopLocalLlmAnalyzer(): LocalLlmAnalyzer {
             event: NotificationEvent,
             seedCandidate: TransactionCandidate,
         ): OperationResult<TransactionCandidate> = OperationResult.RetryableFailure("local llm disabled")
-    }
-}
-
-/** 构造一个不会真正截图的协调器替身，用于无 OCR 场景测试。 */
-private fun disabledCaptureCoordinator(): CaptureCoordinator {
-    return object : CaptureCoordinator {
-        override suspend fun requestAuthorization(reason: String): OperationResult<CaptureSession> =
-            OperationResult.Success(CaptureSession("noop", CaptureSessionState.REQUESTED, reason))
-
-        override suspend fun capture(sessionId: String): OperationResult<String> =
-            OperationResult.RetryableFailure("capture disabled")
-
-        override suspend fun cancel(sessionId: String) = Unit
-
-        override suspend fun reportFailure(sessionId: String, message: String) = Unit
-    }
-}
-
-/** 构造一个不会真正做 OCR 的引擎替身，用于无 OCR 场景测试。 */
-private fun disabledOcrEngine(): OcrEngine {
-    return object : OcrEngine {
-        override suspend fun extractText(imageRef: String): OperationResult<String> =
-            OperationResult.RetryableFailure("ocr disabled")
     }
 }
