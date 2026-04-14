@@ -37,7 +37,8 @@ android {
     externalNativeBuild {
         cmake {
             path("src/main/cpp/CMakeLists.txt")
-            version = "3.31.11"
+            // 说明：SDK 官方仓库当前可稳定安装到 3.31.6，这里与上游 llama.android 示例保持一致，避免构建被不存在的 3.31.11 卡住。
+            version = "3.31.6"
         }
     }
 

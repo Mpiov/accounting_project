@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.31.11)
+# 说明：与 Android SDK 官方可安装的 3.31.6 对齐，避免因为仓库中无 3.31.11 包而无法配置 native 构建。
+cmake_minimum_required(VERSION 3.31.6)
 
 project("autobook-llama" VERSION 1.0.0 LANGUAGES C CXX)
 
