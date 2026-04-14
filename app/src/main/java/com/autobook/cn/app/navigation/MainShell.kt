@@ -118,8 +118,6 @@ fun MainShell(
                     onPreviousMonthClick = viewModel::showPreviousMonth,
                     onNextMonthClick = viewModel::showNextMonth,
                     onCalendarDateClick = viewModel::selectCalendarDate,
-                    onOpenPending = { shellNavController.navigateToMainTab(MainShellTab.Pending) },
-                    onOpenSettings = { shellNavController.navigateToMainTab(MainShellTab.Settings) },
                     onAddClick = { rootNavController.navigate(AutobookDestination.EntryCreate.createRoute()) },
                     onEntryClick = { ledgerId ->
                         rootNavController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
@@ -137,7 +135,6 @@ fun MainShell(
                         rootNavController.navigate(AutobookDestination.PendingResolve.createRoute(pendingId))
                     },
                     onIgnore = viewModel::ignorePending,
-                    onFalsePositive = viewModel::markFalsePositive,
                     onOpenLedger = { shellNavController.navigateToMainTab(MainShellTab.Ledger) },
                     onCreateEntry = { showQuickActionSheet = true },
                 )

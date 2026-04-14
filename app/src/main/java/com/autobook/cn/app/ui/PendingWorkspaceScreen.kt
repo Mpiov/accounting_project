@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.PendingActions
-import androidx.compose.material.icons.outlined.ReportGmailerrorred
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -43,7 +42,6 @@ import com.autobook.cn.feature.pending.PendingUiState
  * - onConfirm：确认入账回调。
  * - onEdit：编辑后入账回调。
  * - onIgnore：忽略回调。
- * - onFalsePositive：标记误报回调。
  * - onOpenLedger：空状态下前往账本页的回调。
  * - onCreateEntry：空状态下快速记一笔的回调。
  * - modifier：外层修饰符。
@@ -54,7 +52,6 @@ fun PendingWorkspaceScreen(
     onConfirm: (Long) -> Unit,
     onEdit: (Long) -> Unit,
     onIgnore: (Long) -> Unit,
-    onFalsePositive: (Long) -> Unit,
     onOpenLedger: () -> Unit,
     onCreateEntry: () -> Unit,
     modifier: Modifier = Modifier,
@@ -64,27 +61,27 @@ fun PendingWorkspaceScreen(
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item(key = "pending_summary") {
-            PendingSummaryCard(
-                pendingCount = state.items.size,
-                modifier = Modifier.statusBarsPadding(),
-            )
-        }
         if (state.items.isEmpty()) {
             item(key = "pending_empty") {
                 PendingEmptyCard(
                     onOpenLedger = onOpenLedger,
                     onCreateEntry = onCreateEntry,
+                    modifier = Modifier.statusBarsPadding(),
                 )
             }
         } else {
+            item(key = "pending_summary") {
+                PendingSummaryCard(
+                    pendingCount = state.items.size,
+                    modifier = Modifier.statusBarsPadding(),
+                )
+            }
             items(items = state.items, key = { item -> item.id }) { item ->
                 PendingResolveCard(
                     item = item,
                     onConfirm = { onConfirm(item.id) },
                     onEdit = { onEdit(item.id) },
                     onIgnore = { onIgnore(item.id) },
-                    onFalsePositive = { onFalsePositive(item.id) },
                 )
             }
         }
@@ -156,7 +153,6 @@ private fun PendingResolveCard(
     onConfirm: () -> Unit,
     onEdit: () -> Unit,
     onIgnore: () -> Unit,
-    onFalsePositive: () -> Unit,
 ) {
     Card(shape = RoundedCornerShape(26.dp)) {
         Column(
@@ -211,13 +207,8 @@ private fun PendingResolveCard(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SecondaryActionChip(
-                    label = "忽略",
+                    label = "不入账",
                     onClick = onIgnore,
-                    modifier = Modifier.weight(1f),
-                )
-                SecondaryActionChip(
-                    label = "标记误报",
-                    onClick = onFalsePositive,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -266,8 +257,12 @@ private fun PendingHintCard(
 private fun PendingEmptyCard(
     onOpenLedger: () -> Unit,
     onCreateEntry: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Card(shape = RoundedCornerShape(26.dp)) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(26.dp),
+    ) {
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -290,13 +285,13 @@ private fun PendingEmptyCard(
                     }
                 }
                 Text(
-                    text = "当前无需处理待确认记录",
+                    text = "当前无需处理待确认",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
             Text(
-                text = "你可以回到账本看看最近流水，或者手动补记一笔把数据补得更完整。",
+                text = "回到账本看看最近流水，或者手动补记一笔。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

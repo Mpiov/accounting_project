@@ -13,25 +13,29 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.PendingActions
-import androidx.compose.material.icons.outlined.ReceiptLong
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +47,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.feature.ledger.LedgerInsightUiModel
+import com.autobook.cn.feature.ledger.LedgerCategoryBreakdownUiModel
 import com.autobook.cn.feature.ledger.LedgerItemUiModel
+import com.autobook.cn.feature.ledger.LedgerTrendPointUiModel
 import com.autobook.cn.feature.ledger.LedgerUiState
 
 /**
@@ -69,6 +75,9 @@ fun OverviewScreen(
     onOpenEntry: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    /** 首页只切换“看什么”，不把跳转动作堆在首屏。 */
+    var selectedPanel by rememberSaveable { mutableStateOf(OverviewPanel.SUMMARY) }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 120.dp),
@@ -80,38 +89,42 @@ fun OverviewScreen(
                 modifier = Modifier.statusBarsPadding(),
             )
         }
-        item(key = "pending_banner") {
-            PendingSummaryBanner(
-                pendingCount = state.pendingCount,
-                onOpenPending = onOpenPending,
+        item(key = "overview_panel_switcher") {
+            OverviewPanelSwitcher(
+                selectedPanel = selectedPanel,
+                onPanelSelected = { panel -> selectedPanel = panel },
             )
         }
-        item(key = "quick_actions") {
-            QuickActionGrid(
-                onCreateEntry = onCreateEntry,
-                onOpenLedger = onOpenLedger,
-                onOpenPending = onOpenPending,
-                onOpenSettings = onOpenSettings,
-            )
-        }
-        item(key = "budget_summary") {
-            BudgetSummaryCard(
-                amountLabel = state.budgetAmountLabel,
-                spentLabel = state.budgetSpentLabel,
-                remainingLabel = state.budgetRemainingLabel,
-                usageSummary = state.budgetUsageSummary,
-                usageRatio = state.budgetUsageRatio,
-                exceeded = state.budgetExceeded,
-                onOpenSettings = onOpenSettings,
-            )
-        }
-        item(key = "insights") {
-            InsightSummarySection(insights = state.insights.take(2))
+        item(key = "overview_panel_content") {
+            when (selectedPanel) {
+                OverviewPanel.SUMMARY -> {
+                    OverviewSummaryPanel(
+                        state = state,
+                        onOpenSettings = onOpenSettings,
+                    )
+                }
+
+                OverviewPanel.TREND -> {
+                    OverviewTrendPanel(
+                        title = state.trendTitle,
+                        points = state.trendPoints,
+                        highlightMessage = state.highlightMessage,
+                        onOpenLedger = onOpenLedger,
+                    )
+                }
+
+                OverviewPanel.CATEGORY -> {
+                    OverviewCategoryPanel(
+                        categories = state.categoryBreakdown,
+                        onOpenLedger = onOpenLedger,
+                    )
+                }
+            }
         }
         item(key = "recent_entries_header") {
             OverviewSectionHeader(
                 title = "最近记录",
-                summary = "只保留最近几笔，方便快速回看，不再把完整流水塞进首页。",
+                summary = "保留最近几笔，回看更直接。",
             )
         }
         if (state.entries.isEmpty()) {
@@ -178,7 +191,7 @@ private fun OverviewHeroCard(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = state.highlightMessage,
+                    text = buildOverviewSubtitle(state),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -246,60 +259,98 @@ private fun OverviewMetricCard(
     }
 }
 
-/** 待确认横条把待处理任务从首页中突出出来，但不再与完整列表混排。 */
+/** 首页切换器只控制展示内容，不引入额外跳转动作。 */
 @Composable
-private fun PendingSummaryBanner(
-    pendingCount: Int,
-    onOpenPending: () -> Unit,
+private fun OverviewPanelSwitcher(
+    selectedPanel: OverviewPanel,
+    onPanelSelected: (OverviewPanel) -> Unit,
 ) {
-    val containerColor = if (pendingCount > 0) {
-        Color(0xFFFFF3D8)
-    } else {
-        MaterialTheme.colorScheme.surface
+    Card(shape = RoundedCornerShape(24.dp)) {
+        FlowRow(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OverviewPanel.entries.forEach { panel ->
+                FilterChip(
+                    selected = selectedPanel == panel,
+                    onClick = { onPanelSelected(panel) },
+                    label = { Text(panel.label) },
+                )
+            }
+        }
     }
+}
+
+/** “概览”分段保留预算与两条重点提醒，避免首屏信息过多。 */
+@Composable
+private fun OverviewSummaryPanel(
+    state: LedgerUiState,
+    onOpenSettings: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        CompactBudgetCard(
+            amountLabel = state.budgetAmountLabel,
+            spentLabel = state.budgetSpentLabel,
+            remainingLabel = state.budgetRemainingLabel,
+            usageSummary = state.budgetUsageSummary,
+            usageRatio = state.budgetUsageRatio,
+            exceeded = state.budgetExceeded,
+            onOpenSettings = onOpenSettings,
+        )
+        InsightHighlightRow(insights = state.insights.take(2))
+    }
+}
+
+/** “趋势”分段在首页只展示一个轻量图表和一句提示。 */
+@Composable
+private fun OverviewTrendPanel(
+    title: String,
+    points: List<LedgerTrendPointUiModel>,
+    highlightMessage: String,
+    onOpenLedger: () -> Unit,
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpenPending),
+            .clickable(onClick = onOpenLedger),
         shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Surface(
-                modifier = Modifier.size(40.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = highlightMessage,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.Bottom,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Outlined.PendingActions,
-                        contentDescription = "待确认",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                points.takeLast(7).forEach { point ->
+                    val barHeight = 16.dp + 72.dp * point.ratio.coerceAtLeast(if (point.amountLabel == "0") 0f else 0.14f)
+                    Box(
+                        modifier = Modifier
+                            .width(22.dp)
+                            .height(barHeight)
+                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                            .background(
+                                if (point.isCurrent) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+                            ),
                     )
                 }
             }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = if (pendingCount > 0) "还有 $pendingCount 笔待确认记录" else "当前没有待确认记录",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = if (pendingCount > 0) {
-                        "建议优先处理，能让统计和总览更准确。"
-                    } else {
-                        "自动入账链路目前比较顺畅，可以去账本继续查看。"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             Text(
-                text = "查看",
+                text = "点击进入账本查看完整趋势",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -307,64 +358,55 @@ private fun PendingSummaryBanner(
     }
 }
 
-/** 四宫格快捷动作缩短首页高频操作路径。 */
+/** “分类”分段只保留最重要的三项支出分类，更符合首页的浏览节奏。 */
 @Composable
-private fun QuickActionGrid(
-    onCreateEntry: () -> Unit,
+private fun OverviewCategoryPanel(
+    categories: List<LedgerCategoryBreakdownUiModel>,
     onOpenLedger: () -> Unit,
-    onOpenPending: () -> Unit,
-    onOpenSettings: () -> Unit,
 ) {
-    val actions = listOf(
-        QuickActionItem("记一笔", "快速补记", Icons.Outlined.ReceiptLong, onCreateEntry),
-        QuickActionItem("账本", "看流水与分析", Icons.Outlined.BarChart, onOpenLedger),
-        QuickActionItem("待确认", "处理低置信度", Icons.Outlined.PendingActions, onOpenPending),
-        QuickActionItem("设置", "配置与工具", Icons.Outlined.Settings, onOpenSettings),
-    )
-
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        OverviewSectionHeader(
-            title = "快捷动作",
-            summary = "把高频动作前置到首页，减少在长页面里来回找入口。",
-        )
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenLedger),
+        shape = RoundedCornerShape(26.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            maxItemsInEachRow = 2,
         ) {
-            actions.forEach { action ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth(0.48f)
-                        .clickable(onClick = action.onClick),
-                    shape = RoundedCornerShape(24.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Surface(
-                            modifier = Modifier.size(40.dp),
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
+            Text(
+                text = "支出分类",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (categories.isEmpty()) {
+                Text(
+                    text = "先记几笔支出，这里会自动汇总主要分类。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                categories.take(3).forEach { category ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = action.icon,
-                                    contentDescription = action.title,
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                )
-                            }
+                            Text(
+                                text = category.category,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = category.ratioLabel,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                        Text(
-                            text = action.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = action.summary,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        LinearProgressIndicator(
+                            progress = { category.ratioValue },
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
@@ -373,9 +415,9 @@ private fun QuickActionGrid(
     }
 }
 
-/** 预算卡让总览页具备更强的“产品感”和行动引导。 */
+/** 预算卡文案改成用户语气，删掉开发说明式提示。 */
 @Composable
-private fun BudgetSummaryCard(
+private fun CompactBudgetCard(
     amountLabel: String?,
     spentLabel: String,
     remainingLabel: String,
@@ -394,10 +436,6 @@ private fun BudgetSummaryCard(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            OverviewSectionHeader(
-                title = "本月预算",
-                summary = usageSummary,
-            )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OverviewMetricCard(
                     label = "预算",
@@ -412,51 +450,38 @@ private fun BudgetSummaryCard(
                     modifier = Modifier.weight(1f),
                 )
             }
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = if (exceeded) Color(0xFFFFF1E8) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-            ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = remainingLabel,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (exceeded) Color(0xFFC65D21) else Color(0xFF0B6E4F),
-                    )
-                    androidx.compose.material3.LinearProgressIndicator(
-                        progress = { usageRatio },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text(
-                        text = "点击进入设置页调整预算",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
+            Text(
+                text = remainingLabel,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (exceeded) Color(0xFFC65D21) else Color(0xFF0B6E4F),
+            )
+            LinearProgressIndicator(
+                progress = { usageRatio },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                text = usageSummary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
 
-/** 总览页只展示少量洞察卡，避免再次把分析区塞回首页。 */
+/** 把洞察变成两张小卡，保留重点但不讲太多说明。 */
 @Composable
-private fun InsightSummarySection(
+private fun InsightHighlightRow(
     insights: List<LedgerInsightUiModel>,
 ) {
-    if (insights.isEmpty()) {
-        return
-    }
+    if (insights.isEmpty()) return
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        OverviewSectionHeader(
-            title = "本月提醒",
-            summary = "只保留最值得看的两条信息，节奏更轻一些。",
-        )
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         insights.forEach { insight ->
-            Card(shape = RoundedCornerShape(24.dp)) {
+            Card(
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(22.dp),
+            ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -475,8 +500,10 @@ private fun InsightSummarySection(
                     )
                     Text(
                         text = insight.supporting,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -568,6 +595,24 @@ private fun OverviewEntryCard(
     }
 }
 
+/** 首页切换分段定义。 */
+private enum class OverviewPanel(
+    val label: String,
+) {
+    SUMMARY("概览"),
+    TREND("趋势"),
+    CATEGORY("分类"),
+}
+
+/** 把首页副标题改成更贴近用户理解的一句话。 */
+private fun buildOverviewSubtitle(state: LedgerUiState): String {
+    return when {
+        state.entries.isEmpty() -> "还没有记录，先记一笔开始。"
+        state.netPositive -> "这个月还有结余，收支状态比较轻松。"
+        else -> "这个月支出偏高，记得回看趋势和分类。"
+    }
+}
+
 /** 总览页通用区块标题，统一标题与说明层级。 */
 @Composable
 private fun OverviewSectionHeader(
@@ -587,11 +632,3 @@ private fun OverviewSectionHeader(
         )
     }
 }
-
-/** 快捷动作的数据承载模型。 */
-private data class QuickActionItem(
-    val title: String,
-    val summary: String,
-    val icon: ImageVector,
-    val onClick: () -> Unit,
-)

@@ -27,14 +27,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.PendingActions
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -71,8 +70,6 @@ import java.time.LocalDate
  * - onPreviousMonthClick：日历向前翻月回调。
  * - onNextMonthClick：日历向后翻月回调。
  * - onCalendarDateClick：点击日期格子的回调。
- * - onOpenPending：跳转到待确认页的回调。
- * - onOpenSettings：跳转到设置页的回调。
  * - onAddClick：新建记账的回调。
  * - onEntryClick：打开账本详情的回调。
  * - modifier：外层修饰符。
@@ -86,8 +83,6 @@ fun LedgerWorkspaceScreen(
     onPreviousMonthClick: () -> Unit,
     onNextMonthClick: () -> Unit,
     onCalendarDateClick: (LocalDate) -> Unit,
-    onOpenPending: () -> Unit,
-    onOpenSettings: () -> Unit,
     onAddClick: () -> Unit,
     onEntryClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
@@ -102,21 +97,15 @@ fun LedgerWorkspaceScreen(
         item(key = "ledger_header") {
             LedgerTopSummaryCard(
                 state = state,
-                onOpenPending = onOpenPending,
-                onOpenSettings = onOpenSettings,
                 modifier = Modifier.statusBarsPadding(),
             )
         }
         item(key = "ledger_filters") {
             LedgerFilterCard(
                 state = state,
+                selectedSegment = selectedSegment,
                 onSearchChange = onSearchChange,
                 onRangeChange = onRangeChange,
-            )
-        }
-        item(key = "ledger_segments") {
-            SegmentSelector(
-                selectedSegment = selectedSegment,
                 onSegmentSelected = { segment ->
                     selectedSegment = segment
                     // 切到日历分段时同步切换账期，保证下方内容立刻进入按天视图。
@@ -150,22 +139,11 @@ fun LedgerWorkspaceScreen(
                 item(key = "trend_header") {
                     LedgerSectionHeader(title = state.trendTitle, summary = state.trendSubtitle)
                 }
-                item(key = "trend_budget") {
-                    LedgerBudgetCard(
-                        amountLabel = state.budgetAmountLabel,
-                        spentLabel = state.budgetSpentLabel,
-                        remainingLabel = state.budgetRemainingLabel,
-                        usageSummary = state.budgetUsageSummary,
-                        usageRatio = state.budgetUsageRatio,
-                        exceeded = state.budgetExceeded,
-                        onOpenSettings = onOpenSettings,
-                    )
-                }
                 item(key = "trend_chart") {
                     TrendCard(points = state.trendPoints)
                 }
-                item(key = "trend_bill_cycle") {
-                    BillCycleSummaryCard(state = state)
+                item(key = "trend_insight") {
+                    TrendInsightCard(points = state.trendPoints)
                 }
             }
             LedgerSegment.Category -> {
@@ -173,17 +151,6 @@ fun LedgerWorkspaceScreen(
                     LedgerSectionHeader(
                         title = "分类分布",
                         summary = "把主要支出分类放到一屏里，更方便快速定位花销重心。",
-                    )
-                }
-                item(key = "category_budget") {
-                    LedgerBudgetCard(
-                        amountLabel = state.budgetAmountLabel,
-                        spentLabel = state.budgetSpentLabel,
-                        remainingLabel = state.budgetRemainingLabel,
-                        usageSummary = state.budgetUsageSummary,
-                        usageRatio = state.budgetUsageRatio,
-                        exceeded = state.budgetExceeded,
-                        onOpenSettings = onOpenSettings,
                     )
                 }
                 item(key = "category_breakdown") {
@@ -232,8 +199,6 @@ fun LedgerWorkspaceScreen(
 @Composable
 private fun LedgerTopSummaryCard(
     state: LedgerUiState,
-    onOpenPending: () -> Unit,
-    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -247,7 +212,6 @@ private fun LedgerTopSummaryCard(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top,
             ) {
                 Column(
@@ -265,21 +229,9 @@ private fun LedgerTopSummaryCard(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = state.periodSubtitle,
+                        text = buildLedgerHeaderSummary(state),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TopActionChip(
-                        label = if (state.pendingCount > 0) "待确认 ${state.pendingCount}" else "待确认",
-                        onClick = onOpenPending,
-                        icon = Icons.Outlined.PendingActions,
-                    )
-                    TopActionChip(
-                        label = "设置",
-                        onClick = onOpenSettings,
-                        icon = Icons.Outlined.Settings,
                     )
                 }
             }
@@ -311,8 +263,10 @@ private fun LedgerTopSummaryCard(
 @Composable
 private fun LedgerFilterCard(
     state: LedgerUiState,
+    selectedSegment: LedgerSegment,
     onSearchChange: (String) -> Unit,
     onRangeChange: (LedgerRangeFilter) -> Unit,
+    onSegmentSelected: (LedgerSegment) -> Unit,
 ) {
     val chipScrollState = rememberScrollState()
 
@@ -321,11 +275,6 @@ private fun LedgerFilterCard(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                text = "搜索与账期",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
             OutlinedTextField(
                 value = state.searchQuery,
                 onValueChange = onSearchChange,
@@ -347,28 +296,18 @@ private fun LedgerFilterCard(
                     )
                 }
             }
-        }
-    }
-}
-
-/** 二级分段把账本内容控制在一个清晰的浏览维度内。 */
-@Composable
-private fun SegmentSelector(
-    selectedSegment: LedgerSegment,
-    onSegmentSelected: (LedgerSegment) -> Unit,
-) {
-    Card(shape = RoundedCornerShape(24.dp)) {
-        FlowRow(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            LedgerSegment.entries.forEach { segment ->
-                FilterChip(
-                    selected = segment == selectedSegment,
-                    onClick = { onSegmentSelected(segment) },
-                    label = { Text(segment.label) },
-                )
+            HorizontalDivider()
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LedgerSegment.entries.forEach { segment ->
+                    FilterChip(
+                        selected = segment == selectedSegment,
+                        onClick = { onSegmentSelected(segment) },
+                        label = { Text(segment.label) },
+                    )
+                }
             }
         }
     }
@@ -394,60 +333,68 @@ private fun LedgerSectionHeader(
     }
 }
 
-/** 预算卡在账本分析分段里同步呈现占用情况，帮助用户把趋势和预算关联起来。 */
+/** 趋势分段下补一张摘要卡，比“周/月/年账期卡组”更聚焦当前消费波动。 */
 @Composable
-private fun LedgerBudgetCard(
-    amountLabel: String?,
-    spentLabel: String,
-    remainingLabel: String,
-    usageSummary: String,
-    usageRatio: Float,
-    exceeded: Boolean,
-    onOpenSettings: () -> Unit,
+private fun TrendInsightCard(
+    points: List<LedgerTrendPointUiModel>,
+) {
+    val peakPoint = points.maxByOrNull { it.ratio }
+    val currentPoint = points.lastOrNull()
+
+    Card(shape = RoundedCornerShape(26.dp)) {
+        Row(
+            modifier = Modifier.padding(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            InsightMetricCard(
+                title = "峰值",
+                value = peakPoint?.amountLabel ?: "0",
+                supporting = peakPoint?.label ?: "暂无",
+                modifier = Modifier.weight(1f),
+            )
+            InsightMetricCard(
+                title = "最近",
+                value = currentPoint?.amountLabel ?: "0",
+                supporting = currentPoint?.label ?: "暂无",
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+/** 小型指标卡只承载一个数字和一个标签，减少冗余描述。 */
+@Composable
+private fun InsightMetricCard(
+    title: String,
+    value: String,
+    supporting: String,
+    modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onOpenSettings),
-        shape = RoundedCornerShape(26.dp),
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = "预算进度",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = usageSummary,
-                style = MaterialTheme.typography.bodyMedium,
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                LedgerMetricCard(
-                    label = "预算",
-                    value = amountLabel ?: "未设置",
-                    valueColor = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                LedgerMetricCard(
-                    label = "支出",
-                    value = spentLabel,
-                    valueColor = Color(0xFFC65D21),
-                    modifier = Modifier.weight(1f),
-                )
-            }
             Text(
-                text = remainingLabel,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = if (exceeded) Color(0xFFC65D21) else Color(0xFF0B6E4F),
+                text = value,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            androidx.compose.material3.LinearProgressIndicator(
-                progress = { usageRatio },
-                modifier = Modifier.fillMaxWidth(),
+            Text(
+                text = supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -840,29 +787,6 @@ private fun LedgerEmptyCard(
     }
 }
 
-/** 顶部辅助动作统一成胶囊样式，减少按钮种类。 */
-@Composable
-private fun TopActionChip(
-    label: String,
-    onClick: () -> Unit,
-    icon: ImageVector,
-) {
-    Surface(
-        modifier = Modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(imageVector = icon, contentDescription = label, modifier = Modifier.size(16.dp))
-            Text(text = label, style = MaterialTheme.typography.labelLarge)
-        }
-    }
-}
-
 /** 顶部指标卡对金额做单行限制，避免大金额换行挤压布局。 */
 @Composable
 private fun LedgerMetricCard(
@@ -960,4 +884,14 @@ private fun LedgerRangeFilter.toDisplayLabel(): String = when (this) {
     LedgerRangeFilter.YEAR -> "本年"
     LedgerRangeFilter.CALENDAR -> "日历"
     LedgerRangeFilter.ALL -> "全部"
+}
+
+/** 账本页顶部摘要只保留用户真正在意的信息。 */
+private fun buildLedgerHeaderSummary(state: LedgerUiState): String {
+    return when {
+        state.searchQuery.isNotBlank() -> "搜索结果 ${state.entries.size} 笔"
+        state.selectedRange == LedgerRangeFilter.CALENDAR -> "逐天回看收支"
+        state.entries.isEmpty() -> "当前账期暂无记录"
+        else -> "共 ${state.entries.size} 笔 · ${state.rangeSummary}"
+    }
 }
