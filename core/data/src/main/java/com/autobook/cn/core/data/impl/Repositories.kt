@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.autobook.cn.core.data.CaptureCoordinator
@@ -33,6 +34,7 @@ import com.autobook.cn.core.model.PendingEntry
 import com.autobook.cn.core.model.ProcessDestination
 import com.autobook.cn.core.model.TransactionCandidate
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.text.DecimalFormat
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -148,11 +150,13 @@ class SettingsRepositoryImpl @Inject constructor(
         /** 本地语义增强（LLM 预留）开关的持久化键，暂时用于启发式通路，后续替换真机 LLM 时可直接复用。 */
         val localLlmConfidenceBoostEnabled = booleanPreferencesKey("local_llm_confidence_boost_enabled")
         /** 当前选择的本地模型标识，默认指向推荐的 Qwen3 1.7B 量化模型。 */
-        val selectedLocalModelId = androidx.datastore.preferences.core.stringPreferencesKey("selected_local_model_id")
+        val selectedLocalModelId = stringPreferencesKey("selected_local_model_id")
         val captureEnabled = booleanPreferencesKey("capture_enabled")
         val ocrEnabled = booleanPreferencesKey("ocr_enabled")
         val notificationRetentionDays = intPreferencesKey("notification_retention_days")
         val screenshotRetentionDays = intPreferencesKey("screenshot_retention_days")
+        /** 按月份保存预算的轻量字符串，格式为 `yyyy-MM=1234.5;yyyy-MM=2500`。 */
+        val monthlyBudgets = stringPreferencesKey("monthly_budgets")
         val enabledSources = stringSetPreferencesKey("enabled_sources")
     }
 
@@ -169,6 +173,7 @@ class SettingsRepositoryImpl @Inject constructor(
             ocrEnabled = preferences[Keys.ocrEnabled] ?: false,
             notificationRetentionDays = preferences[Keys.notificationRetentionDays] ?: 30,
             screenshotRetentionDays = preferences[Keys.screenshotRetentionDays] ?: 7,
+            monthlyBudgets = parseMonthlyBudgets(preferences[Keys.monthlyBudgets].orEmpty()),
             enabledSources = sourceNames.mapNotNullTo(mutableSetOf()) { name ->
                 NotificationSourceApp.entries.firstOrNull { it.name == name }
             }.ifEmpty { DEFAULT_SOURCES },
@@ -211,6 +216,24 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setScreenshotRetentionDays(days: Int) {
         context.settingsDataStore.edit { it[Keys.screenshotRetentionDays] = days.coerceIn(1, 30) }
+    }
+
+    /** 预算采用轻量字符串存储，避免为了界面增强去引入新的数据库表。 */
+    override suspend fun setMonthlyBudget(monthKey: String, amount: Double) {
+        context.settingsDataStore.edit { preferences ->
+            val existingBudgets = parseMonthlyBudgets(preferences[Keys.monthlyBudgets].orEmpty()).toMutableMap()
+            existingBudgets[monthKey] = amount.coerceAtLeast(0.0)
+            preferences[Keys.monthlyBudgets] = serializeMonthlyBudgets(existingBudgets)
+        }
+    }
+
+    /** 清除某个月预算时只移除对应键，不影响其它月份。 */
+    override suspend fun clearMonthlyBudget(monthKey: String) {
+        context.settingsDataStore.edit { preferences ->
+            val existingBudgets = parseMonthlyBudgets(preferences[Keys.monthlyBudgets].orEmpty()).toMutableMap()
+            existingBudgets.remove(monthKey)
+            preferences[Keys.monthlyBudgets] = serializeMonthlyBudgets(existingBudgets)
+        }
     }
 
     override suspend fun setSourceEnabled(source: NotificationSourceApp, enabled: Boolean) {
@@ -390,3 +413,29 @@ private fun csvEscape(value: Any?): String {
 private fun sanitize(message: String): String {
     return message.replace(Regex("""\d{6,}"""), "******")
 }
+
+/** 解析预算字符串时忽略脏数据，避免旧版本格式变化导致读取崩溃。 */
+private fun parseMonthlyBudgets(rawValue: String): Map<String, Double> {
+    if (rawValue.isBlank()) return emptyMap()
+    return rawValue.split(";")
+        .mapNotNull { entry ->
+            val separatorIndex = entry.indexOf('=')
+            if (separatorIndex <= 0 || separatorIndex == entry.lastIndex) {
+                return@mapNotNull null
+            }
+            val monthKey = entry.substring(0, separatorIndex)
+            val amount = entry.substring(separatorIndex + 1).toDoubleOrNull() ?: return@mapNotNull null
+            monthKey to amount
+        }
+        .toMap()
+}
+
+/** 序列化时统一保留两位以内小数，方便后续人工排查 DataStore 内容。 */
+private fun serializeMonthlyBudgets(budgets: Map<String, Double>): String {
+    if (budgets.isEmpty()) return ""
+    return budgets.toSortedMap().entries.joinToString(separator = ";") { (monthKey, amount) ->
+        "$monthKey=${BUDGET_AMOUNT_FORMAT.format(amount)}"
+    }
+}
+
+private val BUDGET_AMOUNT_FORMAT = DecimalFormat("0.##")

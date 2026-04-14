@@ -5,14 +5,15 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import com.autobook.cn.app.ui.EntryEditorScreen
-import com.autobook.cn.app.ui.SettingsScreen
+import com.autobook.cn.app.ui.LedgerWorkspaceScreen
+import com.autobook.cn.app.ui.OverviewScreen
+import com.autobook.cn.app.ui.PendingWorkspaceScreen
+import com.autobook.cn.app.ui.SettingsWorkspaceScreen
 import com.autobook.cn.app.viewmodel.EntryEditorUiState
 import com.autobook.cn.app.viewmodel.SettingsUiState
-import com.autobook.cn.feature.ledger.LedgerScreen
 import com.autobook.cn.feature.ledger.LedgerUiState
 import com.autobook.cn.feature.onboarding.OnboardingScreen
 import com.autobook.cn.feature.onboarding.OnboardingUiState
-import com.autobook.cn.feature.pending.PendingScreen
 import com.autobook.cn.feature.pending.PendingUiState
 import java.time.LocalDate
 import org.junit.Rule
@@ -41,29 +42,25 @@ class ScreenSmokeTest {
     }
 
     @Test
-    fun ledgerScreenRenders() {
+    fun overviewScreenRenders() {
         composeRule.setContent {
-            LedgerScreen(
+            OverviewScreen(
                 state = LedgerUiState(),
-                onSearchChange = {},
-                onRangeChange = {},
-                onPendingClick = {},
-                onSettingsClick = {},
-                onAddClick = {},
-                onEntryClick = {},
-                onPreviousMonthClick = {},
-                onNextMonthClick = {},
-                onCalendarDateClick = { _ -> },
+                onCreateEntry = {},
+                onOpenLedger = {},
+                onOpenPending = {},
+                onOpenSettings = {},
+                onOpenEntry = {},
             )
         }
 
-        composeRule.onNodeWithText("账本").assertIsDisplayed()
+        composeRule.onNodeWithText("总览").assertIsDisplayed()
     }
 
     @Test
-    fun ledgerCalendarModeRenders() {
+    fun ledgerWorkspaceScreenRenders() {
         composeRule.setContent {
-            LedgerScreen(
+            LedgerWorkspaceScreen(
                 state = LedgerUiState(
                     selectedRange = com.autobook.cn.feature.ledger.LedgerRangeFilter.CALENDAR,
                     calendarMonthLabel = "2026年4月",
@@ -81,30 +78,31 @@ class ScreenSmokeTest {
                 ),
                 onSearchChange = {},
                 onRangeChange = {},
-                onPendingClick = {},
-                onSettingsClick = {},
-                onAddClick = {},
-                onEntryClick = {},
                 onPreviousMonthClick = {},
                 onNextMonthClick = {},
                 onCalendarDateClick = { _ -> },
+                onOpenPending = {},
+                onOpenSettings = {},
+                onAddClick = {},
+                onEntryClick = {},
             )
         }
 
+        composeRule.onNodeWithText("账本").assertIsDisplayed()
         composeRule.onNodeWithText("2026年4月").assertIsDisplayed()
-        composeRule.onNodeWithText("4月13日 星期一 · 0 条记录").assertIsDisplayed()
     }
 
     @Test
-    fun pendingScreenRenders() {
+    fun pendingWorkspaceScreenRenders() {
         composeRule.setContent {
-            PendingScreen(
+            PendingWorkspaceScreen(
                 state = PendingUiState(),
-                onBack = {},
                 onConfirm = {},
                 onEdit = {},
                 onIgnore = {},
                 onFalsePositive = {},
+                onOpenLedger = {},
+                onCreateEntry = {},
             )
         }
 
@@ -112,24 +110,28 @@ class ScreenSmokeTest {
     }
 
     @Test
-    fun settingsScreenRenders() {
+    fun settingsWorkspaceScreenRenders() {
         composeRule.setContent {
-            SettingsScreen(
+            SettingsWorkspaceScreen(
                 state = SettingsUiState(),
-                onBack = {},
                 onAutoAccountingChanged = {},
                 onCloudAnalysisChanged = {},
                 onCaptureEnabledChanged = {},
                 onOcrEnabledChanged = {},
+                onLocalLlmConfidenceBoostChanged = {},
+                onSelectedLocalModelChanged = {},
+                onDownloadSelectedLocalModel = {},
+                onRefreshLocalModelState = {},
                 onNotificationRetentionChanged = {},
-                onScreenshotRetentionChanged = { },
+                onScreenshotRetentionChanged = {},
                 onSourceEnabledChanged = { _, _ -> },
+                onSaveCurrentMonthBudget = {},
                 onLoadExportPreview = {},
             )
         }
 
-        composeRule.onNodeWithText("设置").assertIsDisplayed()
-        composeRule.onNodeWithText("本地账本概览").assertIsDisplayed()
+        composeRule.onNodeWithText("设置与工具").assertIsDisplayed()
+        composeRule.onNodeWithText("本月预算").assertIsDisplayed()
     }
 
     @Test

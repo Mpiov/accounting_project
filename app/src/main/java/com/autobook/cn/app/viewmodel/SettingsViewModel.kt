@@ -22,6 +22,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.inject.Inject
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +57,15 @@ data class SettingsUiState(
     val manualEntries: Int = 0,
     val autoEntries: Int = 0,
     val pendingEntries: Int = 0,
+    /** 当前月份标签，供预算卡和概览卡统一展示。 */
+    val currentMonthLabel: String = "本月",
+    /** 当前月份预算输入框的默认值，不带货币符号，方便用户直接编辑。 */
+    val currentMonthBudgetInput: String = "",
+    val currentMonthBudgetLabel: String = "未设置",
+    val currentMonthBudgetUsageSummary: String = "保存预算后，这里会自动展示本月剩余额度。",
+    val currentMonthBudgetRemainingLabel: String = "去设置预算",
+    val currentMonthBudgetUsageRatio: Float = 0f,
+    val currentMonthBudgetExceeded: Boolean = false,
     val currentMonthIncome: String = "¥0.00",
     val currentMonthExpense: String = "¥0.00",
     val latestEntrySummary: String = "暂无记账记录",
@@ -80,7 +90,11 @@ class SettingsViewModel @Inject constructor(
         pendingRepository.observeEntries(),
         exportPreview,
     ) { settings, localModelSnapshot, entries, pendingEntries, preview ->
-        val overview = buildSettingsOverview(entries = entries, pendingCount = pendingEntries.size)
+        val overview = buildSettingsOverview(
+            entries = entries,
+            pendingCount = pendingEntries.size,
+            monthlyBudgets = settings.monthlyBudgets,
+        )
             SettingsUiState(
                 autoAccountingEnabled = settings.autoAccountingEnabled,
                 cloudAnalysisEnabled = settings.cloudAnalysisEnabled,
@@ -100,6 +114,13 @@ class SettingsViewModel @Inject constructor(
                 manualEntries = overview.manualEntries,
                 autoEntries = overview.autoEntries,
                 pendingEntries = overview.pendingEntries,
+                currentMonthLabel = overview.currentMonthLabel,
+                currentMonthBudgetInput = overview.currentMonthBudgetInput,
+                currentMonthBudgetLabel = overview.currentMonthBudgetLabel,
+                currentMonthBudgetUsageSummary = overview.currentMonthBudgetUsageSummary,
+                currentMonthBudgetRemainingLabel = overview.currentMonthBudgetRemainingLabel,
+                currentMonthBudgetUsageRatio = overview.currentMonthBudgetUsageRatio,
+                currentMonthBudgetExceeded = overview.currentMonthBudgetExceeded,
                 currentMonthIncome = overview.currentMonthIncome,
                 currentMonthExpense = overview.currentMonthExpense,
                 latestEntrySummary = overview.latestEntrySummary,
@@ -157,6 +178,25 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.setScreenshotRetentionDays(days) }
     }
 
+    /**
+     * 保存当前月份预算。
+     *
+     * 参数说明：
+     * - amountInput：来自设置页输入框的文本；留空代表清除本月预算。
+     */
+    fun saveCurrentMonthBudget(amountInput: String) {
+        viewModelScope.launch {
+            val normalizedInput = amountInput.trim()
+            val currentMonthKey = YearMonth.now().toString()
+            if (normalizedInput.isBlank()) {
+                settingsRepository.clearMonthlyBudget(currentMonthKey)
+                return@launch
+            }
+            val amount = normalizedInput.toDoubleOrNull() ?: return@launch
+            settingsRepository.setMonthlyBudget(currentMonthKey, amount)
+        }
+    }
+
     fun setSourceEnabled(
         source: NotificationSourceApp,
         enabled: Boolean,
@@ -177,6 +217,13 @@ internal data class SettingsLedgerOverview(
     val manualEntries: Int,
     val autoEntries: Int,
     val pendingEntries: Int,
+    val currentMonthLabel: String,
+    val currentMonthBudgetInput: String,
+    val currentMonthBudgetLabel: String,
+    val currentMonthBudgetUsageSummary: String,
+    val currentMonthBudgetRemainingLabel: String,
+    val currentMonthBudgetUsageRatio: Float,
+    val currentMonthBudgetExceeded: Boolean,
     val currentMonthIncome: String,
     val currentMonthExpense: String,
     val latestEntrySummary: String,
@@ -185,6 +232,7 @@ internal data class SettingsLedgerOverview(
 internal fun buildSettingsOverview(
     entries: List<LedgerEntry>,
     pendingCount: Int,
+    monthlyBudgets: Map<String, Double> = emptyMap(),
     today: LocalDate = LocalDate.now(),
 ): SettingsLedgerOverview {
     val currentMonth = YearMonth.from(today)
@@ -196,12 +244,36 @@ internal fun buildSettingsOverview(
     val currentMonthExpense = currentMonthEntries
         .filter { it.direction == MoneyDirection.EXPENSE }
         .sumOf { it.amount }
+    val currentMonthBudget = monthlyBudgets[currentMonth.toString()]?.takeIf { it > 0.0 }
+    val budgetRemaining = currentMonthBudget?.minus(currentMonthExpense)
+    val budgetRatio = if (currentMonthBudget == null || currentMonthBudget <= 0.0) {
+        0f
+    } else {
+        (currentMonthExpense / currentMonthBudget).coerceIn(0.0, 1.0).toFloat()
+    }
     val latestEntry = entries.maxByOrNull { it.timestamp }
     return SettingsLedgerOverview(
         totalEntries = entries.size,
         manualEntries = manualEntries,
         autoEntries = entries.size - manualEntries,
         pendingEntries = pendingCount,
+        currentMonthLabel = currentMonth.format(MONTH_LABEL_FORMATTER),
+        currentMonthBudgetInput = formatBudgetInput(currentMonthBudget),
+        currentMonthBudgetLabel = currentMonthBudget?.let(CurrencyFormatter::format) ?: "未设置",
+        currentMonthBudgetUsageSummary = if (currentMonthBudget == null) {
+            "清空输入后保存可移除预算，设置后总览页会自动展示剩余额度。"
+        } else {
+            "已用 ${((currentMonthExpense / currentMonthBudget) * 100).roundToInt()}% · 支出 ${CurrencyFormatter.format(currentMonthExpense)} / 预算 ${CurrencyFormatter.format(currentMonthBudget)}"
+        },
+        currentMonthBudgetRemainingLabel = if (budgetRemaining == null) {
+            "去设置预算"
+        } else if (budgetRemaining >= 0.0) {
+            "剩余 ${CurrencyFormatter.format(budgetRemaining)}"
+        } else {
+            "超出 ${CurrencyFormatter.format(kotlin.math.abs(budgetRemaining))}"
+        },
+        currentMonthBudgetUsageRatio = budgetRatio,
+        currentMonthBudgetExceeded = budgetRemaining != null && budgetRemaining < 0.0,
         currentMonthIncome = CurrencyFormatter.format(currentMonthIncome),
         currentMonthExpense = CurrencyFormatter.format(currentMonthExpense),
         latestEntrySummary = latestEntry?.let { entry ->
@@ -227,4 +299,14 @@ private fun Long.toLocalDate(): LocalDate {
         .toLocalDate()
 }
 
+/** 预算输入框不显示货币符号，便于用户直接修改数字。 */
+private fun formatBudgetInput(amount: Double?): String {
+    return when {
+        amount == null -> ""
+        amount % 1.0 == 0.0 -> amount.toLong().toString()
+        else -> amount.toString()
+    }
+}
+
+private val MONTH_LABEL_FORMATTER = DateTimeFormatter.ofPattern("yyyy 年 M 月", Locale.CHINA)
 private val EXPORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.CHINA)

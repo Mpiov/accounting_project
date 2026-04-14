@@ -150,6 +150,17 @@ fun LedgerWorkspaceScreen(
                 item(key = "trend_header") {
                     LedgerSectionHeader(title = state.trendTitle, summary = state.trendSubtitle)
                 }
+                item(key = "trend_budget") {
+                    LedgerBudgetCard(
+                        amountLabel = state.budgetAmountLabel,
+                        spentLabel = state.budgetSpentLabel,
+                        remainingLabel = state.budgetRemainingLabel,
+                        usageSummary = state.budgetUsageSummary,
+                        usageRatio = state.budgetUsageRatio,
+                        exceeded = state.budgetExceeded,
+                        onOpenSettings = onOpenSettings,
+                    )
+                }
                 item(key = "trend_chart") {
                     TrendCard(points = state.trendPoints)
                 }
@@ -162,6 +173,17 @@ fun LedgerWorkspaceScreen(
                     LedgerSectionHeader(
                         title = "分类分布",
                         summary = "把主要支出分类放到一屏里，更方便快速定位花销重心。",
+                    )
+                }
+                item(key = "category_budget") {
+                    LedgerBudgetCard(
+                        amountLabel = state.budgetAmountLabel,
+                        spentLabel = state.budgetSpentLabel,
+                        remainingLabel = state.budgetRemainingLabel,
+                        usageSummary = state.budgetUsageSummary,
+                        usageRatio = state.budgetUsageRatio,
+                        exceeded = state.budgetExceeded,
+                        onOpenSettings = onOpenSettings,
                     )
                 }
                 item(key = "category_breakdown") {
@@ -369,6 +391,65 @@ private fun LedgerSectionHeader(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/** 预算卡在账本分析分段里同步呈现占用情况，帮助用户把趋势和预算关联起来。 */
+@Composable
+private fun LedgerBudgetCard(
+    amountLabel: String?,
+    spentLabel: String,
+    remainingLabel: String,
+    usageSummary: String,
+    usageRatio: Float,
+    exceeded: Boolean,
+    onOpenSettings: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenSettings),
+        shape = RoundedCornerShape(26.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "预算进度",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = usageSummary,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                LedgerMetricCard(
+                    label = "预算",
+                    value = amountLabel ?: "未设置",
+                    valueColor = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                LedgerMetricCard(
+                    label = "支出",
+                    value = spentLabel,
+                    valueColor = Color(0xFFC65D21),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Text(
+                text = remainingLabel,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (exceeded) Color(0xFFC65D21) else Color(0xFF0B6E4F),
+            )
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { usageRatio },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

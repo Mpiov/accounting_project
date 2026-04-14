@@ -171,6 +171,22 @@ interface SettingsRepository {
     suspend fun setOcrEnabled(enabled: Boolean)
     suspend fun setNotificationRetentionDays(days: Int)
     suspend fun setScreenshotRetentionDays(days: Int)
+    /**
+     * 写入指定月份的预算金额。
+     *
+     * 参数说明：
+     * - monthKey：`yyyy-MM` 格式的月份键。
+     * - amount：预算金额，单位为元。
+     */
+    suspend fun setMonthlyBudget(monthKey: String, amount: Double) = Unit
+
+    /**
+     * 清除指定月份的预算金额。
+     *
+     * 参数说明：
+     * - monthKey：`yyyy-MM` 格式的月份键。
+     */
+    suspend fun clearMonthlyBudget(monthKey: String) = Unit
     suspend fun setSourceEnabled(source: NotificationSourceApp, enabled: Boolean)
 }
 

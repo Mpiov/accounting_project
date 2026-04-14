@@ -155,6 +155,13 @@ data class LedgerUiState(
     val trendSubtitle: String = "把最近消费波动放到一个地方看清楚",
     val trendPoints: List<LedgerTrendPointUiModel> = emptyList(),
     val categoryBreakdown: List<LedgerCategoryBreakdownUiModel> = emptyList(),
+    /** 预算金额为空时代表当前月份还未设置预算。 */
+    val budgetAmountLabel: String? = null,
+    val budgetSpentLabel: String = "¥0.00",
+    val budgetRemainingLabel: String = "去设置预算",
+    val budgetUsageSummary: String = "设置本月预算后，这里会自动追踪剩余额度。",
+    val budgetUsageRatio: Float = 0f,
+    val budgetExceeded: Boolean = false,
     val highlightMessage: String = "待确认、趋势和分类分布都会在这里汇总",
     val entriesSummary: String = "当前筛选下暂无流水",
     val entries: List<LedgerItemUiModel> = emptyList(),

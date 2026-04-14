@@ -17,6 +17,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -31,11 +34,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.autobook.cn.app.ui.LedgerWorkspaceScreen
 import com.autobook.cn.app.ui.OverviewScreen
-import com.autobook.cn.app.ui.SettingsScreen
+import com.autobook.cn.app.ui.PendingWorkspaceScreen
+import com.autobook.cn.app.ui.QuickActionSheet
+import com.autobook.cn.app.ui.SettingsWorkspaceScreen
 import com.autobook.cn.app.viewmodel.LedgerViewModel
 import com.autobook.cn.app.viewmodel.PendingViewModel
 import com.autobook.cn.app.viewmodel.SettingsViewModel
-import com.autobook.cn.feature.pending.PendingScreen
+import com.autobook.cn.core.model.MoneyDirection
 
 /**
  * 主壳层负责承载一级页面与底部导航。
@@ -53,6 +58,7 @@ fun MainShell(
     val navBackStackEntry by shellNavController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val currentTab = MainShellTab.match(currentDestination) ?: MainShellTab.Overview
+    var showQuickActionSheet by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -72,7 +78,7 @@ fun MainShell(
         floatingActionButton = {
             if (currentTab != MainShellTab.Settings) {
                 FloatingActionButton(
-                    onClick = { rootNavController.navigate(AutobookDestination.EntryCreate.createRoute()) },
+                    onClick = { showQuickActionSheet = true },
                 ) {
                     Icon(imageVector = Icons.Outlined.Add, contentDescription = "记一笔")
                 }
@@ -124,24 +130,24 @@ fun MainShell(
                 val viewModel: PendingViewModel = hiltViewModel()
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-                PendingScreen(
+                PendingWorkspaceScreen(
                     state = state,
-                    onBack = {},
                     onConfirm = viewModel::confirmPending,
                     onEdit = { pendingId ->
                         rootNavController.navigate(AutobookDestination.PendingResolve.createRoute(pendingId))
                     },
                     onIgnore = viewModel::ignorePending,
                     onFalsePositive = viewModel::markFalsePositive,
+                    onOpenLedger = { shellNavController.navigateToMainTab(MainShellTab.Ledger) },
+                    onCreateEntry = { showQuickActionSheet = true },
                 )
             }
             composable(AutobookDestination.MainSettings.route) {
                 val viewModel: SettingsViewModel = hiltViewModel()
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-                SettingsScreen(
+                SettingsWorkspaceScreen(
                     state = state,
-                    onBack = {},
                     onAutoAccountingChanged = viewModel::setAutoAccountingEnabled,
                     onCloudAnalysisChanged = viewModel::setCloudAnalysisEnabled,
                     onCaptureEnabledChanged = viewModel::setCaptureEnabled,
@@ -153,10 +159,32 @@ fun MainShell(
                     onNotificationRetentionChanged = viewModel::setNotificationRetentionDays,
                     onScreenshotRetentionChanged = viewModel::setScreenshotRetentionDays,
                     onSourceEnabledChanged = viewModel::setSourceEnabled,
+                    onSaveCurrentMonthBudget = viewModel::saveCurrentMonthBudget,
                     onLoadExportPreview = viewModel::loadExportPreview,
                 )
             }
         }
+    }
+    if (showQuickActionSheet) {
+        QuickActionSheet(
+            onDismiss = { showQuickActionSheet = false },
+            onExpenseClick = {
+                showQuickActionSheet = false
+                rootNavController.navigate(AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.EXPENSE))
+            },
+            onIncomeClick = {
+                showQuickActionSheet = false
+                rootNavController.navigate(AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.INCOME))
+            },
+            onTemplateClick = { templateId ->
+                showQuickActionSheet = false
+                rootNavController.navigate(AutobookDestination.EntryCreate.createRoute(templateId = templateId))
+            },
+            onPendingSupplementClick = {
+                showQuickActionSheet = false
+                shellNavController.navigateToMainTab(MainShellTab.Pending)
+            },
+        )
     }
 }
 

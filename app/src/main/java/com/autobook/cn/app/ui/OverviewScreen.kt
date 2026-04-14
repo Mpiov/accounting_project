@@ -94,6 +94,17 @@ fun OverviewScreen(
                 onOpenSettings = onOpenSettings,
             )
         }
+        item(key = "budget_summary") {
+            BudgetSummaryCard(
+                amountLabel = state.budgetAmountLabel,
+                spentLabel = state.budgetSpentLabel,
+                remainingLabel = state.budgetRemainingLabel,
+                usageSummary = state.budgetUsageSummary,
+                usageRatio = state.budgetUsageRatio,
+                exceeded = state.budgetExceeded,
+                onOpenSettings = onOpenSettings,
+            )
+        }
         item(key = "insights") {
             InsightSummarySection(insights = state.insights.take(2))
         }
@@ -356,6 +367,74 @@ private fun QuickActionGrid(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+/** 预算卡让总览页具备更强的“产品感”和行动引导。 */
+@Composable
+private fun BudgetSummaryCard(
+    amountLabel: String?,
+    spentLabel: String,
+    remainingLabel: String,
+    usageSummary: String,
+    usageRatio: Float,
+    exceeded: Boolean,
+    onOpenSettings: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenSettings),
+        shape = RoundedCornerShape(26.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OverviewSectionHeader(
+                title = "本月预算",
+                summary = usageSummary,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OverviewMetricCard(
+                    label = "预算",
+                    value = amountLabel ?: "未设置",
+                    valueColor = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                OverviewMetricCard(
+                    label = "已支出",
+                    value = spentLabel,
+                    valueColor = Color(0xFFC65D21),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = if (exceeded) Color(0xFFFFF1E8) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = remainingLabel,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (exceeded) Color(0xFFC65D21) else Color(0xFF0B6E4F),
+                    )
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { usageRatio },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        text = "点击进入设置页调整预算",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
         }
