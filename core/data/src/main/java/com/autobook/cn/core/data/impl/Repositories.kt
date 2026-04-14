@@ -22,6 +22,7 @@ import com.autobook.cn.core.database.dao.PendingEntryDao
 import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.CaptureSession
 import com.autobook.cn.core.model.CaptureSessionState
+import com.autobook.cn.core.model.DEFAULT_LOCAL_MODEL_ID
 import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.NotificationEvent
 import com.autobook.cn.core.model.NotificationProcessOutcome
@@ -38,22 +39,17 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import javax.inject.Inject
-import javax.inject.Singleton
 
 private val Context.settingsDataStore by preferencesDataStore(name = "autobook_settings")
 
 /** 基于 Room 的账本仓储实现。 */
 @Singleton
-class LedgerRepositoryImpl
-    @Inject
-    constructor(
-        private val ledgerEntryDao: LedgerEntryDao,
-    ) : LedgerRepository {
-        override fun observeEntries(): Flow<List<LedgerEntry>> =
-            ledgerEntryDao.observeAll().map { entries ->
-                entries.map { it.toDomain() }
-            }
+class LedgerRepositoryImpl @Inject constructor(
+    private val ledgerEntryDao: LedgerEntryDao,
+) : LedgerRepository {
+    override fun observeEntries(): Flow<List<LedgerEntry>> = ledgerEntryDao.observeAll().map { entries ->
+        entries.map { it.toDomain() }
+    }
 
     override suspend fun add(entry: LedgerEntry): Long = ledgerEntryDao.insert(entry.toEntity())
 
@@ -68,10 +64,11 @@ class LedgerRepositoryImpl
     override suspend fun getById(id: Long): LedgerEntry? = ledgerEntryDao.getById(id)?.toDomain()
 
     override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? {
-        // 订单号优先精确匹配；缺少订单号时再用时间窗做近似查重。
+        // 订单号优先精确匹配；缺少订单号时只在极短时间窗内做同方向近似查重，避免“刚收一笔又付一笔同额”被误杀。
         val duplicate = ledgerEntryDao.findPotentialDuplicate(
             orderId = candidate.orderId,
             amount = candidate.amount,
+            direction = candidate.direction.name,
             merchant = candidate.merchant,
             windowStart = candidate.timestamp - DUPLICATE_WINDOW_MS,
             windowEnd = candidate.timestamp + DUPLICATE_WINDOW_MS,
@@ -106,17 +103,14 @@ class LedgerRepositoryImpl
 
 /** 基于 Room 的待确认仓储实现。 */
 @Singleton
-class PendingRepositoryImpl
-    @Inject
-    constructor(
-        private val pendingEntryDao: PendingEntryDao,
-    ) : PendingRepository {
-        override fun observeEntries(): Flow<List<PendingEntry>> =
-            pendingEntryDao.observeAll().map { entries ->
-                entries.map { it.toDomain() }
-            }
+class PendingRepositoryImpl @Inject constructor(
+    private val pendingEntryDao: PendingEntryDao,
+) : PendingRepository {
+    override fun observeEntries(): Flow<List<PendingEntry>> = pendingEntryDao.observeAll().map { entries ->
+        entries.map { it.toDomain() }
+    }
 
-        override suspend fun add(entry: PendingEntry): Long = pendingEntryDao.insert(entry.toEntity())
+    override suspend fun add(entry: PendingEntry): Long = pendingEntryDao.insert(entry.toEntity())
 
     override suspend fun update(entry: PendingEntry) {
         pendingEntryDao.update(entry.toEntity())
@@ -131,9 +125,8 @@ class PendingRepositoryImpl
         return item
     }
 
-        override suspend fun ignore(id: Long) {
-            pendingEntryDao.deleteById(id)
-        }
+    override suspend fun ignore(id: Long) {
+        pendingEntryDao.deleteById(id)
     }
 
     override suspend fun markFalsePositive(id: Long) {
@@ -152,6 +145,10 @@ class SettingsRepositoryImpl @Inject constructor(
         val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
         val autoAccountingEnabled = booleanPreferencesKey("auto_accounting_enabled")
         val cloudAnalysisEnabled = booleanPreferencesKey("cloud_analysis_enabled")
+        /** 本地语义增强（LLM 预留）开关的持久化键，暂时用于启发式通路，后续替换真机 LLM 时可直接复用。 */
+        val localLlmConfidenceBoostEnabled = booleanPreferencesKey("local_llm_confidence_boost_enabled")
+        /** 当前选择的本地模型标识，默认指向推荐的 Qwen3 1.7B 量化模型。 */
+        val selectedLocalModelId = androidx.datastore.preferences.core.stringPreferencesKey("selected_local_model_id")
         val captureEnabled = booleanPreferencesKey("capture_enabled")
         val ocrEnabled = booleanPreferencesKey("ocr_enabled")
         val notificationRetentionDays = intPreferencesKey("notification_retention_days")
@@ -166,6 +163,8 @@ class SettingsRepositoryImpl @Inject constructor(
             onboardingCompleted = preferences[Keys.onboardingCompleted] ?: false,
             autoAccountingEnabled = preferences[Keys.autoAccountingEnabled] ?: true,
             cloudAnalysisEnabled = preferences[Keys.cloudAnalysisEnabled] ?: false,
+            localLlmConfidenceBoostEnabled = preferences[Keys.localLlmConfidenceBoostEnabled] ?: false,
+            selectedLocalModelId = preferences[Keys.selectedLocalModelId] ?: DEFAULT_LOCAL_MODEL_ID,
             captureEnabled = preferences[Keys.captureEnabled] ?: false,
             ocrEnabled = preferences[Keys.ocrEnabled] ?: false,
             notificationRetentionDays = preferences[Keys.notificationRetentionDays] ?: 30,
@@ -176,17 +175,26 @@ class SettingsRepositoryImpl @Inject constructor(
         )
     }
 
-        override suspend fun setOnboardingCompleted(completed: Boolean) {
-            context.settingsDataStore.edit { it[Keys.onboardingCompleted] = completed }
-        }
+    override suspend fun setOnboardingCompleted(completed: Boolean) {
+        context.settingsDataStore.edit { it[Keys.onboardingCompleted] = completed }
+    }
 
-        override suspend fun setAutoAccountingEnabled(enabled: Boolean) {
-            context.settingsDataStore.edit { it[Keys.autoAccountingEnabled] = enabled }
-        }
+    override suspend fun setAutoAccountingEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.autoAccountingEnabled] = enabled }
+    }
 
-        override suspend fun setCloudAnalysisEnabled(enabled: Boolean) {
-            context.settingsDataStore.edit { it[Keys.cloudAnalysisEnabled] = enabled }
-        }
+    override suspend fun setCloudAnalysisEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.cloudAnalysisEnabled] = enabled }
+    }
+
+    /** 写入本地语义增强开关，opened 时可触发占位语义分析链路并为后续真 LLM 保持一致接口。 */
+    override suspend fun setLocalLlmConfidenceBoostEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.localLlmConfidenceBoostEnabled] = enabled }
+    }
+
+    /** 写入当前选中的本地模型标识，供下载器和推理引擎统一读取。 */
+    override suspend fun setSelectedLocalModelId(modelId: String) {
+        context.settingsDataStore.edit { it[Keys.selectedLocalModelId] = modelId }
     }
 
     override suspend fun setCaptureEnabled(enabled: Boolean) {
@@ -275,7 +283,7 @@ class NotificationIngestorImpl @Inject constructor(
                     processStatus = result.data.status.name,
                     lastError = result.data.message,
                     retryCount = persisted.retryCount,
-                    screenshotRef = persisted.screenshotRef,
+                    screenshotRef = result.data.screenshotRef ?: persisted.screenshotRef,
                 )
                 result
             }
@@ -325,10 +333,12 @@ class NotificationIngestorImpl @Inject constructor(
                 notificationId = notificationId,
                 destination = destination,
                 status = status,
+                screenshotRef = screenshotRef,
                 message = message,
             ),
         )
     }
+}
 
 /** MediaProjection 尚未接入前的截图协调器占位实现。 */
 @Singleton
@@ -367,8 +377,8 @@ private val DEFAULT_SOURCES = setOf(
     NotificationSourceApp.BANK_SMS,
 )
 
-/** 缺少订单号时用于模糊去重的时间窗口。 */
-private const val DUPLICATE_WINDOW_MS = 2 * 60 * 1000L
+/** 缺少订单号时用于模糊去重的时间窗口，仅保留 5 秒避免误判连续同额交易。 */
+private const val DUPLICATE_WINDOW_MS = 5 * 1000L
 
 /** 为 CSV 导出做最小转义，避免逗号和引号破坏结构。 */
 private fun csvEscape(value: Any?): String {

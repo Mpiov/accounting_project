@@ -75,6 +75,9 @@ fun AutobookApp() {
                 onEntryClick = { entryId ->
                     navController.navigate(AutobookDestination.EntryEdit.createRoute(entryId))
                 },
+                onPreviousMonthClick = viewModel::showPreviousMonth,
+                onNextMonthClick = viewModel::showNextMonth,
+                onCalendarDateClick = viewModel::selectCalendarDate,
             )
         }
         composable(AutobookDestination.Pending.route) {
@@ -103,6 +106,10 @@ fun AutobookApp() {
                 onCloudAnalysisChanged = viewModel::setCloudAnalysisEnabled,
                 onCaptureEnabledChanged = viewModel::setCaptureEnabled,
                 onOcrEnabledChanged = viewModel::setOcrEnabled,
+                onLocalLlmConfidenceBoostChanged = viewModel::setLocalLlmConfidenceBoostEnabled,
+                onSelectedLocalModelChanged = viewModel::setSelectedLocalModelId,
+                onDownloadSelectedLocalModel = viewModel::downloadSelectedLocalModel,
+                onRefreshLocalModelState = viewModel::refreshLocalModelState,
                 onNotificationRetentionChanged = viewModel::setNotificationRetentionDays,
                 onScreenshotRetentionChanged = viewModel::setScreenshotRetentionDays,
                 onSourceEnabledChanged = viewModel::setSourceEnabled,
@@ -168,6 +175,7 @@ private fun EntryEditorRoute(
         onNoteChange = viewModel::updateNote,
         onOrderIdChange = viewModel::updateOrderId,
         onDirectionChange = viewModel::updateDirection,
+        onApplyTemplate = viewModel::applyTemplate,
         onSave = viewModel::save,
         onDelete = viewModel::delete,
     )

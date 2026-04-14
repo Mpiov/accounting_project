@@ -27,4 +27,9 @@ dependencies {
     implementation(project(":core:data"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.hilt.android)
+
+    testImplementation(libs.junit5.api)
+    testRuntimeOnly(libs.junit5.engine)
+    // Gradle 9 下需要显式补充 JUnit Platform launcher，保证单测执行器可正常启动。
+    testRuntimeOnly(libs.junit.platform.launcher)
 }

@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -42,10 +43,6 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }
 
     packaging {
@@ -89,6 +86,8 @@ dependencies {
 
     testImplementation(libs.junit5.api)
     testRuntimeOnly(libs.junit5.engine)
+    // Gradle 9 下需要显式补充 JUnit Platform launcher，保证单测执行器可正常启动。
+    testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
 

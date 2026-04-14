@@ -10,12 +10,12 @@ import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.feature.pending.PendingItemUiModel
 import com.autobook.cn.feature.pending.PendingUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 /** 待确认页 ViewModel，负责把待确认项映射成可展示状态。 */
 @HiltViewModel
@@ -37,12 +37,14 @@ class PendingViewModel @Inject constructor(
                         categoryHint = entry.categoryHint,
                         orderId = entry.orderId,
                     )
-                }
-                .stateIn(
-                    scope = viewModelScope,
-                    started = SharingStarted.WhileSubscribed(5_000),
-                    initialValue = PendingUiState(),
-                )
+                },
+            )
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = PendingUiState(),
+        )
 
     fun confirmPending(id: Long) {
         viewModelScope.launch {

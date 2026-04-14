@@ -3,13 +3,23 @@
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+        应用入口配置：
+        1. Application 和 Activity 的包路径需要和 Kotlin 源码中的真实包名保持一致。
+        2. 这里显式使用完整类名，保留 main 分支上修复过的启动路径，避免入口解析偏差。
+    -->
     <application
         android:name="com.autobook.cn.app.AutobookApplication"
         android:allowBackup="false"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Autobook">
+        <!--
+            主界面入口：
+            MainActivity 位于 com.autobook.cn.app 包下，这里保持显式全限定名，降低启动配置歧义。
+        -->
         <activity
             android:name="com.autobook.cn.app.MainActivity"
             android:exported="true"

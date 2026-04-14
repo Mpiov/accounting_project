@@ -15,3 +15,6 @@ local.properties
 .DS_Store
 
 .gradle-home/
+
+# Native/CMake 生成产物
+core/llm/.cxx/

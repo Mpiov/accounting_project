@@ -11,8 +11,8 @@ import com.autobook.cn.core.model.NotificationProcessOutcome
 import com.autobook.cn.core.model.NotificationProcessStatus
 import com.autobook.cn.core.model.OperationResult
 import com.autobook.cn.core.model.ProcessDestination
-import kotlinx.coroutines.flow.first
 import javax.inject.Inject
+import kotlinx.coroutines.flow.first
 
 /** 决定候选交易是自动入账还是进入待确认队列。 */
 class TransactionProcessingPipeline @Inject constructor(
@@ -44,6 +44,7 @@ class TransactionProcessingPipeline @Inject constructor(
                             notificationId = notificationId,
                             destination = ProcessDestination.PENDING,
                             status = NotificationProcessStatus.PENDING_REVIEW,
+                            screenshotRef = candidate.screenshotRef,
                             message = "Routed to pending review because it looks duplicated",
                         ),
                     )
@@ -58,6 +59,7 @@ class TransactionProcessingPipeline @Inject constructor(
                             notificationId = notificationId,
                             destination = ProcessDestination.LEDGER,
                             status = NotificationProcessStatus.LEDGER_POSTED,
+                            screenshotRef = candidate.screenshotRef,
                             message = "Auto-posted with confidence ${candidate.confidence.score}",
                         ),
                     )
@@ -78,14 +80,15 @@ class TransactionProcessingPipeline @Inject constructor(
                             notificationId = notificationId,
                             destination = ProcessDestination.PENDING,
                             status = NotificationProcessStatus.PENDING_REVIEW,
+                            screenshotRef = candidate.screenshotRef,
                             message = reason,
                         ),
                     )
                 }
-
-                is OperationResult.RetryableFailure -> candidateResult
-                is OperationResult.TerminalFailure -> candidateResult
             }
+
+            is OperationResult.RetryableFailure -> candidateResult
+            is OperationResult.TerminalFailure -> candidateResult
         }
     }
 }
