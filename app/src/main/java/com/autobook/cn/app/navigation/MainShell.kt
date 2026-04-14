@@ -17,7 +17,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -28,30 +27,34 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.autobook.cn.app.ui.ChartDashboardScreen
-import com.autobook.cn.app.ui.LedgerWorkspaceScreen
+import com.autobook.cn.app.ui.LedgerBoardScreen
 import com.autobook.cn.app.ui.OverviewScreen
 import com.autobook.cn.app.ui.PendingWorkspaceScreen
 import com.autobook.cn.app.ui.QuickActionSheet
 import com.autobook.cn.app.ui.SettingsWorkspaceScreen
 import com.autobook.cn.app.viewmodel.ChartViewModel
+import com.autobook.cn.app.viewmodel.LedgerBoardMode
+import com.autobook.cn.app.viewmodel.LedgerBoardViewModel
 import com.autobook.cn.app.viewmodel.LedgerViewModel
 import com.autobook.cn.app.viewmodel.PendingViewModel
 import com.autobook.cn.app.viewmodel.SettingsViewModel
 import com.autobook.cn.core.model.MoneyDirection
 
 /**
- * 主壳层负责承载一级页面与底部导航。
+ * 用途说明：
+ * - 主壳层负责承载一级页面与底部导航。
+ * - 本轮调整后，账本 Tab 改成月份总览页，再由月份总览跳入月份详情页。
  *
  * 参数说明：
- * - rootNavController：根导航控制器，用于打开编辑页等二级页面。
- * - modifier：外层修饰符，便于由根导航统一注入。
+ * - rootNavController：根导航控制器，用于打开二级详情页。
+ * - modifier：外层修饰符，便于根层统一注入布局约束。
  */
 @Composable
 fun MainShell(
@@ -84,7 +87,10 @@ fun MainShell(
                 FloatingActionButton(
                     onClick = { showQuickActionSheet = true },
                 ) {
-                    Icon(imageVector = Icons.Outlined.Add, contentDescription = "记一笔")
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = "记一笔",
+                    )
                 }
             }
         },
@@ -112,28 +118,19 @@ fun MainShell(
                 )
             }
             composable(AutobookDestination.MainLedger.route) {
-                val viewModel: LedgerViewModel = hiltViewModel()
+                val viewModel: LedgerBoardViewModel = hiltViewModel()
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-                LaunchedEffect(Unit) {
-                    // 说明：账本页默认从“今日”进入，更符合查当天账单的高频习惯。
-                    viewModel.setRange(com.autobook.cn.feature.ledger.LedgerRangeFilter.TODAY)
-                }
-
-                LedgerWorkspaceScreen(
+                LedgerBoardScreen(
                     state = state,
-                    onSearchChange = viewModel::setSearchQuery,
-                    onSearchSubmit = { query ->
-                        if (query.isNotBlank()) {
-                            rootNavController.navigate(AutobookDestination.SearchResults.createRoute(query))
-                        }
+                    onSelectYear = viewModel::selectYear,
+                    onSelectMode = viewModel::selectMode,
+                    onOpenMonth = { yearMonth ->
+                        rootNavController.navigate(AutobookDestination.LedgerMonthDetail.createRoute(yearMonth))
                     },
-                    onRangeChange = viewModel::setRange,
-                    onPreviousMonthClick = viewModel::showPreviousMonth,
-                    onNextMonthClick = viewModel::showNextMonth,
-                    onCalendarDateClick = viewModel::selectCalendarDate,
-                    onEntryClick = { ledgerId ->
-                        rootNavController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
+                    onSelectYearRow = { year ->
+                        viewModel.selectYear(year)
+                        viewModel.selectMode(LedgerBoardMode.MONTH)
                     },
                 )
             }
@@ -181,22 +178,30 @@ fun MainShell(
             }
         }
     }
+
     if (showQuickActionSheet) {
         QuickActionSheet(
             onDismiss = { showQuickActionSheet = false },
             onExpenseClick = {
                 showQuickActionSheet = false
-                rootNavController.navigate(AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.EXPENSE))
+                rootNavController.navigate(
+                    AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.EXPENSE),
+                )
             },
             onIncomeClick = {
                 showQuickActionSheet = false
-                rootNavController.navigate(AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.INCOME))
+                rootNavController.navigate(
+                    AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.INCOME),
+                )
             },
         )
     }
 }
 
-/** 一级页面枚举同时绑定底部导航展示信息。 */
+/**
+ * 用途说明：
+ * - 一级页面枚举，同时绑定底部导航展示信息。
+ */
 private enum class MainShellTab(
     val route: String,
     val label: String,
@@ -230,7 +235,13 @@ private enum class MainShellTab(
     ;
 
     companion object {
-        /** 根据当前导航节点匹配正在展示的一级页面。 */
+        /**
+         * 用途说明：
+         * - 根据当前导航节点匹配正在展示的一级页面。
+         *
+         * 参数说明：
+         * - destination：当前导航节点。
+         */
         fun match(destination: NavDestination?): MainShellTab? {
             return entries.firstOrNull { tab ->
                 destination?.hierarchy?.any { it.route == tab.route } == true
@@ -239,7 +250,13 @@ private enum class MainShellTab(
     }
 }
 
-/** 切换底部 Tab 时保留各页滚动位置和内部状态。 */
+/**
+ * 用途说明：
+ * - 切换底部 Tab 时保留各页面滚动位置与内部状态。
+ *
+ * 参数说明：
+ * - tab：目标一级页面。
+ */
 private fun NavHostController.navigateToMainTab(tab: MainShellTab) {
     navigate(tab.route) {
         launchSingleTop = true

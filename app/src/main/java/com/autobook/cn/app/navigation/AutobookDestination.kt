@@ -1,12 +1,16 @@
 package com.autobook.cn.app.navigation
 
 import com.autobook.cn.core.model.MoneyDirection
+import java.time.YearMonth
 
-/** 应用内所有导航目的地的统一定义。 */
+/**
+ * 用途说明：
+ * - 应用内所有导航目的地的统一定义。
+ */
 sealed class AutobookDestination(val route: String) {
     data object Onboarding : AutobookDestination("onboarding")
 
-    /** 主壳层只负责承载四个一级页面和统一的 FAB。 */
+    /** 主壳层负责承载一级页面与统一 FAB。 */
     data object MainShell : AutobookDestination("main")
 
     data object MainOverview : AutobookDestination("main/overview")
@@ -23,11 +27,29 @@ sealed class AutobookDestination(val route: String) {
 
     data object RecordsAll : AutobookDestination("records/all")
 
+    /**
+     * 用途说明：
+     * - 月份详情页，负责展示某个月的日历、搜索与流水账。
+     */
+    data object LedgerMonthDetail : AutobookDestination("ledger/month?yearMonth={yearMonth}") {
+        const val BASE_ROUTE: String = "ledger/month"
+
+        /**
+         * 用途说明：
+         * - 生成月份详情页路由。
+         *
+         * 参数说明：
+         * - yearMonth：目标年月。
+         */
+        fun createRoute(yearMonth: YearMonth): String = "$BASE_ROUTE?yearMonth=$yearMonth"
+    }
+
     data object SearchResults : AutobookDestination("records/search?query={query}") {
         const val BASE_ROUTE: String = "records/search"
 
         /**
-         * 生成搜索结果页路由。
+         * 用途说明：
+         * - 生成搜索结果页路由。
          *
          * 参数说明：
          * - query：用户确认搜索后的关键词。
@@ -39,7 +61,8 @@ sealed class AutobookDestination(val route: String) {
     }
 
     /**
-     * 新建记账页支持携带默认收支方向和模板参数。
+     * 用途说明：
+     * - 新建记账页支持携带默认收支方向与模板参数。
      *
      * 参数说明：
      * - direction：快速记账面板传入的默认方向。
@@ -65,10 +88,24 @@ sealed class AutobookDestination(val route: String) {
     }
 
     data object EntryEdit : AutobookDestination("entry/edit/{ledgerId}") {
+        /**
+         * 用途说明：
+         * - 生成编辑已有账单的路由。
+         *
+         * 参数说明：
+         * - ledgerId：账单主键 id。
+         */
         fun createRoute(ledgerId: Long): String = "entry/edit/$ledgerId"
     }
 
     data object PendingResolve : AutobookDestination("pending/resolve/{pendingId}") {
+        /**
+         * 用途说明：
+         * - 生成待确认记录处理页路由。
+         *
+         * 参数说明：
+         * - pendingId：待确认记录主键 id。
+         */
         fun createRoute(pendingId: Long): String = "pending/resolve/$pendingId"
     }
 }

@@ -2,13 +2,13 @@ package com.autobook.cn.app.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowCircleDown
 import androidx.compose.material.icons.outlined.ArrowCircleUp
@@ -27,12 +27,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /**
- * 快速记账动作面板。
+ * 用途说明：
+ * - 快速记账动作面板负责承接 FAB 点击后的两类高频入口。
  *
  * 参数说明：
- * - onDismiss：关闭面板回调。
- * - onExpenseClick：快速记支出回调。
- * - onIncomeClick：快速记收入回调。
+ * - onDismiss：关闭面板时的回调。
+ * - onExpenseClick：点击“记支出”时的回调。
+ * - onIncomeClick：点击“记收入”时的回调。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,22 +47,15 @@ fun QuickActionSheet(
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "快速记账",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = "把高频动作放到一步可达的位置，减少进入表单后的重复切换。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = "快速记账",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ActionCard(
                     title = "记支出",
                     summary = "直接进入支出表单",
@@ -81,7 +75,17 @@ fun QuickActionSheet(
     }
 }
 
-/** 面板中的动作卡统一成相同层级，避免入口显得碎。 */
+/**
+ * 用途说明：
+ * - 单个动作卡用于承载快速记账入口，强调“可直接点击”的操作属性。
+ *
+ * 参数说明：
+ * - title：动作标题。
+ * - summary：动作说明。
+ * - icon：动作图标。
+ * - onClick：点击卡片后的回调。
+ * - modifier：外层修饰符，便于在父布局中分配宽度。
+ */
 @Composable
 private fun ActionCard(
     title: String,
@@ -92,22 +96,24 @@ private fun ActionCard(
 ) {
     Card(
         modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
+        shape = AutobookUiTokens.compactPanelShape,
+        border = autobookCardBorder(),
+        colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Surface(
                 modifier = Modifier.size(38.dp),
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f),
+                color = autobookSoftFillColor(),
             ) {
-                androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
+                Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = icon,
                         contentDescription = title,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        tint = MaterialTheme.colorScheme.primary,
                     )
                 }
             }

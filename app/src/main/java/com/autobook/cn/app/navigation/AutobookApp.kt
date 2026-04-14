@@ -17,8 +17,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.autobook.cn.app.ui.BudgetSettingsScreen
 import com.autobook.cn.app.ui.EntryEditorScreen
+import com.autobook.cn.app.ui.LedgerWorkspaceScreen
 import com.autobook.cn.app.ui.RecordsTimelineScreen
 import com.autobook.cn.app.viewmodel.EntryEditorViewModel
+import com.autobook.cn.app.viewmodel.LedgerMonthDetailViewModel
 import com.autobook.cn.app.viewmodel.OnboardingViewModel
 import com.autobook.cn.app.viewmodel.RecordsBrowserViewModel
 import com.autobook.cn.app.viewmodel.SettingsViewModel
@@ -73,6 +75,30 @@ fun AutobookApp() {
                 state = state,
                 onBack = { navController.popBackStack() },
                 onSaveBudget = viewModel::saveCurrentMonthBudget,
+            )
+        }
+        composable(
+            route = AutobookDestination.LedgerMonthDetail.route,
+            arguments = listOf(
+                navArgument("yearMonth") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) {
+            val viewModel: LedgerMonthDetailViewModel = hiltViewModel()
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            LedgerWorkspaceScreen(
+                state = state,
+                onBack = { navController.popBackStack() },
+                onSearchChange = viewModel::updateSearchQuery,
+                onPreviousMonthClick = viewModel::showPreviousMonth,
+                onNextMonthClick = viewModel::showNextMonth,
+                onCalendarDateClick = viewModel::selectCalendarDate,
+                onEntryClick = { ledgerId ->
+                    navController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
+                },
             )
         }
         composable(AutobookDestination.RecordsAll.route) {

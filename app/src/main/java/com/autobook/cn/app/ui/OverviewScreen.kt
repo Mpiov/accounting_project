@@ -6,9 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,13 +17,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -37,29 +37,28 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.feature.ledger.LedgerItemUiModel
 import com.autobook.cn.feature.ledger.LedgerRangeFilter
 import com.autobook.cn.feature.ledger.LedgerUiState
 import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
- * 总览页。
- *
  * 用途说明：
- * - 首页只保留“看账单状态 + 看预算 + 看最近几笔”三类高频信息。
- * - 删除待确认横条、快捷动作宫格和解释型长文案，保证首屏更简洁。
+ * - 首页只保留总览、预算和最近记录三块高频内容，帮助用户在首屏快速判断当前账单状态。
  *
  * 参数说明：
- * - state：总览页界面状态。
- * - onRangeChange：切换本年、本月、本周、本日账单的回调。
- * - onOpenAllRecords：进入详细记录页的回调。
- * - onOpenBudgetSettings：进入预算设置页的回调。
- * - onOpenEntry：打开单条账单的回调。
- * - onCreateEntry：空状态下记一笔的回调。
- * - modifier：外层修饰符。
+ * - state：首页所需的账本聚合状态。
+ * - onRangeChange：切换首页统计范围时的回调。
+ * - onOpenAllRecords：打开全部记录页的回调。
+ * - onOpenBudgetSettings：打开预算设置页的回调。
+ * - onOpenEntry：打开单条账单详情的回调。
+ * - onCreateEntry：空状态下直接记一笔的回调。
+ * - modifier：外层修饰符，便于被导航壳层注入布局约束。
  */
 @Composable
 fun OverviewScreen(
@@ -74,7 +73,7 @@ fun OverviewScreen(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item(key = "hero") {
             OverviewHeroCard(
@@ -116,7 +115,14 @@ fun OverviewScreen(
     }
 }
 
-/** 顶部总览卡只保留标题与三项关键金额。 */
+/**
+ * 用途说明：
+ * - 顶部总览卡集中展示当前范围的总标题、摘要和三项关键金额。
+ *
+ * 参数说明：
+ * - state：首页聚合状态，用于渲染标题、摘要和金额。
+ * - modifier：外层修饰符，主要用于承接状态栏间距。
+ */
 @Composable
 private fun OverviewHeroCard(
     state: LedgerUiState,
@@ -131,7 +137,8 @@ private fun OverviewHeroCard(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = AutobookUiTokens.panelShape,
+        border = autobookCardBorder(),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
     ) {
         Column(
@@ -155,7 +162,7 @@ private fun OverviewHeroCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SummaryMetricCard(
                     label = "收入",
                     value = state.incomeSummary,
@@ -176,13 +183,24 @@ private fun OverviewHeroCard(
     }
 }
 
-/** 首页账期切换按钮。 */
+/**
+ * 用途说明：
+ * - 顶部范围切换条用于在本年、本月、本周、本日之间快速切换统计视角。
+ *
+ * 参数说明：
+ * - selectedRange：当前选中的统计范围。
+ * - onRangeChange：点击某个范围后的回调。
+ */
 @Composable
 private fun OverviewRangeSwitcher(
     selectedRange: LedgerRangeFilter,
     onRangeChange: (LedgerRangeFilter) -> Unit,
 ) {
-    Card(shape = RoundedCornerShape(18.dp)) {
+    Card(
+        shape = AutobookUiTokens.panelShape,
+        border = autobookCardBorder(),
+        colors = autobookCardColors(),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -193,6 +211,12 @@ private fun OverviewRangeSwitcher(
                 FilterChip(
                     selected = selectedRange == range,
                     onClick = { onRangeChange(range) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        labelColor = MaterialTheme.colorScheme.onSurface,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
                     label = { Text(range.overviewLabel()) },
                 )
             }
@@ -200,17 +224,29 @@ private fun OverviewRangeSwitcher(
     }
 }
 
-/** 预算卡改成圆环图 + 设置入口的并排布局。 */
+/**
+ * 用途说明：
+ * - 预算卡展示本月预算进度，并提供预算设置入口。
+ *
+ * 参数说明：
+ * - state：首页聚合状态，用于读取预算金额、剩余额度和进度。
+ * - onOpenSettings：点击预算设置入口后的回调。
+ */
 @Composable
 private fun BudgetOverviewCard(
     state: LedgerUiState,
     onOpenSettings: () -> Unit,
 ) {
-    val monthLabel = YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("MM月", java.util.Locale.CHINA))
-    Card(shape = RoundedCornerShape(18.dp)) {
+    val monthLabel = YearMonth.now().format(DateTimeFormatter.ofPattern("MM月", Locale.CHINA))
+
+    Card(
+        shape = AutobookUiTokens.panelShape,
+        border = autobookCardBorder(),
+        colors = autobookCardColors(),
+    ) {
         Column(
             modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -224,21 +260,28 @@ private fun BudgetOverviewCard(
                 )
                 Surface(
                     modifier = Modifier.clickable(onClick = onOpenSettings),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.tertiary,
+                    shape = AutobookUiTokens.chipShape,
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
                 ) {
                     Text(
                         text = "去设置",
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onTertiary,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
                     )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 BudgetRingChart(
                     ratio = state.budgetUsageRatio,
-                    remainingText = if (state.budgetAmountLabel == null) "0%" else "${((1 - state.budgetUsageRatio) * 100).toInt().coerceAtLeast(0)}%",
+                    remainingText = if (state.budgetAmountLabel == null) {
+                        "0%"
+                    } else {
+                        "${((1 - state.budgetUsageRatio) * 100).toInt().coerceAtLeast(0)}%"
+                    },
                 )
                 Column(
                     modifier = Modifier.weight(1f),
@@ -253,15 +296,23 @@ private fun BudgetOverviewCard(
     }
 }
 
-/** 预算圆环图。 */
+/**
+ * 用途说明：
+ * - 环形图以“剩余预算”为主语义，帮助用户快速判断本月还剩多少可用额度。
+ *
+ * 参数说明：
+ * - ratio：已使用预算比例，范围建议为 0 到 1。
+ * - remainingText：环形图中心展示的剩余百分比文本。
+ */
 @Composable
 private fun BudgetRingChart(
     ratio: Float,
     remainingText: String,
 ) {
-    val baseRingColor = MaterialTheme.colorScheme.surfaceVariant
+    val baseRingColor = autobookSoftFillColor()
     val progressColor = MaterialTheme.colorScheme.primary
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
+
     Box(contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.size(120.dp)) {
             val strokeWidth = 16.dp.toPx()
@@ -299,7 +350,14 @@ private fun BudgetRingChart(
     }
 }
 
-/** 预算信息行。 */
+/**
+ * 用途说明：
+ * - 单行展示预算信息的标签和值，保持预算卡内部信息规整。
+ *
+ * 参数说明：
+ * - label：左侧标签文本。
+ * - value：右侧对应值。
+ */
 @Composable
 private fun BudgetInfoRow(
     label: String,
@@ -323,7 +381,15 @@ private fun BudgetInfoRow(
     }
 }
 
-/** 最近记录标题区。 */
+/**
+ * 用途说明：
+ * - 最近记录标题区提供标题和“详细记录”跳转入口。
+ *
+ * 参数说明：
+ * - title：左侧标题。
+ * - actionLabel：右侧动作文案。
+ * - onActionClick：点击右侧动作后的回调。
+ */
 @Composable
 private fun RecordsHeader(
     title: String,
@@ -349,7 +415,14 @@ private fun RecordsHeader(
     }
 }
 
-/** 首页只展示少量最近记录，并用时间线样式呈现。 */
+/**
+ * 用途说明：
+ * - 首页最近记录用时间线样式呈现，帮助用户快速按时间回看最新几笔账单。
+ *
+ * 参数说明：
+ * - entries：首页最近记录列表。
+ * - onOpenEntry：点击某条记录后的回调。
+ */
 @Composable
 private fun RecentRecordsTimeline(
     entries: List<LedgerItemUiModel>,
@@ -367,7 +440,16 @@ private fun RecentRecordsTimeline(
     }
 }
 
-/** 总览页时间线单项。 */
+/**
+ * 用途说明：
+ * - 单条最近记录项使用“节点 + 连线 + 方圆卡片”的布局，保证时间线连续、节点居中。
+ *
+ * 参数说明：
+ * - entry：当前账单条目。
+ * - showTopConnector：是否绘制圆点上方连线。
+ * - showBottomConnector：是否绘制圆点下方连线。
+ * - onClick：点击当前记录后的回调。
+ */
 @Composable
 private fun OverviewTimelineItem(
     entry: LedgerItemUiModel,
@@ -375,43 +457,73 @@ private fun OverviewTimelineItem(
     showBottomConnector: Boolean,
     onClick: () -> Unit,
 ) {
+    val connectorColor = autobookTimelineConnectorColor()
+    val cardBorder = autobookCardBorder()
+    val dotOuterColor = MaterialTheme.colorScheme.primaryContainer
+    val dotInnerColor = MaterialTheme.colorScheme.primary
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .height(IntrinsicSize.Min)
             .clickable(onClick = onClick)
-            .padding(bottom = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(vertical = 1.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .width(20.dp)
-                .height(98.dp),
+                .width(22.dp)
+                .fillMaxHeight()
+                .padding(vertical = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(1.dp)
-                    .background(
-                        color = when {
-                            showTopConnector || showBottomConnector -> MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
-                            else -> Color.Transparent
-                        },
-                    ),
-            )
-            Box(
-                modifier = Modifier
-                    .size(16.dp)
-                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-            )
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val centerX = size.width / 2f
+                val centerY = size.height / 2f
+                val strokeWidth = 2.dp.toPx()
+
+                // 连线只从圆点中心向上下延展，这样上下卡片之间即使留一点呼吸感也不会断线。
+                if (showTopConnector) {
+                    drawLine(
+                        color = connectorColor,
+                        start = Offset(centerX, 0f),
+                        end = Offset(centerX, centerY),
+                        strokeWidth = strokeWidth,
+                    )
+                }
+                if (showBottomConnector) {
+                    drawLine(
+                        color = connectorColor,
+                        start = Offset(centerX, centerY),
+                        end = Offset(centerX, size.height),
+                        strokeWidth = strokeWidth,
+                    )
+                }
+
+                // 外圈和内芯拆开绘制，能让时间线节点更稳，也更容易看清定位点。
+                drawCircle(
+                    color = dotOuterColor,
+                    radius = 8.dp.toPx(),
+                    center = Offset(centerX, centerY),
+                )
+                drawCircle(
+                    color = dotInnerColor,
+                    radius = 3.5.dp.toPx(),
+                    center = Offset(centerX, centerY),
+                )
+            }
         }
         Card(
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier
+                .weight(1f)
+                .padding(vertical = 4.dp),
+            shape = AutobookUiTokens.compactPanelShape,
+            border = cardBorder,
+            colors = autobookCardColors(),
         ) {
             Row(
-                modifier = Modifier.padding(14.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top,
             ) {
@@ -443,14 +555,26 @@ private fun OverviewTimelineItem(
                     text = entry.amount,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (entry.direction == MoneyDirection.INCOME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                    color = if (entry.direction == MoneyDirection.INCOME) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.tertiary
+                    },
                 )
             }
         }
     }
 }
 
-/** 金额指标卡，字号统一压低以减少换行。 */
+/**
+ * 用途说明：
+ * - 顶部三项统计块使用更方一点的小卡片，减少“卡片里套卡片”的松散感。
+ *
+ * 参数说明：
+ * - label：指标标签。
+ * - value：指标金额文本。
+ * - modifier：外层修饰符，便于在父布局中分配宽度。
+ */
 @Composable
 private fun SummaryMetricCard(
     label: String,
@@ -459,8 +583,9 @@ private fun SummaryMetricCard(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        shape = AutobookUiTokens.innerPanelShape,
+        border = autobookCardBorder(),
+        color = autobookSoftFillColor(),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp),
@@ -473,7 +598,7 @@ private fun SummaryMetricCard(
             )
             Text(
                 text = value,
-                style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp),
+                style = MaterialTheme.typography.titleSmall.copy(fontSize = summaryMetricFontSize(value)),
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -482,7 +607,13 @@ private fun SummaryMetricCard(
     }
 }
 
-/** 空账本时只保留一个简洁的行动提示。 */
+/**
+ * 用途说明：
+ * - 空账本时给用户一个直接的起步入口，不展示多余说明。
+ *
+ * 参数说明：
+ * - onCreateEntry：点击空状态卡片后的回调。
+ */
 @Composable
 private fun EmptyOverviewCard(
     onCreateEntry: () -> Unit,
@@ -491,7 +622,9 @@ private fun EmptyOverviewCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onCreateEntry),
-        shape = RoundedCornerShape(18.dp),
+        shape = AutobookUiTokens.panelShape,
+        border = autobookCardBorder(),
+        colors = autobookCardColors(),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -503,7 +636,7 @@ private fun EmptyOverviewCard(
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "有了记录之后，这里会自动展示预算和最近账单。",
+                text = "有了记录之后，这里会自动显示预算和最近账单。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -511,7 +644,13 @@ private fun EmptyOverviewCard(
     }
 }
 
-/** 首页顶部一句话摘要。 */
+/**
+ * 用途说明：
+ * - 根据当前范围生成顶部一句话摘要，让首页标题下方信息更直接。
+ *
+ * 参数说明：
+ * - state：首页聚合状态，用于判断当前统计范围。
+ */
 private fun buildOverviewSummary(state: LedgerUiState): String {
     return when (state.selectedRange) {
         LedgerRangeFilter.YEAR -> "看全年收支与结余变化"
@@ -522,7 +661,24 @@ private fun buildOverviewSummary(state: LedgerUiState): String {
     }
 }
 
-/** 首页展示的 4 个账期按钮。 */
+/**
+ * 用途说明：
+ * - 当总览卡金额文本较长时，轻微缩小字号，优先保证数字仍能完整显示在一行。
+ *
+ * 参数说明：
+ * - value：当前指标金额文本。
+ */
+private fun summaryMetricFontSize(value: String) = when {
+    value.length >= 16 -> 11.sp
+    value.length >= 13 -> 12.sp
+    value.length >= 11 -> 13.sp
+    else -> 14.sp
+}
+
+/**
+ * 用途说明：
+ * - 首页只展示四个最高频的统计范围按钮。
+ */
 private fun overviewRanges(): List<LedgerRangeFilter> = listOf(
     LedgerRangeFilter.YEAR,
     LedgerRangeFilter.MONTH,
@@ -530,7 +686,10 @@ private fun overviewRanges(): List<LedgerRangeFilter> = listOf(
     LedgerRangeFilter.TODAY,
 )
 
-/** 总览页账期按钮文案。 */
+/**
+ * 用途说明：
+ * - 将账本范围映射为首页显示文案。
+ */
 private fun LedgerRangeFilter.overviewLabel(): String = when (this) {
     LedgerRangeFilter.YEAR -> "本年"
     LedgerRangeFilter.MONTH -> "本月"
