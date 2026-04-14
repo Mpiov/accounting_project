@@ -63,6 +63,12 @@ class EntryEditorViewModel @Inject constructor(
 ) : ViewModel() {
     private val ledgerId: Long? = savedStateHandle.get<String>("ledgerId")?.toLongOrNull()
     private val pendingId: Long? = savedStateHandle.get<String>("pendingId")?.toLongOrNull()
+    /** 快速动作面板可传入默认方向，减少用户进入表单后的二次切换。 */
+    private val presetDirection: MoneyDirection? = savedStateHandle.get<String>("direction")
+        ?.takeIf { it.isNotBlank() }
+        ?.let { rawDirection -> MoneyDirection.entries.firstOrNull { it.name == rawDirection } }
+    /** 快速动作面板可直接携带模板标识，进入页面时先预填常用字段。 */
+    private val presetTemplateId: String? = savedStateHandle.get<String>("templateId")?.takeIf { it.isNotBlank() }
     private var editingLedger: LedgerEntry? = null
     private var resolvingPending: PendingEntry? = null
 
@@ -77,9 +83,12 @@ class EntryEditorViewModel @Inject constructor(
             title = when {
                 pendingId != null -> "编辑后入账"
                 ledgerId != null -> "编辑记账"
+                presetDirection == MoneyDirection.INCOME -> "快速记收入"
+                presetDirection == MoneyDirection.EXPENSE -> "快速记支出"
                 else -> "新建手动记账"
             },
             canDelete = ledgerId != null,
+            direction = presetDirection ?: MoneyDirection.EXPENSE,
         ),
     )
     val uiState: StateFlow<EntryEditorUiState> = _uiState.asStateFlow()
@@ -219,6 +228,12 @@ class EntryEditorViewModel @Inject constructor(
                         orderId = entry.orderId.orEmpty(),
                         direction = entry.direction,
                     )
+                }
+            }
+            else -> {
+                // 新建模式下优先应用快捷动作传入的默认值，减少重复录入。
+                presetTemplateId?.let { templateId ->
+                    _uiState.value = _uiState.value.applyEntryTemplate(templateId)
                 }
             }
         }
