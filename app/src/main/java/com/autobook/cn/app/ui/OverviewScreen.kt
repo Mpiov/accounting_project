@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
@@ -72,13 +71,13 @@ fun OverviewScreen(
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 120.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item(key = "hero") {
             OverviewHeroCard(
                 state = state,
-                modifier = Modifier.statusBarsPadding(),
+                modifier = Modifier.padding(top = mainPageTopInset()),
             )
         }
         item(key = "range_switcher") {
@@ -588,7 +587,7 @@ private fun SummaryMetricCard(
         color = autobookSoftFillColor(),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
@@ -669,9 +668,9 @@ private fun buildOverviewSummary(state: LedgerUiState): String {
  * - value：当前指标金额文本。
  */
 private fun summaryMetricFontSize(value: String) = when {
-    value.length >= 16 -> 11.sp
-    value.length >= 13 -> 12.sp
-    value.length >= 11 -> 13.sp
+    value.length >= 16 -> 9.sp
+    value.length >= 14 -> 10.sp
+    value.length >= 11 -> 12.sp
     else -> 14.sp
 }
 

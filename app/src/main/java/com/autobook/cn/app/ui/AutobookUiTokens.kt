@@ -7,6 +7,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
@@ -79,3 +80,13 @@ internal fun autobookSoftFillColor(): Color = MaterialTheme.colorScheme.secondar
  */
 @Composable
 internal fun autobookTimelineConnectorColor(): Color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)
+
+/**
+ * 用途说明：
+ * - 统一计算主页面首屏内容的顶部安全间距。
+ * - 这里把系统状态栏安全区压缩到约一半，让页面整体稍微上移，但仍尽量避开状态栏图标区域。
+ */
+@Composable
+internal fun mainPageTopInset(): Dp {
+    return 12.dp
+}

@@ -92,11 +92,11 @@ data class LedgerBoardUiState(
     val selectedYear: Int = LocalDate.now().year,
     val availableYears: List<Int> = listOf(LocalDate.now().year),
     val mode: LedgerBoardMode = LedgerBoardMode.MONTH,
-    val summaryTitle: String = "${LocalDate.now().year}年结余",
+    val summaryTitle: String = "总结余",
     val summaryNetLabel: String = "0.00",
     val summaryIncomeLabel: String = "0.00",
     val summaryExpenseLabel: String = "0.00",
-    val summaryHint: String = "按月份回看这一年的收支走势",
+    val summaryHint: String = "",
     val topRightLabel: String = "月账单",
     val monthRows: List<LedgerBoardMonthRowUiModel> = emptyList(),
     val yearRows: List<LedgerBoardYearRowUiModel> = emptyList(),
@@ -130,15 +130,11 @@ class LedgerBoardViewModel @Inject constructor(
             selectedYear = effectiveYear,
             availableYears = availableYears,
             mode = mode,
-            summaryTitle = "${effectiveYear}年结余",
+            summaryTitle = "总结余",
             summaryNetLabel = formatBoardMetric(summary.net, signed = true),
             summaryIncomeLabel = formatBoardMetric(summary.income),
             summaryExpenseLabel = formatBoardMetric(summary.expense),
-            summaryHint = if (mode == LedgerBoardMode.MONTH) {
-                "点开月份后，可以继续按日历回看这个月的流水细节"
-            } else {
-                "切到按年视角后，可以更快比较近几年的整体收支变化"
-            },
+            summaryHint = "",
             topRightLabel = if (mode == LedgerBoardMode.MONTH) {
                 "共${buildMonthRows(entries, effectiveYear).size}个月"
             } else {
