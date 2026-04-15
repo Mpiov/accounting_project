@@ -192,19 +192,34 @@ interface LedgerRepository {
      *
      * 用途说明：
      * - 截图里出现的往往是历史交易列表，不能再依赖“当前时间 ±5 秒”的实时窗口。
-     * - 因此这里优先按 `orderId` 精确匹配，其次退回到“同方向 + 同金额 + 同商户”的历史查重。
+     * - 当前图片/截图链路只在“分钟级时间一致 + 同金额 + 同方向”同时成立时才视为历史重复。
+     * - 这里是强判重接口，命中后可直接把候选视为重复并过滤。
      *
      * 参数说明：
-     * - orderId：候选订单号；命中时优先视为重复。
+     * - timestamp：候选交易时间；为空时不执行强判重。
      * - amount：候选金额。
      * - direction：候选方向。
-     * - merchant：候选商户或交易对象。
      */
     suspend fun findPotentialImageImportDuplicate(
-        orderId: String?,
+        timestamp: Long?,
         amount: Double,
         direction: MoneyDirection,
-        merchant: String,
+    ): LedgerEntry?
+    /**
+     * 针对“图片候选缺少时间，但账本里存在同金额同方向记录”的模糊重复风险做探测。
+     *
+     * 用途说明：
+     * - 当图片/截图候选没有识别出时间时，不应直接当成重复过滤。
+     * - 但如果本地已经存在同金额同方向的记录，且当前候选本身又是中高置信度，
+     *   则可以把它降级为待确认，避免高置信度候选直接自动入账。
+     *
+     * 参数说明：
+     * - amount：候选金额。
+     * - direction：候选方向。
+     */
+    suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+        amount: Double,
+        direction: MoneyDirection,
     ): LedgerEntry?
     suspend fun exportCsv(): String
 }

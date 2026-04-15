@@ -313,7 +313,8 @@ class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
         orderId: String?,
         merchant: String,
     ): ConfidenceDecision {
-        // 先给不同来源一个基础分，再根据成功关键词、订单号等结构化线索加分。
+        // 先给不同来源一个基础分，再根据成功关键词、商户等结构化线索加分。
+        // orderId 在真实场景里并不稳定，这里只给很弱的辅助分，不再把它当成核心信号。
         var score = when (sourceApp) {
             NotificationSourceApp.WECHAT -> 0.84f
             NotificationSourceApp.ALIPAY -> 0.84f
@@ -321,7 +322,7 @@ class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
             NotificationSourceApp.UNKNOWN -> 0.62f
         }
         if (body.contains("成功")) score += 0.06f
-        if (orderId != null) score += 0.04f
+        if (orderId != null) score += 0.01f
         if (merchant.isNotBlank()) score += 0.03f
         if (amount >= 0.01) score += 0.02f
         if (directionDecision.direction != MoneyDirection.UNKNOWN) {
@@ -339,7 +340,7 @@ class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
         return ConfidenceDecision(
             score = score.coerceAtMost(0.98f),
             reason = when {
-                orderId != null -> "Matched amount, merchant, and order id"
+                body.contains("成功") && merchant.isNotBlank() -> "Matched amount, merchant, success keyword, and clear direction"
                 body.contains("成功") -> "Matched amount, success keyword, and clear direction"
                 else -> directionDecision.reason
             },

@@ -38,6 +38,7 @@ class MockImageImportAnalyzerTest {
         assertEquals(ImageImportAnalysisPath.CLOUD_LLM_PROXY, suggestion.tracePath)
         assertEquals("云端大模型图片建议商户", suggestion.merchant)
         assertEquals(32.5, suggestion.amount)
+        assertEquals(1_744_598_800_000L, suggestion.timestamp)
         assertTrue(suggestion.requiresManualConfirmation)
     }
 
@@ -64,6 +65,7 @@ class MockImageImportAnalyzerTest {
         assertEquals(ImageImportAnalysisPath.OCR_PLUS_LOCAL_LLM, suggestion.tracePath)
         assertEquals("本地图片识别示例商户", suggestion.merchant)
         assertEquals(18.0, suggestion.amount)
+        assertEquals(1_744_633_600_000L, suggestion.timestamp)
         assertTrue(suggestion.requiresManualConfirmation)
     }
 
@@ -157,10 +159,13 @@ private fun fakeLedgerRepository(): LedgerRepository {
         override suspend fun getById(id: Long): com.autobook.cn.core.model.LedgerEntry? = null
         override suspend fun findPotentialDuplicate(candidate: com.autobook.cn.core.model.TransactionCandidate): com.autobook.cn.core.model.LedgerEntry? = null
         override suspend fun findPotentialImageImportDuplicate(
-            orderId: String?,
+            timestamp: Long?,
             amount: Double,
             direction: com.autobook.cn.core.model.MoneyDirection,
-            merchant: String,
+        ): com.autobook.cn.core.model.LedgerEntry? = null
+        override suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+            amount: Double,
+            direction: com.autobook.cn.core.model.MoneyDirection,
         ): com.autobook.cn.core.model.LedgerEntry? = null
         override suspend fun exportCsv(): String = ""
     }
@@ -172,6 +177,7 @@ private fun fakeCloudImageImportApi(): CloudImageImportApi {
         override suspend fun analyze(request: CloudImageImportRequest): CloudImageImportResponse {
             return CloudImageImportResponse(
                 amount = 32.5,
+                timestamp = 1_744_598_800_000L,
                 direction = "EXPENSE",
                 merchant = "云端大模型图片建议商户",
                 category = "餐饮",
@@ -183,6 +189,7 @@ private fun fakeCloudImageImportApi(): CloudImageImportApi {
                 candidates = listOf(
                     com.autobook.cn.core.network.CloudImageImportCandidateResponse(
                         amount = 32.5,
+                        timestamp = 1_744_598_800_000L,
                         direction = "EXPENSE",
                         merchant = "云端大模型图片建议商户",
                         category = "餐饮",
@@ -195,6 +202,7 @@ private fun fakeCloudImageImportApi(): CloudImageImportApi {
                     ),
                     com.autobook.cn.core.network.CloudImageImportCandidateResponse(
                         amount = 32.5,
+                        timestamp = 1_744_503_800_000L,
                         direction = "EXPENSE",
                         merchant = "云端大模型旧交易记录",
                         category = "餐饮",
@@ -230,6 +238,7 @@ private fun fakeLocalReasoner(): ImageImportLocalReasoner {
             return OperationResult.Success(
                 com.autobook.cn.core.model.ImageImportSuggestion(
                     amount = 18.0,
+                    timestamp = 1_744_633_600_000L,
                     direction = com.autobook.cn.core.model.MoneyDirection.EXPENSE,
                     merchant = "本地图片识别示例商户",
                     category = "购物",

@@ -8,6 +8,7 @@ import android.net.Uri
 import android.util.Base64
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.autobook.cn.core.model.ImageImportTimeParser
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.HttpURLConnection
@@ -48,6 +49,7 @@ data class CloudImageImportRequest(
  *
  * 参数说明：
  * - amount：建议金额；为空表示模型没有稳定识别出金额。
+ * - timestamp：建议交易时间；为空表示模型没有稳定识别出时间。
  * - direction：建议方向。
  * - merchant：建议商户。
  * - category：建议分类。
@@ -59,6 +61,7 @@ data class CloudImageImportRequest(
  */
 data class CloudImageImportResponse(
     val amount: Double? = null,
+    val timestamp: Long? = null,
     val direction: String = "EXPENSE",
     val merchant: String = "",
     val category: String = "待分类",
@@ -78,6 +81,7 @@ data class CloudImageImportResponse(
  *
  * 参数说明：
  * - amount：候选金额。
+ * - timestamp：候选交易时间；为空表示当前候选没有稳定时间。
  * - direction：候选方向。
  * - merchant：候选商户。
  * - category：候选分类。
@@ -90,6 +94,7 @@ data class CloudImageImportResponse(
  */
 data class CloudImageImportCandidateResponse(
     val amount: Double? = null,
+    val timestamp: Long? = null,
     val direction: String = "EXPENSE",
     val merchant: String = "",
     val category: String = "待分类",
@@ -311,11 +316,13 @@ class DirectCloudImageImportApi @Inject constructor(
             1.在微信聊天场景下，右侧气泡如果出现了"已被接受"，代表支出，如果出现了"已收款"，代表收入。
             2.在QQ聊天场景下，右侧气泡为红包，出现"已被领完"，此时金额未知，但代表支出。
             3.出现"您的3.0元补贴尚未使用"，表明这是噪音，抛弃。
+            4.如果图片里能看到支付时间、到账时间、交易时间或账单时间，必须尽量识别并填入 transactionTime。
             JSON 结构如下：
             {
               "candidates": [
                 {
                   "amount": 可能为数字或 null,
+                  "transactionTime": "yyyy-MM-dd HH:mm:ss 格式字符串或 null",
                   "direction": "INCOME" | "EXPENSE" | "UNKNOWN",
                   "merchant": "字符串，无法确认时为空字符串",
                   "category": "字符串，无法确认时填待分类",
@@ -388,6 +395,10 @@ class DirectCloudImageImportApi @Inject constructor(
         val primaryCandidate = parsedCandidates.firstOrNull()
         return CloudImageImportResponse(
             amount = primaryCandidate?.amount,
+            timestamp = primaryCandidate?.timestamp
+                ?: ImageImportTimeParser.parseToTimestamp(
+                    rawValue = payload.optStringOrNull("transactionTime") ?: payload.optStringOrNull("timestamp"),
+                ),
             direction = primaryCandidate?.direction ?: payload.optString("direction", "EXPENSE"),
             merchant = primaryCandidate?.merchant ?: payload.optString("merchant", ""),
             category = primaryCandidate?.category ?: payload.optString("category", "待分类"),
@@ -470,6 +481,7 @@ class FakeCloudImageImportApi : CloudImageImportApi {
     override suspend fun analyze(request: CloudImageImportRequest): CloudImageImportResponse {
         return CloudImageImportResponse(
             amount = 32.5,
+            timestamp = MOCK_TRANSACTION_TIMESTAMP,
             direction = "EXPENSE",
             merchant = "云端大模型图片建议商户",
             category = "餐饮",
@@ -481,6 +493,7 @@ class FakeCloudImageImportApi : CloudImageImportApi {
             candidates = listOf(
                 CloudImageImportCandidateResponse(
                     amount = 32.5,
+                    timestamp = MOCK_TRANSACTION_TIMESTAMP,
                     direction = "EXPENSE",
                     merchant = "云端大模型图片建议商户",
                     category = "餐饮",
@@ -515,6 +528,9 @@ private fun parseImageCandidates(array: JSONArray): List<CloudImageImportCandida
             add(
                 CloudImageImportCandidateResponse(
                     amount = item.optDoubleOrNull("amount"),
+                    timestamp = ImageImportTimeParser.parseToTimestamp(
+                        rawValue = item.optStringOrNull("transactionTime") ?: item.optStringOrNull("timestamp"),
+                    ),
                     direction = item.optString("direction", "EXPENSE"),
                     merchant = item.optString("merchant", ""),
                     category = item.optString("category", "待分类"),
@@ -617,3 +633,4 @@ private const val INITIAL_JPEG_QUALITY = 85
 private const val MIN_JPEG_QUALITY = 45
 private const val JPEG_QUALITY_STEP = 10
 private const val TAG = "CloudImageImportApi"
+private const val MOCK_TRANSACTION_TIMESTAMP = 1_744_684_800_000L

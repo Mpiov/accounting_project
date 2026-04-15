@@ -50,10 +50,13 @@ class TransactionPipelineTest {
             override suspend fun getById(id: Long): LedgerEntry? = null
             override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? = null
             override suspend fun findPotentialImageImportDuplicate(
-                orderId: String?,
+                timestamp: Long?,
                 amount: Double,
                 direction: MoneyDirection,
-                merchant: String,
+            ): LedgerEntry? = null
+            override suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+                amount: Double,
+                direction: MoneyDirection,
             ): LedgerEntry? = null
             override suspend fun exportCsv(): String = ""
         }
@@ -135,10 +138,13 @@ class TransactionPipelineTest {
             override suspend fun getById(id: Long): LedgerEntry? = null
             override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? = null
             override suspend fun findPotentialImageImportDuplicate(
-                orderId: String?,
+                timestamp: Long?,
                 amount: Double,
                 direction: MoneyDirection,
-                merchant: String,
+            ): LedgerEntry? = null
+            override suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+                amount: Double,
+                direction: MoneyDirection,
             ): LedgerEntry? = null
             override suspend fun exportCsv(): String = ""
         }
@@ -207,10 +213,13 @@ class TransactionPipelineTest {
             override suspend fun getById(id: Long): LedgerEntry? = null
             override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? = null
             override suspend fun findPotentialImageImportDuplicate(
-                orderId: String?,
+                timestamp: Long?,
                 amount: Double,
                 direction: MoneyDirection,
-                merchant: String,
+            ): LedgerEntry? = null
+            override suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+                amount: Double,
+                direction: MoneyDirection,
             ): LedgerEntry? = null
             override suspend fun exportCsv(): String = ""
         }

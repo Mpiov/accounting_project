@@ -6,6 +6,7 @@ import com.autobook.cn.core.llm.LocalTextGenerationResult
 import com.autobook.cn.core.llm.LocalTextGenerationRuntime
 import com.autobook.cn.core.model.DEFAULT_LOCAL_MODEL_ID
 import com.autobook.cn.core.model.ImageImportAnalysisPath
+import com.autobook.cn.core.model.ImageImportTimeParser
 import com.autobook.cn.core.model.LocalModelInstallStatus
 import com.autobook.cn.core.model.LocalModelSnapshot
 import com.autobook.cn.core.model.LocalModelSpec
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.Test
 class ImageImportOnDeviceLocalReasonerTest {
     @Test
     fun `builds image import suggestion from on-device llm json`() = runTest {
+        val expectedTimestamp = requireNotNull(ImageImportTimeParser.parseToTimestamp("2025-04-15 20:36:00"))
         val reasoner = ImageImportOnDeviceLocalReasoner(
             runtime = FakeImageImportLocalTextGenerationRuntime(
                 LocalTextGenerationResult(
@@ -30,6 +32,7 @@ class ImageImportOnDeviceLocalReasonerTest {
                           "candidates": [
                             {
                               "amount": 18.0,
+                              "transactionTime": "2025-04-15 20:36:00",
                               "direction": "EXPENSE",
                               "merchant": "小象超市",
                               "category": "购物",
@@ -60,6 +63,7 @@ class ImageImportOnDeviceLocalReasonerTest {
         val suggestion = (result as OperationResult.Success).data
         assertEquals(ImageImportAnalysisPath.OCR_PLUS_LOCAL_LLM, suggestion.tracePath)
         assertEquals(18.0, suggestion.amount)
+        assertEquals(expectedTimestamp, suggestion.timestamp)
         assertEquals(MoneyDirection.EXPENSE, suggestion.direction)
         assertEquals("小象超市", suggestion.merchant)
         assertEquals("购物", suggestion.category)
@@ -70,6 +74,7 @@ class ImageImportOnDeviceLocalReasonerTest {
 
     @Test
     fun `falls back to heuristic ocr draft when on-device output is invalid`() = runTest {
+        val expectedTimestamp = requireNotNull(ImageImportTimeParser.parseToTimestamp("2025-04-15 20:36:00"))
         val reasoner = ImageImportOnDeviceLocalReasoner(
             runtime = FakeImageImportLocalTextGenerationRuntime(
                 LocalTextGenerationResult(
@@ -82,13 +87,14 @@ class ImageImportOnDeviceLocalReasonerTest {
 
         val result = reasoner.analyze(
             imageRef = "content://demo/image-2",
-            ocrText = "支付成功 商户 小象超市 金额 18.00 元",
+            ocrText = "支付成功 商户 小象超市 金额 18.00 元 2025-04-15 20:36:00",
         )
 
         assertTrue(result is OperationResult.Success)
         val suggestion = (result as OperationResult.Success).data
         assertEquals(ImageImportAnalysisPath.OCR_PLUS_LOCAL_LLM, suggestion.tracePath)
         assertEquals(18.0, suggestion.amount)
+        assertEquals(expectedTimestamp, suggestion.timestamp)
         assertEquals("小象超市", suggestion.merchant)
         assertTrue(suggestion.message.contains("OCR 草稿"))
         assertTrue(suggestion.requiresManualConfirmation)

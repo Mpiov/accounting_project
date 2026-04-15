@@ -31,6 +31,8 @@ data class EntryEditorUiState(
     val mode: EntryEditorMode = EntryEditorMode.CREATE,
     val title: String = "新建手动记账",
     val amount: String = "",
+    /** 当前表单对应的交易时间；图片导入识别出时间时会优先写入这里。 */
+    val entryTimestamp: Long? = null,
     val merchant: String = "",
     val category: String = "待分类",
     val note: String = "",
@@ -168,6 +170,7 @@ class EntryEditorViewModel @Inject constructor(
                             val selectedIndex = suggestion.candidates.indices.firstOrNull()
                             val baseState = copy(
                                 amount = suggestion.amount?.toString() ?: amount,
+                                entryTimestamp = suggestion.timestamp ?: entryTimestamp,
                                 direction = suggestion.direction,
                                 merchant = suggestion.merchant.ifBlank { merchant },
                                 category = suggestion.category.ifBlank { category },
@@ -272,7 +275,7 @@ class EntryEditorViewModel @Inject constructor(
                             direction = state.direction,
                             merchant = state.merchant.trim(),
                             channel = if (state.importedImageRef != null) "图片导入" else "手动记账",
-                            timestamp = System.currentTimeMillis(),
+                            timestamp = state.entryTimestamp ?: System.currentTimeMillis(),
                             category = state.category.trim().ifBlank { "待分类" },
                             orderId = state.orderId.trim().ifBlank { null },
                             note = state.note.trim().ifBlank { null },
@@ -289,6 +292,7 @@ class EntryEditorViewModel @Inject constructor(
                     ledgerRepository.update(
                         current.copy(
                             amount = amount,
+                            timestamp = state.entryTimestamp ?: current.timestamp,
                             direction = state.direction,
                             merchant = state.merchant.trim(),
                             category = state.category.trim().ifBlank { "待分类" },
@@ -308,7 +312,7 @@ class EntryEditorViewModel @Inject constructor(
                             direction = state.direction,
                             merchant = state.merchant.trim(),
                             channel = pending.channel,
-                            timestamp = pending.timestamp,
+                            timestamp = state.entryTimestamp ?: pending.timestamp,
                             category = state.category.trim().ifBlank { pending.categoryHint },
                             orderId = state.orderId.trim().ifBlank { pending.orderId },
                             note = state.note.trim().ifBlank { null },
@@ -353,6 +357,7 @@ class EntryEditorViewModel @Inject constructor(
                 editingLedger?.let { entry ->
                     _uiState.value = _uiState.value.copy(
                         amount = entry.amount.toString(),
+                        entryTimestamp = entry.timestamp,
                         merchant = entry.merchant,
                         category = entry.category,
                         note = entry.note.orEmpty(),
@@ -367,6 +372,7 @@ class EntryEditorViewModel @Inject constructor(
                 resolvingPending?.let { entry ->
                     _uiState.value = _uiState.value.copy(
                         amount = entry.amount.toString(),
+                        entryTimestamp = entry.timestamp,
                         merchant = entry.merchant,
                         category = entry.categoryHint,
                         note = "",
@@ -469,6 +475,7 @@ internal fun EntryEditorUiState.applyImageImportCandidate(index: Int): EntryEdit
     val candidate = imageImportCandidates.getOrNull(index) ?: return this
     return copy(
         amount = candidate.amount?.toString() ?: amount,
+        entryTimestamp = candidate.timestamp ?: entryTimestamp,
         direction = candidate.direction,
         merchant = candidate.merchant.ifBlank { merchant },
         category = candidate.category.ifBlank { category },

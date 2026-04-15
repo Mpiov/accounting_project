@@ -8,6 +8,7 @@ import com.autobook.cn.core.llm.LocalTextGenerationRuntime
 import com.autobook.cn.core.model.ImageImportAnalysisPath
 import com.autobook.cn.core.model.ImageImportCandidate
 import com.autobook.cn.core.model.ImageImportSuggestion
+import com.autobook.cn.core.model.ImageImportTimeParser
 import com.autobook.cn.core.model.ImageImportTransactionState
 import com.autobook.cn.core.model.LocalModelInstallStatus
 import com.autobook.cn.core.model.MoneyDirection
@@ -142,6 +143,11 @@ class ImageImportOnDeviceLocalReasoner @Inject constructor(
             } else {
                 put("heuristicAmount", kotlinx.serialization.json.JsonNull)
             }
+            if (heuristicDraft.timestamp != null) {
+                put("heuristicTimestamp", heuristicDraft.timestamp)
+            } else {
+                put("heuristicTimestamp", kotlinx.serialization.json.JsonNull)
+            }
             put("heuristicDirection", heuristicDraft.direction.name)
             put("heuristicMerchant", heuristicDraft.merchant)
             put("heuristicCategory", heuristicDraft.category)
@@ -238,6 +244,7 @@ class ImageImportOnDeviceLocalReasoner @Inject constructor(
             ?.drop(1)
             ?.firstOrNull { it.isNotBlank() }
             ?.toDoubleOrNull()
+        val timestamp = ImageImportTimeParser.extractFromText(ocrText)
         val direction = when {
             INCOME_KEYWORDS.any(ocrText::contains) && !EXPENSE_KEYWORDS.any(ocrText::contains) -> MoneyDirection.INCOME
             EXPENSE_KEYWORDS.any(ocrText::contains) && !INCOME_KEYWORDS.any(ocrText::contains) -> MoneyDirection.EXPENSE
@@ -258,6 +265,7 @@ class ImageImportOnDeviceLocalReasoner @Inject constructor(
         val heuristicState = buildHeuristicTransactionState(ocrText)
         return ParsedImageImportDraft(
             amount = amount,
+            timestamp = timestamp,
             direction = direction,
             merchant = merchant,
             category = category,
@@ -297,6 +305,7 @@ class ImageImportOnDeviceLocalReasoner @Inject constructor(
     ): ImageImportSuggestion {
         val primary = drafts.maxByOrNull { it.confidenceScore ?: 0f } ?: ParsedImageImportDraftResult(
             amount = null,
+            timestamp = null,
             direction = MoneyDirection.UNKNOWN,
             merchant = "",
             category = "待分类",
@@ -332,6 +341,9 @@ class ImageImportOnDeviceLocalReasoner @Inject constructor(
         val category = candidateObject.stringValue("category")
         val note = candidateObject.stringValue("note")
         val orderId = candidateObject.stringValue("orderId")
+        val timestamp = ImageImportTimeParser.parseToTimestamp(
+            rawValue = candidateObject.stringValue("transactionTime") ?: candidateObject.stringValue("timestamp"),
+        )
         val confidenceScore = candidateObject.doubleValue("confidenceScore")?.toFloat()
         if (amount != null && (!amount.isFinite() || amount <= 0.0)) {
             return null
@@ -341,6 +353,7 @@ class ImageImportOnDeviceLocalReasoner @Inject constructor(
         }
         return ParsedImageImportResponse(
             amount = amount,
+            timestamp = timestamp,
             direction = direction,
             merchant = merchant,
             category = category,
@@ -363,6 +376,7 @@ class ImageImportOnDeviceLocalReasoner @Inject constructor(
  */
 private data class ParsedImageImportDraft(
     val amount: Double?,
+    val timestamp: Long?,
     val direction: MoneyDirection,
     val merchant: String,
     val category: String,
@@ -380,6 +394,7 @@ private data class ParsedImageImportDraft(
     fun mergeWith(response: ParsedImageImportResponse): ParsedImageImportDraftResult {
         return ParsedImageImportDraftResult(
             amount = response.amount ?: amount,
+            timestamp = response.timestamp ?: timestamp,
             direction = response.direction ?: direction,
             merchant = response.merchant?.takeIf(String::isNotBlank) ?: merchant,
             category = response.category?.takeIf(String::isNotBlank) ?: category,
@@ -410,6 +425,7 @@ private data class ParsedImageImportDraft(
     ): ImageImportSuggestion {
         return ParsedImageImportDraftResult(
             amount = amount,
+            timestamp = timestamp,
             direction = direction,
             merchant = merchant,
             category = category,
@@ -427,6 +443,7 @@ private data class ParsedImageImportDraft(
             candidates = listOf(
                 ImageImportCandidate(
                     amount = amount,
+                    timestamp = timestamp,
                     direction = direction,
                     merchant = merchant,
                     category = category,
@@ -457,6 +474,7 @@ private data class ParsedImageImportDraft(
  */
 private data class ParsedImageImportResponse(
     val amount: Double?,
+    val timestamp: Long?,
     val direction: MoneyDirection?,
     val merchant: String?,
     val category: String?,
@@ -497,6 +515,7 @@ private data class ParsedImageImportResponseEnvelope(
  */
 private data class ParsedImageImportDraftResult(
     val amount: Double?,
+    val timestamp: Long?,
     val direction: MoneyDirection,
     val merchant: String,
     val category: String,
@@ -535,6 +554,7 @@ private data class ParsedImageImportDraftResult(
         }
         return ImageImportSuggestion(
             amount = amount,
+            timestamp = timestamp,
             direction = direction,
             merchant = merchant,
             category = category,
@@ -565,6 +585,7 @@ private data class ParsedImageImportDraftResult(
         }
         return ImageImportCandidate(
             amount = amount,
+            timestamp = timestamp,
             direction = direction,
             merchant = merchant,
             category = category,
@@ -697,14 +718,16 @@ private val IMAGE_IMPORT_LOCAL_REASONER_SYSTEM_PROMPT = """
 4. direction 只能是 INCOME 或 EXPENSE。
 5. category 使用简短中文分类，例如“餐饮”“购物”“交通”“工资”“转账”“待分类”。
 6. merchant 尽量提取商户或收款对象；不确定时可为空字符串。
-7. transactionState 只能是 ACTIVE / REFUNDED / RETURNED / REVERSED / CANCELLED / UNKNOWN。
-8. note 用简短中文描述判断依据。
-9. requiresManualConfirmation 始终输出 true。
+7. 如果 OCR 文本里能明确看到支付时间、到账时间、交易时间或账单时间，请尽量识别并放到 transactionTime，格式固定为 yyyy-MM-dd HH:mm:ss；无法确认时返回 null。
+8. transactionState 只能是 ACTIVE / REFUNDED / RETURNED / REVERSED / CANCELLED / UNKNOWN。
+9. note 用简短中文描述判断依据。
+10. requiresManualConfirmation 始终输出 true。
 返回 JSON 字段固定为：
 {
   "candidates": [
     {
       "amount": 0.0,
+      "transactionTime": "yyyy-MM-dd HH:mm:ss 或 null",
       "direction": "EXPENSE",
       "merchant": "商户名称",
       "category": "待分类",

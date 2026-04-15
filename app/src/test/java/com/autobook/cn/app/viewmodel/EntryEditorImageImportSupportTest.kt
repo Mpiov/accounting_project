@@ -21,6 +21,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 
 /** 验证图片导入建议能够正确预填编辑页表单。 */
@@ -37,6 +38,7 @@ class EntryEditorImageImportSupportTest {
                         return OperationResult.Success(
                             ImageImportSuggestion(
                                 amount = 66.6,
+                                timestamp = 1_744_598_800_000L,
                                 direction = MoneyDirection.INCOME,
                                 merchant = "图片导入商户",
                                 category = "工资",
@@ -48,6 +50,7 @@ class EntryEditorImageImportSupportTest {
                                 candidates = listOf(
                                     ImageImportCandidate(
                                         amount = 66.6,
+                                        timestamp = 1_744_598_800_000L,
                                         direction = MoneyDirection.INCOME,
                                         merchant = "图片导入商户",
                                         category = "工资",
@@ -58,6 +61,7 @@ class EntryEditorImageImportSupportTest {
                                     ),
                                     ImageImportCandidate(
                                         amount = 28.8,
+                                        timestamp = 1_744_512_400_000L,
                                         direction = MoneyDirection.EXPENSE,
                                         merchant = "第二候选商户",
                                         category = "餐饮",
@@ -83,6 +87,7 @@ class EntryEditorImageImportSupportTest {
 
             val state = viewModel.uiState.value
             assertEquals("66.6", state.amount)
+            assertEquals(1_744_598_800_000L, state.entryTimestamp)
             assertEquals(MoneyDirection.INCOME, state.direction)
             assertEquals("图片导入商户", state.merchant)
             assertEquals("工资", state.category)
@@ -102,12 +107,55 @@ class EntryEditorImageImportSupportTest {
 
             val switchedState = viewModel.uiState.value
             assertEquals("28.8", switchedState.amount)
+            assertEquals(1_744_512_400_000L, switchedState.entryTimestamp)
             assertEquals(MoneyDirection.EXPENSE, switchedState.direction)
             assertEquals("第二候选商户", switchedState.merchant)
             assertEquals("餐饮", switchedState.category)
             assertEquals("第二候选备注", switchedState.note)
             assertEquals("IMG-ORDER-002", switchedState.orderId)
             assertEquals(1, switchedState.selectedImageImportCandidateIndex)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `save uses imported image timestamp when suggestion already identified bill time`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val recordingLedgerRepository = RecordingLedgerRepository()
+            val viewModel = EntryEditorViewModel(
+                savedStateHandle = SavedStateHandle(),
+                imageImportAnalyzer = object : ImageImportAnalyzer {
+                    override suspend fun analyze(imageRef: String): OperationResult<ImageImportSuggestion> {
+                        return OperationResult.Success(
+                            ImageImportSuggestion(
+                                amount = 88.0,
+                                timestamp = 1_744_598_800_000L,
+                                direction = MoneyDirection.EXPENSE,
+                                merchant = "账单商户",
+                                category = "餐饮",
+                                note = "已识别账单时间",
+                                tracePath = ImageImportAnalysisPath.CLOUD_LLM_PROXY,
+                                message = "时间已识别",
+                            ),
+                        )
+                    }
+                },
+                ledgerRepository = recordingLedgerRepository,
+                pendingRepository = fakePendingRepository(),
+            )
+
+            viewModel.importFromImage("content://demo/image-2")
+            advanceUntilIdle()
+            viewModel.save()
+            advanceUntilIdle()
+
+            val savedEntry = recordingLedgerRepository.lastAddedEntry
+            assertNotNull(savedEntry)
+            assertEquals(1_744_598_800_000L, savedEntry?.timestamp)
+            assertEquals("账单商户", savedEntry?.merchant)
         } finally {
             Dispatchers.resetMain()
         }
@@ -124,13 +172,49 @@ private fun fakeLedgerRepository(): LedgerRepository {
         override suspend fun getById(id: Long): LedgerEntry? = null
         override suspend fun findPotentialDuplicate(candidate: com.autobook.cn.core.model.TransactionCandidate): LedgerEntry? = null
         override suspend fun findPotentialImageImportDuplicate(
-            orderId: String?,
+            timestamp: Long?,
             amount: Double,
             direction: com.autobook.cn.core.model.MoneyDirection,
-            merchant: String,
+        ): LedgerEntry? = null
+        override suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+            amount: Double,
+            direction: com.autobook.cn.core.model.MoneyDirection,
         ): LedgerEntry? = null
         override suspend fun exportCsv(): String = ""
     }
+}
+
+/** 记录最后一次写入账本的数据，便于验证图片导入保存时是否保留了识别出的交易时间。 */
+private class RecordingLedgerRepository : LedgerRepository {
+    var lastAddedEntry: LedgerEntry? = null
+
+    override fun observeEntries(): Flow<List<LedgerEntry>> = emptyFlow()
+
+    override suspend fun add(entry: LedgerEntry): Long {
+        lastAddedEntry = entry
+        return 1L
+    }
+
+    override suspend fun update(entry: LedgerEntry) = Unit
+
+    override suspend fun delete(id: Long) = Unit
+
+    override suspend fun getById(id: Long): LedgerEntry? = null
+
+    override suspend fun findPotentialDuplicate(candidate: com.autobook.cn.core.model.TransactionCandidate): LedgerEntry? = null
+
+    override suspend fun findPotentialImageImportDuplicate(
+        timestamp: Long?,
+        amount: Double,
+        direction: com.autobook.cn.core.model.MoneyDirection,
+    ): LedgerEntry? = null
+
+    override suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+        amount: Double,
+        direction: com.autobook.cn.core.model.MoneyDirection,
+    ): LedgerEntry? = null
+
+    override suspend fun exportCsv(): String = ""
 }
 
 /** 提供不会访问真实数据库的待确认仓储替身。 */

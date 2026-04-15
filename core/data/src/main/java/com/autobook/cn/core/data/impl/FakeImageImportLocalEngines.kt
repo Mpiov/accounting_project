@@ -52,6 +52,7 @@ class FakeImageImportLocalReasoner @Inject constructor() : ImageImportLocalReaso
         return OperationResult.Success(
             ImageImportSuggestion(
                 amount = 18.0,
+                timestamp = 1_744_633_600_000L,
                 direction = MoneyDirection.EXPENSE,
                 merchant = "本地图片识别示例商户",
                 category = "购物",

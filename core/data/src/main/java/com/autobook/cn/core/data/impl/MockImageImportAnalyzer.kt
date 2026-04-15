@@ -64,6 +64,7 @@ class MockImageImportAnalyzer @Inject constructor(
                 candidatePostProcessor.postProcess(
                 ImageImportSuggestion(
                     amount = response.amount,
+                    timestamp = response.timestamp,
                     direction = response.direction.toMoneyDirection(),
                     merchant = response.merchant,
                     category = response.category,
@@ -76,6 +77,7 @@ class MockImageImportAnalyzer @Inject constructor(
                     candidates = response.candidates.map { candidate ->
                         ImageImportCandidate(
                             amount = candidate.amount,
+                            timestamp = candidate.timestamp,
                             direction = candidate.direction.toMoneyDirection(),
                             merchant = candidate.merchant,
                             category = candidate.category,

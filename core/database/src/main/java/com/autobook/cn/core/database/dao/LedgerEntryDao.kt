@@ -29,13 +29,19 @@ interface LedgerEntryDao {
     @Query(
         """
         SELECT * FROM ledger_entries
-        -- 优先命中订单号完全一致的记录；缺少订单号时再退回“同方向 + 同金额 + 同商户 + 极短时间窗”模糊匹配。
-        WHERE (:orderId IS NOT NULL AND orderId = :orderId)
-           OR (
+        -- 通知主链路仍以“同方向 + 同金额 + 同商户 + 极短时间窗”为主；
+        -- orderId 如存在，只作为辅助信号，不再单独决定重复。
+        WHERE (
                 amount = :amount
                 AND direction = :direction
                 AND merchant = :merchant
                 AND timestamp BETWEEN :windowStart AND :windowEnd
+           )
+           OR (
+                :orderId IS NOT NULL
+                AND orderId = :orderId
+                AND amount = :amount
+                AND direction = :direction
            )
         ORDER BY timestamp DESC
         LIMIT 1
@@ -53,20 +59,32 @@ interface LedgerEntryDao {
     @Query(
         """
         SELECT * FROM ledger_entries
-        WHERE (:orderId IS NOT NULL AND orderId = :orderId)
-           OR (
-                amount = :amount
-                AND direction = :direction
-                AND merchant = :merchant
-           )
+        WHERE :windowStart IS NOT NULL
+          AND timestamp BETWEEN :windowStart AND :windowEnd
+          AND amount = :amount
+          AND direction = :direction
         ORDER BY timestamp DESC
         LIMIT 1
         """,
     )
     suspend fun findPotentialImageImportDuplicate(
-        orderId: String?,
+        windowStart: Long?,
+        windowEnd: Long?,
         amount: Double,
         direction: String,
-        merchant: String,
+    ): LedgerEntryEntity?
+
+    @Query(
+        """
+        SELECT * FROM ledger_entries
+        WHERE amount = :amount
+          AND direction = :direction
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+        amount: Double,
+        direction: String,
     ): LedgerEntryEntity?
 }

@@ -272,6 +272,7 @@ enum class ImageImportTransactionState {
  *
  * 参数说明：
  * - amount：候选金额；为空表示当前无法稳定识别。
+ * - timestamp：候选交易时间；为空表示当前链路尚未可靠识别出时间。
  * - direction：候选方向。
  * - merchant：候选商户或交易对象。
  * - category：候选分类。
@@ -285,6 +286,7 @@ enum class ImageImportTransactionState {
  */
 data class ImageImportCandidate(
     val amount: Double? = null,
+    val timestamp: Long? = null,
     val direction: MoneyDirection = MoneyDirection.EXPENSE,
     val merchant: String = "",
     val category: String = "待分类",
@@ -306,6 +308,7 @@ data class ImageImportCandidate(
  *
  * 参数说明：
  * - amount：建议金额；为空表示当前无法可靠提取金额，需要用户手动输入。
+ * - timestamp：建议交易时间；为空表示当前仍需沿用默认时间或由用户后续修正。
  * - direction：建议收支方向。
  * - merchant：建议商户或交易对象。
  * - category：建议分类。
@@ -322,6 +325,7 @@ data class ImageImportCandidate(
  */
 data class ImageImportSuggestion(
     val amount: Double? = null,
+    val timestamp: Long? = null,
     val direction: MoneyDirection = MoneyDirection.EXPENSE,
     val merchant: String = "",
     val category: String = "待分类",

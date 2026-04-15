@@ -1,6 +1,7 @@
 package com.autobook.cn.core.data.impl
 
 import com.autobook.cn.core.data.LedgerRepository
+import com.autobook.cn.core.model.ConfidenceLevel
 import com.autobook.cn.core.model.ImageImportCandidate
 import com.autobook.cn.core.model.ImageImportSuggestion
 import com.autobook.cn.core.model.ImageImportTransactionState
@@ -36,6 +37,7 @@ class ImageImportCandidatePostProcessor @Inject constructor(
 
         var duplicateFilteredCount = 0
         var inactiveFilteredCount = 0
+        var downgradedForMissingTimestampCount = 0
         val keptCandidates = mutableListOf<ImageImportCandidate>()
         val seenKeys = mutableSetOf<String>()
 
@@ -52,15 +54,27 @@ class ImageImportCandidatePostProcessor @Inject constructor(
                 duplicateFilteredCount += 1
                 continue
             }
-            if (amount != null && amount > 0.0 && candidate.merchant.isNotBlank()) {
+            if (amount != null && amount > 0.0 && candidate.timestamp != null && candidate.direction != MoneyDirection.UNKNOWN) {
+                // 时间存在时才允许做强判重；这里按分钟级时间窗口命中后直接过滤。
                 val duplicate = ledgerRepository.findPotentialImageImportDuplicate(
-                    orderId = candidate.orderId,
+                    timestamp = candidate.timestamp,
                     amount = amount,
                     direction = candidate.direction,
-                    merchant = candidate.merchant,
                 )
                 if (duplicate != null) {
                     duplicateFilteredCount += 1
+                    continue
+                }
+            }
+            if (amount != null && amount > 0.0 && candidate.timestamp == null && candidate.direction != MoneyDirection.UNKNOWN) {
+                // 缺少时间时不直接过滤，只把中高置信度候选降级为待确认，避免用户主动上传的内容被误杀。
+                val duplicateWithoutTimestamp = ledgerRepository.findPotentialImageImportDuplicateWithoutTimestamp(
+                    amount = amount,
+                    direction = candidate.direction,
+                )
+                if (duplicateWithoutTimestamp != null && candidate.confidence.level != ConfidenceLevel.LOW) {
+                    keptCandidates += candidate.downgradeForMissingTimestampDuplicateRisk()
+                    downgradedForMissingTimestampCount += 1
                     continue
                 }
             }
@@ -69,7 +83,7 @@ class ImageImportCandidatePostProcessor @Inject constructor(
         }
 
         val sortedCandidates = keptCandidates.sortedWith(compareByDescending<ImageImportCandidate> { it.confidence.score }
-            .thenByDescending { !it.orderId.isNullOrBlank() }
+            .thenByDescending { it.timestamp != null }
             .thenByDescending { it.amount != null }
             .thenByDescending { it.direction != MoneyDirection.UNKNOWN })
 
@@ -78,6 +92,7 @@ class ImageImportCandidatePostProcessor @Inject constructor(
         if (selectedCandidate == null) {
             return suggestion.copy(
                 amount = null,
+                timestamp = null,
                 direction = MoneyDirection.UNKNOWN,
                 merchant = "",
                 category = "待分类",
@@ -90,6 +105,7 @@ class ImageImportCandidatePostProcessor @Inject constructor(
                     keptCount = 0,
                     duplicateFilteredCount = duplicateFilteredCount,
                     inactiveFilteredCount = inactiveFilteredCount,
+                    downgradedForMissingTimestampCount = downgradedForMissingTimestampCount,
                 ),
                 requiresManualConfirmation = true,
                 candidates = emptyList(),
@@ -101,6 +117,7 @@ class ImageImportCandidatePostProcessor @Inject constructor(
 
         return suggestion.copy(
             amount = selectedCandidate.amount,
+            timestamp = selectedCandidate.timestamp,
             direction = selectedCandidate.direction,
             merchant = selectedCandidate.merchant,
             category = selectedCandidate.category,
@@ -113,6 +130,7 @@ class ImageImportCandidatePostProcessor @Inject constructor(
                 keptCount = sortedCandidates.size,
                 duplicateFilteredCount = duplicateFilteredCount,
                 inactiveFilteredCount = inactiveFilteredCount,
+                downgradedForMissingTimestampCount = downgradedForMissingTimestampCount,
             ),
             requiresManualConfirmation = true,
             candidates = sortedCandidates,
@@ -148,13 +166,34 @@ class ImageImportCandidatePostProcessor @Inject constructor(
  * - candidate：待生成去重键的候选。
  */
 private fun buildCandidateDedupKey(candidate: ImageImportCandidate): String? {
+    val timestamp = candidate.timestamp
     return when {
-        !candidate.orderId.isNullOrBlank() -> "order:${candidate.orderId}"
-        candidate.amount != null && candidate.merchant.isNotBlank() -> {
-            "amount:${candidate.amount}|direction:${candidate.direction.name}|merchant:${candidate.merchant}"
+        timestamp != null && candidate.amount != null && candidate.direction != MoneyDirection.UNKNOWN -> {
+            "minute:${timestamp.toMinuteBucket()}|amount:${candidate.amount}|direction:${candidate.direction.name}"
         }
         else -> null
     }
+}
+
+/**
+ * 当候选缺少时间，但本地已经存在同金额同方向记录时，把高置信度候选降级为中置信度待确认。
+ *
+ * 参数说明：
+ * - 接收者：待降级的候选。
+ */
+private fun ImageImportCandidate.downgradeForMissingTimestampDuplicateRisk(): ImageImportCandidate {
+    val downgradedNote = buildString {
+        if (note.isNotBlank()) {
+            append(note)
+            append("。")
+        }
+        append("未识别到账单时间，但本地已有同金额同方向记录，已降级为待确认")
+    }
+    return copy(
+        confidence = confidence.downgradeToMedium(),
+        note = downgradedNote,
+        filterReason = "missing_timestamp_duplicate_risk",
+    )
 }
 
 /**
@@ -166,6 +205,7 @@ private fun buildCandidateDedupKey(candidate: ImageImportCandidate): String? {
 private fun ImageImportSuggestion.toSyntheticCandidate(): ImageImportCandidate {
     return ImageImportCandidate(
         amount = amount,
+        timestamp = timestamp,
         direction = direction,
         merchant = merchant,
         category = category,
@@ -194,6 +234,7 @@ private fun buildFilteredMessage(
     keptCount: Int,
     duplicateFilteredCount: Int,
     inactiveFilteredCount: Int,
+    downgradedForMissingTimestampCount: Int,
 ): String {
     val suffix = buildList {
         add("共识别 $totalCount 条候选")
@@ -204,6 +245,34 @@ private fun buildFilteredMessage(
         if (inactiveFilteredCount > 0) {
             add("去除已退还/已撤销 $inactiveFilteredCount 条")
         }
+        if (downgradedForMissingTimestampCount > 0) {
+            add("因缺少时间降级待确认 $downgradedForMissingTimestampCount 条")
+        }
     }.joinToString(separator = "，")
     return if (baseMessage.isBlank()) suffix else "$baseMessage；$suffix。"
 }
+
+/**
+ * 把候选时间戳归一化成分钟桶。
+ *
+ * 参数说明：
+ * - 接收者：候选原始毫秒时间戳。
+ */
+private fun Long.toMinuteBucket(): Long = this / ONE_MINUTE_MILLIS
+
+/**
+ * 把高置信度候选降到中置信度区间，避免直接自动入账。
+ *
+ * 参数说明：
+ * - 接收者：原始置信度。
+ */
+private fun ParseConfidence.downgradeToMedium(): ParseConfidence {
+    return if (level == ConfidenceLevel.HIGH) {
+        ParseConfidence(MEDIUM_CONFIDENCE_CAP)
+    } else {
+        this
+    }
+}
+
+private const val ONE_MINUTE_MILLIS = 60_000L
+private const val MEDIUM_CONFIDENCE_CAP = 0.84f

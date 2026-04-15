@@ -67,7 +67,8 @@ class LedgerRepositoryImpl @Inject constructor(
     override suspend fun getById(id: Long): LedgerEntry? = ledgerEntryDao.getById(id)?.toDomain()
 
     override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? {
-        // 订单号优先精确匹配；缺少订单号时只在极短时间窗内做同方向近似查重，避免“刚收一笔又付一笔同额”被误杀。
+        // 通知主链路仍以“极短时间窗 + 金额 + 方向 + 商户”为主；
+        // orderId 如存在，仅作为辅助信号参与判断，避免把它当成唯一可靠依据。
         val duplicate = ledgerEntryDao.findPotentialDuplicate(
             orderId = candidate.orderId,
             amount = candidate.amount,
@@ -84,25 +85,51 @@ class LedgerRepositoryImpl @Inject constructor(
      *
      * 用途说明：
      * - 截图里的交易很可能早已发生，不能再依赖实时时间窗。
-     * - 这里优先命中订单号；如果没有订单号，则退回到“同方向 + 同金额 + 同商户”的历史重复判断。
+     * - 当前图片/截图链路只在“同分钟 + 同金额 + 同方向”一致时才视为重复。
+     * - 这里属于强判重，命中后直接视为重复候选。
      *
      * 参数说明：
-     * - orderId：候选订单号。
+     * - timestamp：候选交易时间；为空时直接跳过历史判重。
      * - amount：候选金额。
      * - direction：候选方向。
-     * - merchant：候选商户或交易对象。
      */
     override suspend fun findPotentialImageImportDuplicate(
-        orderId: String?,
+        timestamp: Long?,
         amount: Double,
         direction: MoneyDirection,
-        merchant: String,
     ): LedgerEntry? {
+        if (timestamp == null) {
+            return null
+        }
+        // 账单截图通常只可靠到分钟，因此这里先把候选时间归一化成分钟窗口再查库。
+        val minuteWindow = timestamp.toMinuteWindow()
         val duplicate = ledgerEntryDao.findPotentialImageImportDuplicate(
-            orderId = orderId,
+            windowStart = minuteWindow.startInclusive,
+            windowEnd = minuteWindow.endInclusive,
             amount = amount,
             direction = direction.name,
-            merchant = merchant,
+        )
+        return duplicate?.toDomain()
+    }
+
+    /**
+     * 针对“候选没有识别出时间，但账本已存在同金额同方向记录”的场景做模糊重复探测。
+     *
+     * 用途说明：
+     * - 当前不把这类命中当成强重复，因为缺少候选侧时间证据。
+     * - 上层如果发现候选本身是中高置信度，可以据此把它降级成待确认，而不是直接过滤。
+     *
+     * 参数说明：
+     * - amount：候选金额。
+     * - direction：候选方向。
+     */
+    override suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+        amount: Double,
+        direction: MoneyDirection,
+    ): LedgerEntry? {
+        val duplicate = ledgerEntryDao.findPotentialImageImportDuplicateWithoutTimestamp(
+            amount = amount,
+            direction = direction.name,
         )
         return duplicate?.toDomain()
     }
@@ -429,8 +456,43 @@ private val DEFAULT_SOURCES = setOf(
     NotificationSourceApp.BANK_SMS,
 )
 
-/** 缺少订单号时用于模糊去重的时间窗口，仅保留 5 秒避免误判连续同额交易。 */
+/**
+ * 通知主链路的极短重复时间窗口。
+ *
+ * 用途说明：
+ * - 只用于通知自动记账场景，避免“刚收一笔又付一笔同额”被误杀。
+ * - 图片/截图链路不复用这套规则，而是走分钟级账单时间比较。
+ */
 private const val DUPLICATE_WINDOW_MS = 5 * 1000L
+
+/**
+ * 分钟级时间窗口。
+ *
+ * 参数说明：
+ * - startInclusive：该分钟起始毫秒。
+ * - endInclusive：该分钟结束毫秒。
+ */
+private data class MinuteWindow(
+    val startInclusive: Long,
+    val endInclusive: Long,
+)
+
+/**
+ * 把任意毫秒时间戳归一化成所属分钟的闭区间。
+ *
+ * 参数说明：
+ * - 接收者：原始毫秒时间戳。
+ */
+private fun Long.toMinuteWindow(): MinuteWindow {
+    val startInclusive = this - (this % ONE_MINUTE_MILLIS)
+    val endInclusive = startInclusive + ONE_MINUTE_MILLIS - 1
+    return MinuteWindow(
+        startInclusive = startInclusive,
+        endInclusive = endInclusive,
+    )
+}
+
+private const val ONE_MINUTE_MILLIS = 60_000L
 
 /** 为 CSV 导出做最小转义，避免逗号和引号破坏结构。 */
 private fun csvEscape(value: Any?): String {
