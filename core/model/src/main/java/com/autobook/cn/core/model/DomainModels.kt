@@ -134,6 +134,8 @@ data class AppSettings(
     val ocrEnabled: Boolean = false,
     val notificationRetentionDays: Int = 30,
     val screenshotRetentionDays: Int = 7,
+    /** 以 `yyyy-MM` 为键保存每月预算，便于总览页和设置页按月读取。 */
+    val monthlyBudgets: Map<String, Double> = emptyMap(),
     val enabledSources: Set<NotificationSourceApp> = setOf(
         NotificationSourceApp.WECHAT,
         NotificationSourceApp.ALIPAY,

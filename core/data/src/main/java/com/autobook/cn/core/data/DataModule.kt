@@ -1,11 +1,9 @@
 package com.autobook.cn.core.data
 
-import android.content.Context
 import com.autobook.cn.core.data.impl.AccessibilityCaptureCoordinator
 import com.autobook.cn.core.data.impl.ImageImportMlKitOcrEngine
 import com.autobook.cn.core.data.impl.ImageImportOnDeviceLocalReasoner
 import com.autobook.cn.core.data.impl.LedgerRepositoryImpl
-import com.autobook.cn.core.data.impl.LlamaCppOnDeviceLlmEngine
 import com.autobook.cn.core.data.impl.LocalModelRepositoryImpl
 import com.autobook.cn.core.data.impl.MockImageImportAnalyzer
 import com.autobook.cn.core.data.impl.MlKitOcrEngine
@@ -15,8 +13,6 @@ import com.autobook.cn.core.data.impl.PendingRepositoryImpl
 import com.autobook.cn.core.data.impl.SettingsRepositoryImpl
 import com.autobook.cn.core.data.parser.LocalTransactionExtractor
 import com.autobook.cn.core.data.pipeline.ModelRouterImpl
-import com.autobook.cn.core.llm.LlamaCppRuntime
-import com.autobook.cn.core.llm.LocalTextGenerationRuntime
 import com.autobook.cn.core.network.CloudAnalysisApi
 import com.autobook.cn.core.network.DirectGeminiImageImportApi
 import com.autobook.cn.core.network.FakeCloudAnalysisApi
@@ -25,7 +21,6 @@ import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
-import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
@@ -79,33 +74,12 @@ abstract class DataBindingsModule {
     @Binds
     abstract fun bindLocalLlmAnalyzer(impl: OnDeviceLocalLlmAnalyzer): LocalLlmAnalyzer
 
-    /**
-     * 绑定端侧 LLM 引擎。
-     *
-     * 用途说明：
-     * - 当前先使用占位引擎联调标准化输入输出协议。
-     * - 后续可直接替换为真实 ONNX/GGUF 推理引擎。
-     */
-    @Binds
-    abstract fun bindOnDeviceLlmEngine(impl: LlamaCppOnDeviceLlmEngine): OnDeviceLlmEngine
 }
 
 /** 为暂时不需要接口绑定的具体类型提供实例。 */
 @Module
 @InstallIn(SingletonComponent::class)
 object DataProvisionModule {
-    /**
-     * 提供真本地文本生成运行时。
-     *
-     * 参数说明：
-     * - context：应用上下文，用于定位 native so 所在目录。
-     */
-    @Provides
-    @Singleton
-    fun provideLocalTextGenerationRuntime(
-        @ApplicationContext context: Context,
-    ): LocalTextGenerationRuntime = LlamaCppRuntime(context)
-
     @Provides
     @Singleton
     fun provideCloudAnalysisApi(): CloudAnalysisApi = FakeCloudAnalysisApi()
