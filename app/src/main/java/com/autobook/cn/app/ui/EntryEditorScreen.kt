@@ -139,7 +139,7 @@ fun EntryEditorScreen(
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            text = "无论当前是 gemini-3.1-pro-preview 建议还是本地图片分析建议，都不会自动入账。请手动核对金额、分类、商户、备注后再保存。",
+                            text = "无论当前是 gemini-3-flash-preview 建议还是本地图片分析建议，都不会自动入账。请手动核对金额、分类、商户、备注后再保存。",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -172,9 +172,9 @@ private fun ImageImportSection(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("图片导入记账（预留）", style = MaterialTheme.typography.titleMedium)
+            Text("图片导入记账", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "当前已接入真实选图入口，但云端分析仍由 gemini-3.1-pro-preview mock 生成；后续可替换为真实 Gemini 云端能力或本地 OCR / 轻量模型。",
+                text = "当前已接入真实选图入口。关闭云端分析并开启 OCR 后，可直接走端内 ML Kit OCR + 本地 Qwen 生成建议；开启云端分析时走经 `api.wenapi.shop` 反代的 gemini-3-flash-preview 链路。",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Button(

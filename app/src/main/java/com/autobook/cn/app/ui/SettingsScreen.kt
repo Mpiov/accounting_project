@@ -89,14 +89,14 @@ fun SettingsScreen(
                 onCheckedChange = onCloudAnalysisChanged,
             )
             SettingSwitchCard(
-                title = "图片导入预留：截图分析",
-                summary = "当前不参与通知自动记账。后续用于用户主动上传图片记账时的图片预处理能力。",
+                title = "图片导入：截图分析",
+                summary = "当前不参与通知自动记账。该开关保留给后续图片预处理与截图辅助链路使用。",
                 checked = state.captureEnabled,
                 onCheckedChange = onCaptureEnabledChanged,
             )
             SettingSwitchCard(
-                title = "图片导入预留：OCR 识别",
-                summary = "当前不参与通知自动记账。后续用于用户主动上传图片记账时的端内文字识别能力。",
+                title = "图片导入：OCR 识别",
+                summary = "当前不参与通知自动记账。关闭云端分析后，图片导入会在该开关开启时使用端内 ML Kit OCR。",
                 checked = state.ocrEnabled,
                 onCheckedChange = onOcrEnabledChanged,
             )

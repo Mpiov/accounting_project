@@ -17,10 +17,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
-/** 验证图片导入 mock 分析器会按“云端优先 -> 本地模型 -> 手动确认草稿”的顺序返回建议。 */
+/** 验证图片导入分析器会按“云端优先 -> 本地 OCR + 本地模型 -> 手动确认草稿”的顺序返回建议。 */
 class MockImageImportAnalyzerTest {
     @Test
-    fun `uses gemini 3_1 pro preview mock when cloud analysis is enabled`() = runTest {
+    fun `uses gemini 3 flash proxy response when cloud analysis is enabled`() = runTest {
         val analyzer = MockImageImportAnalyzer(
             settingsRepository = fakeSettingsRepository(AppSettings(cloudAnalysisEnabled = true)),
             localModelRepository = fakeLocalModelRepository(LocalModelSnapshot(installStatus = LocalModelInstallStatus.NOT_DOWNLOADED)),
@@ -42,7 +42,12 @@ class MockImageImportAnalyzerTest {
     @Test
     fun `uses local ocr plus llm mock when cloud is disabled and model is ready`() = runTest {
         val analyzer = MockImageImportAnalyzer(
-            settingsRepository = fakeSettingsRepository(AppSettings(cloudAnalysisEnabled = false)),
+            settingsRepository = fakeSettingsRepository(
+                AppSettings(
+                    cloudAnalysisEnabled = false,
+                    ocrEnabled = true,
+                ),
+            ),
             localModelRepository = fakeLocalModelRepository(LocalModelSnapshot(installStatus = LocalModelInstallStatus.READY)),
             geminiImageImportApi = fakeGeminiApi(),
             imageImportLocalOcrEngine = fakeLocalOcrEngine(),
@@ -53,7 +58,7 @@ class MockImageImportAnalyzerTest {
 
         assertTrue(result is OperationResult.Success)
         val suggestion = (result as OperationResult.Success).data
-        assertEquals(ImageImportAnalysisPath.OCR_PLUS_LOCAL_LLM_MOCK, suggestion.tracePath)
+        assertEquals(ImageImportAnalysisPath.OCR_PLUS_LOCAL_LLM, suggestion.tracePath)
         assertEquals("本地图片识别示例商户", suggestion.merchant)
         assertEquals(18.0, suggestion.amount)
         assertTrue(suggestion.requiresManualConfirmation)
@@ -62,7 +67,12 @@ class MockImageImportAnalyzerTest {
     @Test
     fun `falls back to manual confirmation draft when local model is unavailable`() = runTest {
         val analyzer = MockImageImportAnalyzer(
-            settingsRepository = fakeSettingsRepository(AppSettings(cloudAnalysisEnabled = false)),
+            settingsRepository = fakeSettingsRepository(
+                AppSettings(
+                    cloudAnalysisEnabled = false,
+                    ocrEnabled = true,
+                ),
+            ),
             localModelRepository = fakeLocalModelRepository(LocalModelSnapshot(installStatus = LocalModelInstallStatus.NOT_DOWNLOADED)),
             geminiImageImportApi = fakeGeminiApi(),
             imageImportLocalOcrEngine = fakeLocalOcrEngine(),
@@ -78,9 +88,34 @@ class MockImageImportAnalyzerTest {
         assertTrue(suggestion.message.contains("本地模型未下载"))
         assertTrue(suggestion.requiresManualConfirmation)
     }
+
+    @Test
+    fun `falls back to manual confirmation draft when ocr is disabled`() = runTest {
+        val analyzer = MockImageImportAnalyzer(
+            settingsRepository = fakeSettingsRepository(
+                AppSettings(
+                    cloudAnalysisEnabled = false,
+                    ocrEnabled = false,
+                ),
+            ),
+            localModelRepository = fakeLocalModelRepository(LocalModelSnapshot(installStatus = LocalModelInstallStatus.READY)),
+            geminiImageImportApi = fakeGeminiApi(),
+            imageImportLocalOcrEngine = fakeLocalOcrEngine(),
+            imageImportLocalReasoner = fakeLocalReasoner(),
+        )
+
+        val result = analyzer.analyze("mock://ocr-disabled")
+
+        assertTrue(result is OperationResult.Success)
+        val suggestion = (result as OperationResult.Success).data
+        assertEquals(ImageImportAnalysisPath.MANUAL_CONFIRMATION_REQUIRED, suggestion.tracePath)
+        assertNull(suggestion.amount)
+        assertTrue(suggestion.message.contains("OCR"))
+        assertTrue(suggestion.requiresManualConfirmation)
+    }
 }
 
-/** 构造固定设置快照的只读仓储，供图片导入 mock 测试复用。 */
+/** 构造固定设置快照的只读仓储，供图片导入分析测试复用。 */
 private fun fakeSettingsRepository(settings: AppSettings): SettingsRepository {
     return object : SettingsRepository {
         override val settings: Flow<AppSettings> = flowOf(settings)
@@ -97,7 +132,7 @@ private fun fakeSettingsRepository(settings: AppSettings): SettingsRepository {
     }
 }
 
-/** 构造固定模型状态快照的只读仓储，供图片导入 mock 测试复用。 */
+/** 构造固定模型状态快照的只读仓储，供图片导入分析测试复用。 */
 private fun fakeLocalModelRepository(snapshot: LocalModelSnapshot): LocalModelRepository {
     return object : LocalModelRepository {
         override val snapshot: Flow<LocalModelSnapshot> = flowOf(snapshot)
@@ -116,10 +151,10 @@ private fun fakeGeminiApi(): GeminiImageImportApi {
                 direction = "EXPENSE",
                 merchant = "Gemini 图片建议商户",
                 category = "餐饮",
-                note = "来自 gemini-3.1-pro-preview mock，建议人工确认后保存",
-                orderId = "IMG-GEMINI31PRO-MOCK-001",
-                modelName = "gemini-3.1-pro-preview",
-                message = "已按 gemini-3.1-pro-preview 生成 mock 建议，请核对金额、商户和备注后确认保存。",
+                note = "来自 gemini-3-flash-preview proxy，建议人工确认后保存",
+                orderId = "IMG-GEMINI3FLASH-PROXY-001",
+                modelName = "gemini-3-flash-preview",
+                message = "已按 gemini-3-flash-preview 代理链路生成建议，请核对金额、商户和备注后确认保存。",
                 requiresManualConfirmation = true,
             )
         }
@@ -150,7 +185,7 @@ private fun fakeLocalReasoner(): ImageImportLocalReasoner {
                     category = "购物",
                     note = "来自 OCR + 本地轻量模型 mock，建议人工确认后保存",
                     orderId = "IMG-LOCAL-MOCK-001",
-                    tracePath = ImageImportAnalysisPath.OCR_PLUS_LOCAL_LLM_MOCK,
+                    tracePath = ImageImportAnalysisPath.OCR_PLUS_LOCAL_LLM,
                     message = "已按本地 OCR + 轻量模型 mock 生成建议，请核对后保存。",
                     requiresManualConfirmation = true,
                 ),

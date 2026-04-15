@@ -164,7 +164,7 @@ private fun EntryEditorRoute(
         contract = ActivityResultContracts.GetContent(),
     ) { uri ->
         uri?.let { selectedUri ->
-            // 当前先直接把内容 Uri 字符串作为图片引用传给 mock 分析器，后续可替换为真实上传或本地缓存路径。
+            // 当前直接把内容 Uri 字符串透传给图片导入分析器，由底层决定走云端开发链路还是端内 OCR + 本地 Qwen。
             viewModel.importFromImage(selectedUri.toString())
         }
     }

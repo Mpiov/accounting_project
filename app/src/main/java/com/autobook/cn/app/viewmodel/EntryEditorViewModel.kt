@@ -108,11 +108,11 @@ class EntryEditorViewModel @Inject constructor(
     fun applyTemplate(templateId: String) = updateState { applyEntryTemplate(templateId) }
 
     /**
-     * 触发一次图片导入记账的 mock 建议填充。
+     * 触发一次图片导入记账建议填充。
      *
      * 用途说明：
-     * - 当前阶段已经接上真实选图入口，但分析器仍然是 mock。
-     * - `imageRef` 当前直接使用图片 Uri 字符串占位，后续可替换为真实上传后的资源标识或本地文件引用。
+     * - 当前阶段已经接上真实选图入口，并会根据设置决定走云端开发链路或端内 OCR + 本地 Qwen。
+     * - `imageRef` 当前直接使用图片 Uri 字符串透传到底层 OCR / 分析器，避免在页面层重复做文件拷贝。
      */
     fun importFromImage(imageRef: String) {
         viewModelScope.launch {

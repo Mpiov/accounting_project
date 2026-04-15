@@ -21,15 +21,15 @@ import kotlinx.coroutines.flow.first
  *
  * 用途说明：
  * - 在真实图片选择、真实 OCR、真实云端多模态尚未接入前，先把产品路由规则固化下来。
- * - 当前云端 mock 明确使用 `gemini-3.1-pro-preview` 作为目标模型命名，且已经通过独立网络边界接口取结果，便于后续真实接入时保持接口语义一致。
- * - 根据当前设置和本地模型状态，返回“Gemini 3.1 Pro Preview mock”“本地 OCR + 轻量模型 mock”或“手动确认草稿”三种结果。
+ * - 当前云端路径已切到 `gemini-3-flash-preview` 代理链路，且仍通过独立网络边界接口取结果，便于后续继续替换真实后端时保持接口语义一致。
+ * - 根据当前设置和本地模型状态，返回“Gemini 3 Flash 代理链路”“本地 OCR + 端侧 Qwen”或“手动确认草稿”三种结果。
  *
  * 参数说明：
- * - settingsRepository：读取云端分析开关，决定是否优先走 Gemini 3.1 Pro Preview mock。
- * - localModelRepository：读取当前本地模型安装状态，决定是否允许走本地轻量模型 mock。
+ * - settingsRepository：读取云端分析开关，决定是否优先走 Gemini 3 Flash 代理链路。
+ * - localModelRepository：读取当前本地模型安装状态，决定是否允许走本地 OCR + 端侧 Qwen 路径。
  * - geminiImageImportApi：Gemini 云端图片分析接口，当前由 fake 实现返回固定结构化建议。
- * - imageImportLocalOcrEngine：本地图片 OCR 层，当前由 fake 实现返回固定文字。
- * - imageImportLocalReasoner：本地轻量模型层，当前由 fake 实现返回固定结构化建议。
+ * - imageImportLocalOcrEngine：本地图片 OCR 层，当前由 ML Kit 识别图片文字。
+ * - imageImportLocalReasoner：本地端侧推理层，当前由 `llama.cpp + Qwen` 生成结构化记账建议。
  */
 @Singleton
 class MockImageImportAnalyzer @Inject constructor(
@@ -67,6 +67,23 @@ class MockImageImportAnalyzer @Inject constructor(
                     tracePath = ImageImportAnalysisPath.GEMINI_3_1_PRO_PREVIEW_MOCK,
                     message = response.message,
                     requiresManualConfirmation = response.requiresManualConfirmation,
+                ),
+            )
+        }
+
+        // 只有在用户明确开启 OCR 预留开关后，才允许进入本地图片文字识别路径。
+        if (!settings.ocrEnabled) {
+            return OperationResult.Success(
+                ImageImportSuggestion(
+                    amount = null,
+                    direction = MoneyDirection.EXPENSE,
+                    merchant = "",
+                    category = "待分类",
+                    note = "本地 OCR 未开启，当前进入手动确认草稿。",
+                    orderId = null,
+                    tracePath = ImageImportAnalysisPath.MANUAL_CONFIRMATION_REQUIRED,
+                    message = "云端分析未开启，且本地 OCR 识别开关处于关闭状态，请在设置中开启后重试或手动补全。",
+                    requiresManualConfirmation = true,
                 ),
             )
         }

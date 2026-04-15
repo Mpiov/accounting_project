@@ -2,8 +2,8 @@ package com.autobook.cn.core.data
 
 import android.content.Context
 import com.autobook.cn.core.data.impl.AccessibilityCaptureCoordinator
-import com.autobook.cn.core.data.impl.FakeImageImportLocalOcrEngine
-import com.autobook.cn.core.data.impl.FakeImageImportLocalReasoner
+import com.autobook.cn.core.data.impl.ImageImportMlKitOcrEngine
+import com.autobook.cn.core.data.impl.ImageImportOnDeviceLocalReasoner
 import com.autobook.cn.core.data.impl.LedgerRepositoryImpl
 import com.autobook.cn.core.data.impl.LlamaCppOnDeviceLlmEngine
 import com.autobook.cn.core.data.impl.LocalModelRepositoryImpl
@@ -64,10 +64,10 @@ abstract class DataBindingsModule {
     abstract fun bindImageImportAnalyzer(impl: MockImageImportAnalyzer): ImageImportAnalyzer
 
     @Binds
-    abstract fun bindImageImportLocalOcrEngine(impl: FakeImageImportLocalOcrEngine): ImageImportLocalOcrEngine
+    abstract fun bindImageImportLocalOcrEngine(impl: ImageImportMlKitOcrEngine): ImageImportLocalOcrEngine
 
     @Binds
-    abstract fun bindImageImportLocalReasoner(impl: FakeImageImportLocalReasoner): ImageImportLocalReasoner
+    abstract fun bindImageImportLocalReasoner(impl: ImageImportOnDeviceLocalReasoner): ImageImportLocalReasoner
 
     /**
      * 绑定本地 LLM 分析器。

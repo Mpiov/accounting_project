@@ -23,8 +23,8 @@ import org.json.JSONObject
  * Gemini 图片导入分析请求。
  *
  * 用途说明：
- * - 为当前客户端直连 `gemini-3.1-pro-preview` 保留最小请求协议。
- * - 当前阶段直接传入图片引用与提示词版本，后续切后端代理时也可平滑复用这层调用参数。
+ * - 为当前客户端走 Cloudflare 反向代理调用 `gemini-3-flash-preview` 保留最小请求协议。
+ * - 当前阶段直接传入图片引用与提示词版本，后续继续调整代理或切后端服务时也可平滑复用这层调用参数。
  *
  * 参数说明：
  * - imageRef：图片引用，当前直接使用内容 Uri 字符串。
@@ -79,11 +79,11 @@ interface GeminiImageImportApi {
 }
 
 /**
- * 当前客户端直连 Gemini 的真实实现。
+ * 当前通过 Cloudflare 反向代理调用 Gemini 的真实实现。
  *
  * 用途说明：
- * - 直接从应用端把图片发送到 Gemini `generateContent` 接口。
- * - 仅用于当前开发阶段快速跑通功能，后续仍建议切回服务端代理方案。
+ * - 从应用端把图片请求发送到 Cloudflare 反代域名，再由代理转发到 Gemini `generateContent` 接口。
+ * - 当前不再从 `local.properties` 或 `BuildConfig` 读取 Gemini API key，避免把上游密钥下发到客户端。
  *
  * 参数说明：
  * - context：应用上下文，用于读取选图返回的内容 Uri。
@@ -101,21 +101,6 @@ class DirectGeminiImageImportApi @Inject constructor(
         return try {
             withTimeout(GEMINI_TOTAL_TIMEOUT_MS) {
                 withContext(Dispatchers.IO) {
-                    if (BuildConfig.GEMINI_API_KEY.isBlank()) {
-                        Log.w(TAG, "Gemini API key is missing in BuildConfig")
-                        return@withContext GeminiImageImportResponse(
-                            amount = null,
-                            direction = "EXPENSE",
-                            merchant = "",
-                            category = "待分类",
-                            note = "",
-                            orderId = null,
-                            modelName = BuildConfig.GEMINI_IMAGE_MODEL,
-                            message = "未在 local.properties 中配置 gemini.api.key，当前无法直连 Gemini。",
-                            requiresManualConfirmation = true,
-                        )
-                    }
-
                     Log.d(TAG, "Start reading image for Gemini request: ${request.imageRef}")
                     val imagePayload = runCatching { buildInlineImagePayload(request.imageRef) }.getOrNull()
                         ?: return@withContext GeminiImageImportResponse(
@@ -144,7 +129,7 @@ class DirectGeminiImageImportApi @Inject constructor(
                         readTimeout = NETWORK_TIMEOUT_MS
                         doInput = true
                         doOutput = true
-                        setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                        applyProxyHeaders(request)
                     }
 
                     try {
@@ -168,7 +153,7 @@ class DirectGeminiImageImportApi @Inject constructor(
                                 note = "",
                                 orderId = null,
                                 modelName = BuildConfig.GEMINI_IMAGE_MODEL,
-                                message = "Gemini 请求失败：HTTP ${connection.responseCode}，请检查 key 或网络后重试。",
+                                message = "Gemini 代理请求失败：HTTP ${connection.responseCode}，请检查代理或网络后重试。",
                                 requiresManualConfirmation = true,
                             )
                         } else {
@@ -231,9 +216,29 @@ class DirectGeminiImageImportApi @Inject constructor(
         }
     }
 
-    /** 组装 Gemini REST endpoint。 */
+    /** 组装经过 Cloudflare 反代的 Gemini REST endpoint。 */
     private fun buildEndpointUrl(): String {
-        return "$GEMINI_BASE_URL/models/${BuildConfig.GEMINI_IMAGE_MODEL}:generateContent?key=${BuildConfig.GEMINI_API_KEY}"
+        return "$GEMINI_PROXY_BASE_URL/models/${BuildConfig.GEMINI_IMAGE_MODEL}:generateContent"
+    }
+
+    /**
+     * 统一设置反向代理请求头。
+     *
+     * 用途说明：
+     * - 把模型名、提示词版本和人工确认语义显式透传给 Cloudflare 代理，方便代理层做路由、审计和灰度。
+     * - 这里不再下发上游 API key，只保留与业务语义相关的头。
+     *
+     * 参数说明：
+     * - request：当前图片导入分析请求，用于透传提示词版本和人工确认标记。
+     */
+    private fun HttpURLConnection.applyProxyHeaders(request: GeminiImageImportRequest) {
+        setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+        setRequestProperty("Accept", "application/json")
+        setRequestProperty("User-Agent", GEMINI_PROXY_USER_AGENT)
+        setRequestProperty("X-Proxy-Provider", "gemini")
+        setRequestProperty("X-Proxy-Model", BuildConfig.GEMINI_IMAGE_MODEL)
+        setRequestProperty("X-Prompt-Version", request.promptVersion)
+        setRequestProperty("X-Require-Manual-Confirmation", request.requireManualConfirmation.toString())
     }
 
     /**
@@ -368,7 +373,7 @@ class DirectGeminiImageImportApi @Inject constructor(
  * Gemini 图片导入分析的 fake 实现。
  *
  * 用途说明：
- * - 在未配置 API key 或不希望发真实网络请求时，仍能返回固定结果联调图片导入流程。
+ * - 在不希望发真实网络请求时，仍能返回固定结果联调图片导入流程。
  */
 class FakeGeminiImageImportApi : GeminiImageImportApi {
     override suspend fun analyze(request: GeminiImageImportRequest): GeminiImageImportResponse {
@@ -377,10 +382,10 @@ class FakeGeminiImageImportApi : GeminiImageImportApi {
             direction = "EXPENSE",
             merchant = "Gemini 图片建议商户",
             category = "餐饮",
-            note = "来自 gemini-3.1-pro-preview mock，建议人工确认后保存",
-            orderId = "IMG-GEMINI31PRO-MOCK-001",
-            modelName = "gemini-3.1-pro-preview",
-            message = "已按 gemini-3.1-pro-preview 生成 mock 建议，请核对金额、商户和备注后确认保存。",
+            note = "来自 gemini-3-flash-preview mock，建议人工确认后保存",
+            orderId = "IMG-GEMINI3FLASH-MOCK-001",
+            modelName = "gemini-3-flash-preview",
+            message = "已按 gemini-3-flash-preview 生成 mock 建议，请核对金额、商户和备注后确认保存。",
             requiresManualConfirmation = true,
         )
     }
@@ -400,9 +405,10 @@ private fun JSONObject.optStringOrNull(key: String): String? {
     return if (isNull(key)) null else optString(key)
 }
 
-private const val GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+private const val GEMINI_PROXY_BASE_URL = "https://api.wenapi.shop/v1beta"
 private const val NETWORK_TIMEOUT_MS = 30_000
 private const val GEMINI_TOTAL_TIMEOUT_MS = 35_000L
 private const val JPEG_QUALITY = 85
 private const val DEFAULT_IMAGE_MIME_TYPE = "image/jpeg"
+private const val GEMINI_PROXY_USER_AGENT = "Autobook-Android-GeminiProxy/1.0"
 private const val TAG = "GeminiImageImportApi"

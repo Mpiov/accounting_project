@@ -236,12 +236,12 @@ data class LocalModelSnapshot(
  * 图片导入记账的分析路径标识。
  *
  * 用途说明：
- * - 用统一枚举标记本次图片建议是来自 `gemini-3.1-pro-preview` mock、本地 OCR + 轻量模型 mock，还是仅进入手动确认草稿。
+ * - 用统一枚举标记本次图片建议是来自 `gemini-3-flash-preview` 代理链路、本地 OCR + 端侧 LLM，还是仅进入手动确认草稿。
  * - 便于后续在 UI、埋点和审计字段中统一展示来源。
  */
 enum class ImageImportAnalysisPath {
     GEMINI_3_1_PRO_PREVIEW_MOCK,
-    OCR_PLUS_LOCAL_LLM_MOCK,
+    OCR_PLUS_LOCAL_LLM,
     MANUAL_CONFIRMATION_REQUIRED,
 }
 
@@ -250,14 +250,14 @@ enum class ImageImportAnalysisPath {
  *
  * 用途说明：
  * - 作为“用户主动上传图片记账”能力的统一输出协议。
- * - 当前阶段先由 mock 结果驱动编辑页预填，后续可平滑替换为真实 `gemini-3.1-pro-preview` 或本地 OCR/LLM 分析结果。
+ * - 当前阶段由 `gemini-3-flash-preview` 代理链路或本地 OCR/LLM 分析结果驱动编辑页预填。
  *
  * 参数说明：
  * - amount：建议金额；为空表示当前无法可靠提取金额，需要用户手动输入。
  * - direction：建议收支方向。
  * - merchant：建议商户或交易对象。
  * - category：建议分类。
- * - note：建议备注。
+ * - note：建议备注；当前也会包含“来自本地 OCR + 端侧 LLM”这类链路说明，帮助用户理解建议来源。
  * - orderId：建议订单号。
  * - tracePath：本次建议的分析路径。
  * - message：面向用户的状态说明。

@@ -27,7 +27,7 @@ Autobook is an Android-first accounting app for notification-driven bookkeeping 
 ## Run
 
 1. Ensure Java 17 is available.
-2. If you want to test cloud image import directly from the app, add `gemini.api.key=<your key>` to `local.properties`.
+2. Cloud image import now goes through the `api.wenapi.shop` reverse proxy; no Gemini API key needs to be written into `local.properties`.
 3. Run `./gradlew assembleDebug`.
 4. Install the generated debug APK from `app/build/outputs/apk/debug/`.
 
@@ -45,13 +45,13 @@ Autobook is an Android-first accounting app for notification-driven bookkeeping 
 - Notification auto-bookkeeping now uses text parsing plus local semantic enhancement, without OCR in the notification path.
 - High-confidence parsed transactions are written to the ledger, medium-confidence or possible-duplicate candidates are routed to the pending queue, and low-confidence candidates are filtered out.
 - Ledger now supports basic search, day/month/all filters, manual add/edit/delete, and a settings page for source selection and retention controls.
-- Image import bookkeeping supports real image picking and suggestion prefill.
-- When cloud analysis is enabled, image import can directly call Gemini from the app during development.
+- Image import bookkeeping supports real image picking plus suggestion prefill through either cloud Gemini development calls or local ML Kit OCR + on-device Qwen.
+- When cloud analysis is enabled, image import can directly call Gemini from the app during development; when cloud analysis is disabled and OCR is enabled, image import falls back to local OCR + on-device Qwen.
 - All image-analysis results are still suggestion-only and must be manually confirmed before saving.
 
 ## Follow-up Integration
 
 - Move the current direct Gemini image-import call behind a backend proxy before larger-scale release.
-- Replace local image-import OCR and light-model fakes with production implementations.
+- Replace the current direct Gemini development path with a release-grade backend proxy and continue improving local image OCR / on-device reasoning accuracy.
 - Wire MediaProjection session management only for future user-triggered image workflows if still needed.
 - Add import/export UI, richer analytics, and formal privacy materials for release readiness.
