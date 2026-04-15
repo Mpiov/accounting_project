@@ -53,6 +53,7 @@ import java.util.Locale
  * 参数说明：
  * - state：首页所需的账本聚合状态。
  * - onRangeChange：切换首页统计范围时的回调。
+ * - onOpenPending：从首页提醒卡进入待确认页的回调。
  * - onOpenAllRecords：打开全部记录页的回调。
  * - onOpenBudgetSettings：打开预算设置页的回调。
  * - onOpenEntry：打开单条账单详情的回调。
@@ -63,6 +64,7 @@ import java.util.Locale
 fun OverviewScreen(
     state: LedgerUiState,
     onRangeChange: (LedgerRangeFilter) -> Unit,
+    onOpenPending: () -> Unit,
     onOpenAllRecords: () -> Unit,
     onOpenBudgetSettings: () -> Unit,
     onOpenEntry: (Long) -> Unit,
@@ -86,6 +88,14 @@ fun OverviewScreen(
                 onRangeChange = onRangeChange,
             )
         }
+        if (state.pendingCount > 0) {
+            item(key = "pending_notice") {
+                PendingReminderCard(
+                    pendingCount = state.pendingCount,
+                    onOpenPending = onOpenPending,
+                )
+            }
+        }
         item(key = "budget") {
             BudgetOverviewCard(
                 state = state,
@@ -108,6 +118,74 @@ fun OverviewScreen(
                 RecentRecordsTimeline(
                     entries = state.entries.take(4),
                     onOpenEntry = onOpenEntry,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 用途说明：
+ * - 在首页显眼位置提醒用户还有待确认记录，形成“打开 App 就能看见”的体验闭环。
+ * - 这张卡只负责提醒与引导，不会替用户做强制跳转。
+ *
+ * 参数说明：
+ * - pendingCount：当前待确认记录数量，用于渲染标题和副文案。
+ * - onOpenPending：点击提醒卡后进入待确认页的回调。
+ */
+@Composable
+private fun PendingReminderCard(
+    pendingCount: Int,
+    onOpenPending: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenPending),
+        shape = AutobookUiTokens.panelShape,
+        border = autobookCardBorder(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.secondary,
+                        shape = CircleShape,
+                    ),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = "有 $pendingCount 条待确认记录",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Text(
+                    text = buildPendingReminderSummary(pendingCount),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+            Surface(
+                shape = AutobookUiTokens.chipShape,
+                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f),
+            ) {
+                Text(
+                    text = "去处理",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
         }
@@ -657,6 +735,21 @@ private fun buildOverviewSummary(state: LedgerUiState): String {
         LedgerRangeFilter.WEEK -> "看本周开销变化"
         LedgerRangeFilter.TODAY -> "看今天的收支情况"
         else -> "看最近账单情况"
+    }
+}
+
+/**
+ * 用途说明：
+ * - 根据待确认数量生成首页提醒卡的副文案，让用户知道“不强跳，但值得尽快处理”。
+ *
+ * 参数说明：
+ * - pendingCount：当前待确认记录数量。
+ */
+private fun buildPendingReminderSummary(pendingCount: Int): String {
+    return if (pendingCount == 1) {
+        "打开待确认页补充核对后，这条记录才会正式进入账本统计。"
+    } else {
+        "这些记录还没正式入账，建议稍后集中确认，避免总览统计出现偏差。"
     }
 }
 

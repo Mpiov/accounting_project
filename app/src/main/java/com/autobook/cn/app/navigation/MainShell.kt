@@ -14,6 +14,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -61,6 +63,9 @@ fun MainShell(
     rootNavController: NavHostController,
     modifier: Modifier = Modifier,
 ) {
+    // 订阅待确认状态，只用于底部导航数量提醒，不改变页面跳转策略。
+    val pendingViewModel: PendingViewModel = hiltViewModel()
+    val pendingState by pendingViewModel.uiState.collectAsStateWithLifecycle()
     val shellNavController = rememberNavController()
     val navBackStackEntry by shellNavController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
@@ -76,7 +81,12 @@ fun MainShell(
                     NavigationBarItem(
                         selected = currentTab == tab,
                         onClick = { shellNavController.navigateToMainTab(tab) },
-                        icon = { Icon(imageVector = tab.icon, contentDescription = tab.label) },
+                        icon = {
+                            MainShellNavigationIcon(
+                                tab = tab,
+                                pendingCount = pendingState.items.size,
+                            )
+                        },
                         label = { Text(tab.label) },
                     )
                 }
@@ -109,6 +119,7 @@ fun MainShell(
                 OverviewScreen(
                     state = state,
                     onRangeChange = viewModel::setRange,
+                    onOpenPending = { shellNavController.navigateToMainTab(MainShellTab.Pending) },
                     onOpenAllRecords = { rootNavController.navigate(AutobookDestination.RecordsAll.route) },
                     onOpenBudgetSettings = { rootNavController.navigate(AutobookDestination.BudgetSettings.route) },
                     onOpenEntry = { ledgerId ->
@@ -200,6 +211,36 @@ fun MainShell(
 
 /**
  * 用途说明：
+ * - 底部导航图标统一封装在这里，便于只给“待确认”Tab 加数量徽标。
+ *
+ * 参数说明：
+ * - tab：当前正在渲染的底部导航项。
+ * - pendingCount：当前待确认记录数量，用于决定是否展示徽标。
+ */
+@Composable
+private fun MainShellNavigationIcon(
+    tab: MainShellTab,
+    pendingCount: Int,
+) {
+    if (tab != MainShellTab.Pending || pendingCount <= 0) {
+        Icon(imageVector = tab.icon, contentDescription = tab.label)
+        return
+    }
+
+    BadgedBox(
+        badge = {
+            Badge {
+                // 徽标文案做上限裁剪，避免数量过大时挤压底部导航布局。
+                Text(text = pendingBadgeLabel(pendingCount))
+            }
+        },
+    ) {
+        Icon(imageVector = tab.icon, contentDescription = tab.label)
+    }
+}
+
+/**
+ * 用途说明：
  * - 一级页面枚举，同时绑定底部导航展示信息。
  */
 private enum class MainShellTab(
@@ -265,4 +306,15 @@ private fun NavHostController.navigateToMainTab(tab: MainShellTab) {
             saveState = true
         }
     }
+}
+
+/**
+ * 用途说明：
+ * - 将待确认数量格式化为适合底部导航徽标的短文本。
+ *
+ * 参数说明：
+ * - pendingCount：待确认记录总数。
+ */
+private fun pendingBadgeLabel(pendingCount: Int): String {
+    return if (pendingCount > 99) "99+" else pendingCount.toString()
 }

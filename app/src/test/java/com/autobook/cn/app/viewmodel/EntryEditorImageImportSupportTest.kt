@@ -43,7 +43,7 @@ class EntryEditorImageImportSupportTest {
                                 note = "图片导入备注",
                                 orderId = "IMG-ORDER-001",
                                 confidence = ParseConfidence(0.91f),
-                                tracePath = ImageImportAnalysisPath.GEMINI_3_FLASH_PROXY,
+                                tracePath = ImageImportAnalysisPath.CLOUD_LLM_PROXY,
                                 message = "图片导入建议已生成",
                                 candidates = listOf(
                                     ImageImportCandidate(
@@ -89,7 +89,7 @@ class EntryEditorImageImportSupportTest {
             assertEquals("图片导入备注", state.note)
             assertEquals("IMG-ORDER-001", state.orderId)
             assertEquals("content://demo/image-1", state.importedImageRef)
-            assertEquals(ImageImportAnalysisPath.GEMINI_3_FLASH_PROXY, state.imageImportTracePath)
+            assertEquals(ImageImportAnalysisPath.CLOUD_LLM_PROXY, state.imageImportTracePath)
             assertEquals(2, state.imageImportCandidates.size)
             assertEquals(0, state.selectedImageImportCandidateIndex)
             assertEquals(2, state.filteredOutCandidateCount)

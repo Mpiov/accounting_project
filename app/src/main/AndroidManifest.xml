@@ -2,31 +2,29 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-        前台服务权限说明：
-        1. 基础前台服务权限用于允许应用启动前台服务。
-        2. Android 14+ 要求按 foregroundServiceType 额外声明对应权限；
-           当前页面截图记账服务声明的是 dataSync，因此必须同时声明
-           FOREGROUND_SERVICE_DATA_SYNC，否则在调用 startForeground() 时会抛出 SecurityException。
+        前台服务权限声明。
+        说明：
+        1. 截图记账常驻入口依赖前台服务常驻运行。
+        2. Android 14+ 需要额外声明与 `foregroundServiceType` 对应的细分权限，
+           当前截图记账服务声明的是 `dataSync`，因此这里同时保留 `FOREGROUND_SERVICE_DATA_SYNC`。
     -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!--
-        应用入口配置：
-        1. Application 和 Activity 的包路径需要和 Kotlin 源码中的真实包名保持一致。
-        2. 这里显式使用完整类名，保留 main 分支上修复过的启动路径，避免入口解析偏差。
-    -->
     <application
         android:name="com.autobook.cn.app.AutobookApplication"
         android:allowBackup="false"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Autobook">
+
         <!--
-            主界面入口：
-            MainActivity 位于 com.autobook.cn.app 包下，这里保持显式全限定名，降低启动配置歧义。
+            应用主入口 Activity。
+            说明：
+            1. 该组件需要暴露给系统桌面，因此保持 `exported=true`。
+            2. 这里显式使用完整类名，避免包名调整时入口解析产生偏差。
         -->
         <activity
             android:name="com.autobook.cn.app.MainActivity"
@@ -34,46 +32,37 @@
             android:theme="@style/Theme.Autobook">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
         <!--
-            通知栏快捷动作跳板 Activity：
-            1. 负责承接“立即截图记账 / 关闭入口”的通知 action。
-            2. 自身不展示 UI，只做动作转发，完成后立即结束。
-            3. 通过透明 Activity 兜底，提升通知 action 在 MIUI 等 ROM 上的触发稳定性。
+            截图通知动作的透明跳板 Activity。
+            说明：
+            1. 该组件只承接应用自己创建的通知点击，不应该被外部应用直接拉起。
+            2. 因此这里显式设置 `exported=false`，把截图链路收口为应用内入口。
+            3. 组件本身不展示 UI，只负责快速转发动作并立即结束。
         -->
         <activity
             android:name="com.autobook.cn.app.capture.PageCaptureActionActivity"
             android:enabled="true"
             android:excludeFromRecents="true"
-            android:exported="true"
+            android:exported="false"
             android:finishOnTaskLaunch="true"
             android:noHistory="true"
             android:taskAffinity=""
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
+        <!--
+            截图记账前台服务。
+            说明：
+            1. 服务只允许应用内显式 Intent 启动，因此保持 `exported=false`。
+            2. 常驻通知和截图分析链路都由该服务统一负责。
+        -->
         <service
             android:name="com.autobook.cn.app.capture.PageCaptureBookkeepingService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
-
-        <!--
-            通知栏快捷动作接收器：
-            1. 负责承接“立即截图记账 / 关闭入口”的通知 action。
-            2. 先由广播接收器接住通知动作，再转发给前台服务，提升 OEM 系统上的触发稳定性。
-        -->
-        <receiver
-            android:name="com.autobook.cn.app.capture.PageCaptureActionReceiver"
-            android:enabled="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.autobook.cn.app.capture.ACTION_TRIGGER_CAPTURE_FROM_NOTIFICATION" />
-                <action android:name="com.autobook.cn.app.capture.ACTION_STOP_PERSISTENT_FROM_NOTIFICATION" />
-            </intent-filter>
-        </receiver>
     </application>
 
 </manifest>

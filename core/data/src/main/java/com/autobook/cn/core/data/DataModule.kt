@@ -1,5 +1,6 @@
 package com.autobook.cn.core.data
 
+import android.content.Context
 import com.autobook.cn.core.data.impl.AccessibilityCaptureCoordinator
 import com.autobook.cn.core.data.impl.ImageImportMlKitOcrEngine
 import com.autobook.cn.core.data.impl.ImageImportOnDeviceLocalReasoner
@@ -14,13 +15,14 @@ import com.autobook.cn.core.data.impl.SettingsRepositoryImpl
 import com.autobook.cn.core.data.parser.LocalTransactionExtractor
 import com.autobook.cn.core.data.pipeline.ModelRouterImpl
 import com.autobook.cn.core.network.CloudAnalysisApi
-import com.autobook.cn.core.network.DirectGeminiImageImportApi
+import com.autobook.cn.core.network.CloudImageImportApi
+import com.autobook.cn.core.network.DirectCloudImageImportApi
 import com.autobook.cn.core.network.FakeCloudAnalysisApi
-import com.autobook.cn.core.network.GeminiImageImportApi
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
@@ -86,7 +88,7 @@ object DataProvisionModule {
 
     @Provides
     @Singleton
-    fun provideGeminiImageImportApi(
+    fun provideCloudImageImportApi(
         @ApplicationContext context: Context,
-    ): GeminiImageImportApi = DirectGeminiImageImportApi(context)
+    ): CloudImageImportApi = DirectCloudImageImportApi(context)
 }

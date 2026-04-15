@@ -238,11 +238,11 @@ data class LocalModelSnapshot(
  * 图片导入记账的分析路径标识。
  *
  * 用途说明：
- * - 用统一枚举标记本次图片建议是来自 `gemini-3.1-pro-preview` 代理链路、本地 OCR + 端侧 LLM，还是仅进入手动确认草稿。
+ * - 用统一枚举标记本次图片建议是来自“云端大模型代理链路”、本地 OCR + 端侧 LLM，还是仅进入手动确认草稿。
  * - 便于后续在 UI、埋点和审计字段中统一展示来源。
  */
 enum class ImageImportAnalysisPath {
-    GEMINI_3_FLASH_PROXY,
+    CLOUD_LLM_PROXY,
     OCR_PLUS_LOCAL_LLM,
     MANUAL_CONFIRMATION_REQUIRED,
 }
@@ -302,7 +302,7 @@ data class ImageImportCandidate(
  *
  * 用途说明：
  * - 作为“用户主动上传图片记账”能力的统一输出协议。
- * - 当前阶段由 `gemini-3.1-pro-preview` 代理链路或本地 OCR/LLM 分析结果驱动编辑页预填。
+ * - 当前阶段由“云端大模型代理链路”或本地 OCR/LLM 分析结果驱动编辑页预填。
  *
  * 参数说明：
  * - amount：建议金额；为空表示当前无法可靠提取金额，需要用户手动输入。

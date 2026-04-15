@@ -10,60 +10,32 @@ import com.autobook.cn.core.common.PermissionStatusChecker
 import com.autobook.cn.core.common.SettingsIntents
 
 /**
- * 通知栏快捷动作的透明跳板 Activity。
+ * 通知栏截图记账动作的透明跳板 Activity。
  *
  * 用途说明：
- * - 某些 ROM 对通知 action 直接拉起 Service 或 BroadcastReceiver 的兼容性并不稳定。
- * - 这里改为先拉起一个透明 Activity，再由 Activity 立即转发给前台服务，通常比广播/服务 action 更稳定。
- * - Activity 本身不承载 UI，只做动作分发，分发完成后立即结束。
+ * - 仅承接应用自己创建的通知点击事件，再把“立即截图”动作转发给前台服务。
+ * - 该 Activity 在 `AndroidManifest.xml` 中被声明为 `exported=false`，
+ *   因此外部应用无法直接拉起，避免把截图链路暴露给应用外部。
  *
- * 参数说明：
- * - Activity 由系统通过通知动作启动，本类无显式构造参数。
+ * 参数解释：
+ * - 无显式构造参数；实例由系统根据通知点击事件按需创建。
  */
 class PageCaptureActionActivity : Activity() {
+
     /**
-     * 接住通知动作，并把动作转发给真正的前台服务。
+     * 处理通知点击，并把合法的截图动作转交给前台服务。
      *
-     * 参数说明：
-     * - savedInstanceState：系统恢复状态；当前不使用，仅保留标准生命周期签名。
+     * 参数解释：
+     * - `savedInstanceState`：系统恢复 Activity 状态时传入的 Bundle；当前仅保留标准签名。
      */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         when (intent?.action) {
-            ACTION_TRIGGER_CAPTURE -> {
-                Log.d(LOG_TAG, "Notification action activity received: trigger capture")
-                if (!hasAccessibilityCaptureAccess()) {
-                    /**
-                     * 当前截图链路依赖无障碍服务注册运行时。
-                     *
-                     * 用途说明：
-                     * - 如果用户还没真正开启无障碍服务，继续把 action 派发给前台服务只会得到“截图能力不可用”。
-                     * - 这里直接把用户带到系统无障碍设置页，避免通知入口进入无效死路。
-                     */
-                    Toast.makeText(this, "请先开启无障碍自动化，才能执行当前页面截图", Toast.LENGTH_LONG).show()
-                    startActivity(
-                        SettingsIntents.accessibilityAccess().apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        },
-                    )
-                    finish()
-                    overridePendingTransition(0, 0)
-                    return
-                }
-                /**
-                 * 当前截图走无障碍 `takeScreenshot()`，系统通常不会播放显式截图动画。
-                 *
-                 * 用途说明：
-                 * - 给用户一个即时反馈，避免出现“通知栏收起了，但看起来什么都没发生”的错觉。
-                 */
-                Toast.makeText(this, "正在截图并分析当前页面", Toast.LENGTH_SHORT).show()
-                dispatchTriggerCaptureToService()
-            }
-
-            ACTION_STOP_PERSISTENT -> {
-                Log.d(LOG_TAG, "Notification action activity received: stop persistent entry")
-                dispatchStopPersistentToService()
+            ACTION_TRIGGER_CAPTURE -> handleTriggerCaptureAction()
+            else -> {
+                // 只接受内部定义的截图动作，其他 action 一律忽略并立即结束。
+                Log.w(LOG_TAG, "Ignoring unsupported action: ${intent?.action.orEmpty()}")
             }
         }
 
@@ -72,59 +44,62 @@ class PageCaptureActionActivity : Activity() {
     }
 
     /**
-     * 把“立即截图记账”动作分发给常驻前台服务。
+     * 执行截图通知的点击逻辑。
      *
-     * 用途说明：
-     * - 当前通知入口只会在常驻前台服务已经启动后展示，因此绝大多数情况下目标服务本来就存活。
-     * - 这时继续调用 `startForegroundService()` 去“重新拉起”同一个前台服务，反而更容易触发部分 ROM 的限制，
-     *   表现就是用户点了通知按钮，但界面和通知状态都没有任何变化。
-     * - 因此这里优先对现有服务直接 `startService()` 派发新的 action；只有系统拒绝时，才回退到前台服务启动路径兜底。
+     * 参数解释：
+     * - 无显式参数；内部直接读取当前 Activity 的 `intent` 与系统权限状态。
+     */
+    private fun handleTriggerCaptureAction() {
+        Log.d(LOG_TAG, "Notification action activity received: trigger capture")
+        if (!hasAccessibilityCaptureAccess()) {
+            // 截图能力依赖无障碍服务，权限缺失时直接引导用户去系统设置补齐前置条件。
+            Toast.makeText(
+                this,
+                "请先开启无障碍自动化，才能执行当前页面截图",
+                Toast.LENGTH_LONG,
+            ).show()
+            startActivity(
+                SettingsIntents.accessibilityAccess().apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                },
+            )
+            return
+        }
+
+        // 无障碍截图通常不会出现系统截图动画，这里补一个轻提示让用户知道动作已开始执行。
+        Toast.makeText(this, "正在截图并分析当前页面", Toast.LENGTH_SHORT).show()
+        dispatchTriggerCaptureToService()
+    }
+
+    /**
+     * 把“立即截图记账”动作投递给常驻前台服务。
      *
-     * 参数说明：
-     * - 无显式参数；内部直接使用当前 Activity 上下文构造服务 Intent。
+     * 参数解释：
+     * - 无显式参数；内部基于当前 Activity 构造目标 Service 的显式 Intent。
      */
     private fun dispatchTriggerCaptureToService() {
         val triggerIntent = PageCaptureBookkeepingService.createTriggerCaptureIntent(this)
         runCatching {
+            // 常驻通知已经出现时，目标服务通常处于存活状态，优先直接投递 action。
             startService(triggerIntent)
         }.onSuccess { componentName ->
             Log.d(LOG_TAG, "Trigger capture dispatched via startService component=$componentName")
         }.onFailure { error ->
+            // 个别 ROM 可能拒绝普通 startService，这里再退回前台服务启动路径兜底。
             Log.w(LOG_TAG, "startService trigger failed, fallback to startForegroundService", error)
             ContextCompat.startForegroundService(this, triggerIntent)
         }
     }
 
     /**
-     * 把“关闭常驻入口”动作分发给前台服务。
+     * 判断当前是否已经具备无障碍截图前置能力。
      *
-     * 用途说明：
-     * - 关闭入口本质上只是给当前服务发送一个停止 action，不需要重新走前台服务拉起链路。
-     * - 保留单独方法是为了让通知动作分发语义更清晰，也方便后续继续补充日志与兼容处理。
+     * 参数解释：
+     * - 无显式参数；内部直接读取当前应用上下文与目标无障碍服务类名。
      *
-     * 参数说明：
-     * - 无显式参数；内部直接使用当前 Activity 上下文构造服务 Intent。
-     */
-    private fun dispatchStopPersistentToService() {
-        val stopIntent = PageCaptureBookkeepingService.createStopPersistentIntent(this)
-        runCatching {
-            startService(stopIntent)
-        }.onSuccess { componentName ->
-            Log.d(LOG_TAG, "Stop persistent dispatched component=$componentName")
-        }.onFailure { error ->
-            Log.w(LOG_TAG, "startService stop failed", error)
-        }
-    }
-
-    /**
-     * 检查当前无障碍截图运行时是否已经具备可用前提。
-     *
-     * 用途说明：
-     * - `CaptureCoordinator` 只有在无障碍服务真正连接成功后才会返回可用会话。
-     * - 这里先做轻量预检，避免用户每次都先看到失败通知，再自己猜权限缺在哪。
-     *
-     * 参数说明：
-     * - 无显式参数；内部直接基于当前 Activity 上下文查询系统设置。
+     * 返回值说明：
+     * - `true`：无障碍服务已就绪，可以继续触发截图。
+     * - `false`：前置权限未满足，需要先引导用户去设置页开启。
      */
     private fun hasAccessibilityCaptureAccess(): Boolean {
         return PermissionStatusChecker.hasAccessibilityAccess(
@@ -135,14 +110,13 @@ class PageCaptureActionActivity : Activity() {
 
     companion object {
         /**
-         * 通知栏“立即截图记账”动作的 Activity action。
+         * 应用内部通知点击时使用的截图 action。
+         *
+         * 用途说明：
+         * - 只保留“点击整条通知触发截图”这一条主交互，不再承载 stop 动作。
          */
-        const val ACTION_TRIGGER_CAPTURE = "com.autobook.cn.app.capture.ACTION_TRIGGER_CAPTURE_FROM_NOTIFICATION_ACTIVITY"
-
-        /**
-         * 通知栏“关闭入口”动作的 Activity action。
-         */
-        const val ACTION_STOP_PERSISTENT = "com.autobook.cn.app.capture.ACTION_STOP_PERSISTENT_FROM_NOTIFICATION_ACTIVITY"
+        const val ACTION_TRIGGER_CAPTURE =
+            "com.autobook.cn.app.capture.ACTION_TRIGGER_CAPTURE_FROM_NOTIFICATION_ACTIVITY"
 
         private const val LOG_TAG = "PageCaptureActionAct"
         private const val ACCESSIBILITY_SERVICE_CLASS_NAME =

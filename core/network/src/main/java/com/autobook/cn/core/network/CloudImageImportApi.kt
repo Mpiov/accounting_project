@@ -22,10 +22,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Gemini 图片导入分析请求。
+ * 云端大模型图片导入分析请求。
  *
  * 用途说明：
- * - 为当前客户端走 Cloudflare 反向代理调用 `gemini-3.1-pro-preview` 保留最小请求协议。
+ * - 为当前客户端走 Cloudflare 反向代理调用云端大模型保留最小请求协议。
  * - 当前阶段直接传入图片引用与提示词版本，后续继续调整代理或切后端服务时也可平滑复用这层调用参数。
  *
  * 参数说明：
@@ -33,14 +33,14 @@ import org.json.JSONObject
  * - promptVersion：提示词版本，便于后续灰度和回放。
  * - requireManualConfirmation：当前结果是否必须人工确认。
  */
-data class GeminiImageImportRequest(
+data class CloudImageImportRequest(
     val imageRef: String,
     val promptVersion: String,
     val requireManualConfirmation: Boolean = true,
 )
 
 /**
- * Gemini 图片导入分析响应。
+ * 云端大模型图片导入分析响应。
  *
  * 用途说明：
  * - 描述图片分析返回的结构化建议字段。
@@ -53,11 +53,11 @@ data class GeminiImageImportRequest(
  * - category：建议分类。
  * - note：建议备注。
  * - orderId：建议订单号。
- * - modelName：命中的 Gemini 模型名。
+ * - modelName：本次实际命中的云端模型名。
  * - message：面向用户的提示信息。
  * - requiresManualConfirmation：是否仍需要人工确认。
  */
-data class GeminiImageImportResponse(
+data class CloudImageImportResponse(
     val amount: Double? = null,
     val direction: String = "EXPENSE",
     val merchant: String = "",
@@ -67,11 +67,11 @@ data class GeminiImageImportResponse(
     val modelName: String,
     val message: String,
     val requiresManualConfirmation: Boolean = true,
-    val candidates: List<GeminiImageImportCandidateResponse> = emptyList(),
+    val candidates: List<CloudImageImportCandidateResponse> = emptyList(),
 )
 
 /**
- * Gemini 返回的单条图片候选。
+ * 云端大模型返回的单条图片候选。
  *
  * 用途说明：
  * - 支持一张截图返回多条候选交易，再由客户端本地过滤重复与已退还记录。
@@ -88,7 +88,7 @@ data class GeminiImageImportResponse(
  * - stateReason：状态判断原因。
  * - evidence：证据片段。
  */
-data class GeminiImageImportCandidateResponse(
+data class CloudImageImportCandidateResponse(
     val amount: Double? = null,
     val direction: String = "EXPENSE",
     val merchant: String = "",
@@ -102,53 +102,53 @@ data class GeminiImageImportCandidateResponse(
 )
 
 /**
- * Gemini 图片导入分析网络边界接口。
+ * 云端大模型图片导入分析网络边界接口。
  *
  * 用途说明：
  * - 统一约束图片导入的云端分析入口。
  * - 当前可由真实直连实现或 fake 实现承载。
  */
-interface GeminiImageImportApi {
-    suspend fun analyze(request: GeminiImageImportRequest): GeminiImageImportResponse?
+interface CloudImageImportApi {
+    suspend fun analyze(request: CloudImageImportRequest): CloudImageImportResponse?
 }
 
 /**
- * 当前通过 Cloudflare 反向代理调用 Gemini 的真实实现。
+ * 当前通过 Cloudflare 反向代理调用云端大模型的真实实现。
  *
  * 用途说明：
- * - 从应用端把图片请求发送到 Cloudflare 反代域名，再由代理转发到 Gemini `generateContent` 接口。
- * - 当前不再从 `local.properties` 或 `BuildConfig` 读取 Gemini API key，避免把上游密钥下发到客户端。
+ * - 从应用端把图片请求发送到 Cloudflare 反代域名，再由代理转发到上游多模态模型 `generateContent` 接口。
+ * - 当前不再从 `local.properties` 或 `BuildConfig` 读取上游 API key，避免把密钥下发到客户端。
  *
  * 参数说明：
  * - context：应用上下文，用于读取选图返回的内容 Uri。
  */
-class DirectGeminiImageImportApi @Inject constructor(
+class DirectCloudImageImportApi @Inject constructor(
     @ApplicationContext private val context: Context,
-) : GeminiImageImportApi {
+) : CloudImageImportApi {
     /**
-     * 把图片转成 Gemini 可接收的 inline data，并请求模型返回 JSON 建议。
+     * 把图片转成云端大模型可接收的 inline data，并请求模型返回 JSON 建议。
      *
      * 参数说明：
      * - request：当前图片导入分析请求。
      */
-    override suspend fun analyze(request: GeminiImageImportRequest): GeminiImageImportResponse? {
+    override suspend fun analyze(request: CloudImageImportRequest): CloudImageImportResponse? {
         return try {
-            withTimeout(GEMINI_TOTAL_TIMEOUT_MS) {
+            withTimeout(CLOUD_MODEL_TOTAL_TIMEOUT_MS) {
                 withContext(Dispatchers.IO) {
-                    Log.d(TAG, "Start reading image for Gemini request: ${request.imageRef}")
+                    Log.d(TAG, "Start reading image for cloud model request: ${request.imageRef}")
                     val imagePayload = runCatching { buildInlineImagePayload(request.imageRef) }.getOrNull()
-                        ?: return@withContext GeminiImageImportResponse(
+                        ?: return@withContext CloudImageImportResponse(
                             amount = null,
                             direction = "EXPENSE",
                             merchant = "",
                             category = "待分类",
                             note = "",
                             orderId = null,
-                            modelName = BuildConfig.GEMINI_IMAGE_MODEL,
+                            modelName = BuildConfig.CLOUD_IMAGE_MODEL,
                             message = "无法读取所选图片，请重新选择图片后再试。",
                             requiresManualConfirmation = true,
                         )
-                    Log.d(TAG, "Image prepared for Gemini request, mime=${imagePayload.mimeType}, bytes(base64)=${imagePayload.base64Data.length}")
+                    Log.d(TAG, "Image prepared for cloud model request, mime=${imagePayload.mimeType}, bytes(base64)=${imagePayload.base64Data.length}")
 
                     val body = buildRequestBody(
                         promptVersion = request.promptVersion,
@@ -160,7 +160,7 @@ class DirectGeminiImageImportApi @Inject constructor(
                     val connection = (URL(buildEndpointUrl()).openConnection() as HttpURLConnection).apply {
                         requestMethod = "POST"
                         /**
-                         * Gemini 3.1 Pro 预览模型在复杂截图上可能思考更久。
+                         * 当前云端图片模型在复杂截图上虽然通常更快，但代理侧和多候选长图仍可能耗时较久。
                          *
                          * 用途说明：
                          * - 连接建立通常不需要很久，因此 `connectTimeout` 保持中等值即可。
@@ -175,7 +175,7 @@ class DirectGeminiImageImportApi @Inject constructor(
                     }
 
                     try {
-                        Log.d(TAG, "Sending request to Gemini model=${BuildConfig.GEMINI_IMAGE_MODEL}")
+                        Log.d(TAG, "Sending request to cloud model=${BuildConfig.CLOUD_IMAGE_MODEL}")
                         connection.outputStream.use { stream ->
                             stream.write(body.toByteArray(Charsets.UTF_8))
                         }
@@ -184,33 +184,33 @@ class DirectGeminiImageImportApi @Inject constructor(
                         } else {
                             connection.errorStream
                         })?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-                        Log.d(TAG, "Gemini HTTP status=${connection.responseCode}")
+                        Log.d(TAG, "Cloud model HTTP status=${connection.responseCode}")
                         if (connection.responseCode !in 200..299) {
-                            Log.w(TAG, "Gemini error body=$responseText")
+                            Log.w(TAG, "Cloud model error body=$responseText")
                         }
 
                         if (connection.responseCode !in 200..299) {
-                            GeminiImageImportResponse(
+                            CloudImageImportResponse(
                                 amount = null,
                                 direction = "EXPENSE",
                                 merchant = "",
                                 category = "待分类",
                                 note = "",
                                 orderId = null,
-                                modelName = BuildConfig.GEMINI_IMAGE_MODEL,
-                                message = "Gemini 代理请求失败：HTTP ${connection.responseCode}，请检查代理或网络后重试。",
+                                modelName = BuildConfig.CLOUD_IMAGE_MODEL,
+                                message = "云端大模型代理请求失败：HTTP ${connection.responseCode}，请检查代理或网络后重试。",
                                 requiresManualConfirmation = true,
                             )
                         } else {
-                            parseResponse(responseText) ?: GeminiImageImportResponse(
+                            parseResponse(responseText) ?: CloudImageImportResponse(
                                 amount = null,
                                 direction = "EXPENSE",
                                 merchant = "",
                                 category = "待分类",
                                 note = "",
                                 orderId = null,
-                                modelName = BuildConfig.GEMINI_IMAGE_MODEL,
-                                message = "Gemini 已返回结果，但当前无法稳定解析，请手动确认。",
+                                modelName = BuildConfig.CLOUD_IMAGE_MODEL,
+                                message = "云端大模型已返回结果，但当前无法稳定解析，请手动确认。",
                                 requiresManualConfirmation = true,
                             )
                         }
@@ -220,50 +220,50 @@ class DirectGeminiImageImportApi @Inject constructor(
                 }
             }
         } catch (timeout: TimeoutCancellationException) {
-            Log.e(TAG, "Gemini request timed out", timeout)
-            GeminiImageImportResponse(
+            Log.e(TAG, "Cloud model request timed out", timeout)
+            CloudImageImportResponse(
                 amount = null,
                 direction = "EXPENSE",
                 merchant = "",
                 category = "待分类",
                 note = "",
                 orderId = null,
-                modelName = BuildConfig.GEMINI_IMAGE_MODEL,
-                message = "Gemini 请求超时，请检查网络或稍后重试。",
+                modelName = BuildConfig.CLOUD_IMAGE_MODEL,
+                message = "云端大模型请求超时，请检查网络或稍后重试。",
                 requiresManualConfirmation = true,
             )
         } catch (timeout: SocketTimeoutException) {
-            Log.e(TAG, "Gemini socket timeout", timeout)
-            GeminiImageImportResponse(
+            Log.e(TAG, "Cloud model socket timeout", timeout)
+            CloudImageImportResponse(
                 amount = null,
                 direction = "EXPENSE",
                 merchant = "",
                 category = "待分类",
                 note = "",
                 orderId = null,
-                modelName = BuildConfig.GEMINI_IMAGE_MODEL,
-                message = "Gemini 连接超时，请检查网络或稍后重试。",
+                modelName = BuildConfig.CLOUD_IMAGE_MODEL,
+                message = "云端大模型连接超时，请检查网络或稍后重试。",
                 requiresManualConfirmation = true,
             )
         } catch (throwable: Throwable) {
-            Log.e(TAG, "Gemini request failed", throwable)
-            GeminiImageImportResponse(
+            Log.e(TAG, "Cloud model request failed", throwable)
+            CloudImageImportResponse(
                 amount = null,
                 direction = "EXPENSE",
                 merchant = "",
                 category = "待分类",
                 note = "",
                 orderId = null,
-                modelName = BuildConfig.GEMINI_IMAGE_MODEL,
-                message = "Gemini 调用失败：${throwable.message ?: throwable.javaClass.simpleName}",
+                modelName = BuildConfig.CLOUD_IMAGE_MODEL,
+                message = "云端大模型调用失败：${throwable.message ?: throwable.javaClass.simpleName}",
                 requiresManualConfirmation = true,
             )
         }
     }
 
-    /** 组装经过 Cloudflare 反代的 Gemini REST endpoint。 */
+    /** 组装经过 Cloudflare 反代的云端大模型 REST endpoint。 */
     private fun buildEndpointUrl(): String {
-        return "$GEMINI_PROXY_BASE_URL/models/${BuildConfig.GEMINI_IMAGE_MODEL}:generateContent"
+        return "$CLOUD_MODEL_PROXY_BASE_URL/models/${BuildConfig.CLOUD_IMAGE_MODEL}:generateContent"
     }
 
     /**
@@ -276,12 +276,12 @@ class DirectGeminiImageImportApi @Inject constructor(
      * 参数说明：
      * - request：当前图片导入分析请求，用于透传提示词版本和人工确认标记。
      */
-    private fun HttpURLConnection.applyProxyHeaders(request: GeminiImageImportRequest) {
+    private fun HttpURLConnection.applyProxyHeaders(request: CloudImageImportRequest) {
         setRequestProperty("Content-Type", "application/json; charset=UTF-8")
         setRequestProperty("Accept", "application/json")
-        setRequestProperty("User-Agent", GEMINI_PROXY_USER_AGENT)
+        setRequestProperty("User-Agent", CLOUD_MODEL_PROXY_USER_AGENT)
         setRequestProperty("X-Proxy-Provider", "gemini")
-        setRequestProperty("X-Proxy-Model", BuildConfig.GEMINI_IMAGE_MODEL)
+        setRequestProperty("X-Proxy-Model", BuildConfig.CLOUD_IMAGE_MODEL)
         setRequestProperty("X-Prompt-Version", request.promptVersion)
         setRequestProperty("X-Require-Manual-Confirmation", request.requireManualConfirmation.toString())
     }
@@ -359,12 +359,12 @@ class DirectGeminiImageImportApi @Inject constructor(
     }
 
     /**
-     * 从 Gemini 返回里提取第一段文本，并解析成结构化建议。
+     * 从云端大模型返回里提取第一段文本，并解析成结构化建议。
      *
      * 参数说明：
-     * - responseText：Gemini 返回的原始 JSON 文本。
+     * - responseText：云端大模型返回的原始 JSON 文本。
      */
-    private fun parseResponse(responseText: String): GeminiImageImportResponse? {
+    private fun parseResponse(responseText: String): CloudImageImportResponse? {
         val root = JSONObject(responseText)
         val candidates = root.optJSONArray("candidates") ?: return null
         if (candidates.length() == 0) return null
@@ -386,14 +386,14 @@ class DirectGeminiImageImportApi @Inject constructor(
             ?.let(::parseImageCandidates)
             .orEmpty()
         val primaryCandidate = parsedCandidates.firstOrNull()
-        return GeminiImageImportResponse(
+        return CloudImageImportResponse(
             amount = primaryCandidate?.amount,
             direction = primaryCandidate?.direction ?: payload.optString("direction", "EXPENSE"),
             merchant = primaryCandidate?.merchant ?: payload.optString("merchant", ""),
             category = primaryCandidate?.category ?: payload.optString("category", "待分类"),
             note = primaryCandidate?.note ?: payload.optString("note", ""),
             orderId = primaryCandidate?.orderId ?: payload.optStringOrNull("orderId"),
-            modelName = BuildConfig.GEMINI_IMAGE_MODEL,
+            modelName = BuildConfig.CLOUD_IMAGE_MODEL,
             message = payload.optString("message", "图片分析已完成，请人工确认后保存。"),
             requiresManualConfirmation = payload.optBoolean("requiresManualConfirmation", true),
             candidates = parsedCandidates,
@@ -401,7 +401,7 @@ class DirectGeminiImageImportApi @Inject constructor(
     }
 
     /**
-     * 读取用户选择的图片并转成 Gemini inline data。
+     * 读取用户选择的图片并转成云端大模型 inline data。
      *
      * 参数说明：
      * - imageRef：当前图片内容 Uri 字符串。
@@ -416,7 +416,7 @@ class DirectGeminiImageImportApi @Inject constructor(
          * - 用户手动选图时通常是 `content://` Uri；
          * - 当前页面截图记账落盘后传进来的则是应用私有目录里的绝对路径。
          * - 如果这里只按 `contentResolver.openInputStream(uri)` 读取，截图链路即使开启云端分析，
-         *   也会在“读图”这一步直接失败，看起来就像根本没走到 Gemini。
+         *   也会在“读图”这一步直接失败，看起来就像根本没走到云端大模型。
          */
         val rawBytes = when {
             uri.scheme.isNullOrBlank() -> readImageBytesFromFilePath(imageRef)
@@ -438,7 +438,7 @@ class DirectGeminiImageImportApi @Inject constructor(
         val encoded = Base64.encodeToString(compressedBytes, Base64.NO_WRAP)
         Log.d(
             TAG,
-            "Prepared image for Gemini rawRef=$imageRef rawBytes=${rawBytes.size} normalized=${normalizedBitmap.width}x${normalizedBitmap.height} finalBytes=$finalByteSize",
+            "Prepared image for cloud model rawRef=$imageRef rawBytes=${rawBytes.size} normalized=${normalizedBitmap.width}x${normalizedBitmap.height} finalBytes=$finalByteSize",
         )
         return InlineImagePayload(
             // 说明：上传前统一重新压成 JPEG，因此这里直接声明最终上传的 MIME 类型即可。
@@ -461,31 +461,31 @@ class DirectGeminiImageImportApi @Inject constructor(
 }
 
 /**
- * Gemini 图片导入分析的 fake 实现。
+ * 云端大模型图片导入分析的 fake 实现。
  *
  * 用途说明：
  * - 在不希望发真实网络请求时，仍能返回固定结果联调图片导入流程。
  */
-class FakeGeminiImageImportApi : GeminiImageImportApi {
-    override suspend fun analyze(request: GeminiImageImportRequest): GeminiImageImportResponse {
-        return GeminiImageImportResponse(
+class FakeCloudImageImportApi : CloudImageImportApi {
+    override suspend fun analyze(request: CloudImageImportRequest): CloudImageImportResponse {
+        return CloudImageImportResponse(
             amount = 32.5,
             direction = "EXPENSE",
-            merchant = "Gemini 图片建议商户",
+            merchant = "云端大模型图片建议商户",
             category = "餐饮",
-            note = "来自 gemini-3.1-pro-preview mock，建议人工确认后保存",
-            orderId = "IMG-GEMINI3FLASH-MOCK-001",
-            modelName = "gemini-3.1-pro-preview",
-            message = "已按 gemini-3.1-pro-preview 生成 mock 建议，请核对金额、商户和备注后确认保存。",
+            note = "来自云端大模型 mock，建议人工确认后保存",
+            orderId = "IMG-CLOUD-MODEL-MOCK-001",
+            modelName = "gemini-3-flash-preview",
+            message = "已按云端大模型链路生成 mock 建议，请核对金额、商户和备注后确认保存。",
             requiresManualConfirmation = true,
             candidates = listOf(
-                GeminiImageImportCandidateResponse(
+                CloudImageImportCandidateResponse(
                     amount = 32.5,
                     direction = "EXPENSE",
-                    merchant = "Gemini 图片建议商户",
+                    merchant = "云端大模型图片建议商户",
                     category = "餐饮",
-                    note = "来自 gemini-3.1-pro-preview mock，建议人工确认后保存",
-                    orderId = "IMG-GEMINI3FLASH-MOCK-001",
+                    note = "来自云端大模型 mock，建议人工确认后保存",
+                    orderId = "IMG-CLOUD-MODEL-MOCK-001",
                     confidenceScore = 0.88f,
                     transactionState = "ACTIVE",
                     stateReason = "页面呈现付款成功",
@@ -508,12 +508,12 @@ private data class InlineImagePayload(
  * 参数说明：
  * - array：模型返回的候选数组。
  */
-private fun parseImageCandidates(array: JSONArray): List<GeminiImageImportCandidateResponse> {
+private fun parseImageCandidates(array: JSONArray): List<CloudImageImportCandidateResponse> {
     return buildList {
         for (index in 0 until array.length()) {
             val item = array.optJSONObject(index) ?: continue
             add(
-                GeminiImageImportCandidateResponse(
+                CloudImageImportCandidateResponse(
                     amount = item.optDoubleOrNull("amount"),
                     direction = item.optString("direction", "EXPENSE"),
                     merchant = item.optString("merchant", ""),
@@ -539,10 +539,10 @@ private fun JSONObject.optStringOrNull(key: String): String? {
 }
 
 /**
- * 将原始位图归一化为更适合 Gemini inline upload 的尺寸。
+ * 将原始位图归一化为更适合云端大模型 inline upload 的尺寸。
  *
  * 用途说明：
- * - 避免超长截图或超高分辨率原图直接上传时触发 Gemini 的图片处理失败。
+ * - 避免超长截图或超高分辨率原图直接上传时触发云端大模型的图片处理失败。
  * - 在保持纵横比的前提下，把最长边压到安全阈值以内。
  */
 private fun Bitmap.normalizeForUpload(): Bitmap {
@@ -564,7 +564,7 @@ private fun Bitmap.normalizeForUpload(): Bitmap {
  * 把位图压成适合 inline upload 的 JPEG 字节数组。
  *
  * 用途说明：
- * - 逐步降低质量，尽量把最终字节数控制到 Gemini inline data 的安全区间。
+ * - 逐步降低质量，尽量把最终字节数控制到云端大模型 inline data 的安全区间。
  */
 private fun Bitmap.compressToUploadJpeg(): ByteArray {
     var quality = INITIAL_JPEG_QUALITY
@@ -581,7 +581,7 @@ private fun Bitmap.compressToUploadJpeg(): ByteArray {
     return compressed
 }
 
-private const val GEMINI_PROXY_BASE_URL = "https://api.wenapi.shop/v1beta"
+private const val CLOUD_MODEL_PROXY_BASE_URL = "https://api.wenapi.shop/v1beta"
 /**
  * 连接超时。
  *
@@ -595,7 +595,7 @@ private const val NETWORK_CONNECT_TIMEOUT_MS = 20_000
  * 读取超时。
  *
  * 用途说明：
- * - `gemini-3.1-pro-preview` 在复杂长图、多候选提取场景下可能生成较久。
+ * - `gemini-3-flash-preview` 在复杂长图、多候选提取场景下仍可能生成较久。
  * - 这里放宽到 120 秒，避免模型还在返回时就被客户端过早中断。
  */
 private const val NETWORK_READ_TIMEOUT_MS = 120_000
@@ -607,13 +607,13 @@ private const val NETWORK_READ_TIMEOUT_MS = 120_000
  * - 覆盖图片读取、压缩、网络请求、模型生成和结果解析整条链路。
  * - 需要比 `readTimeout` 略长，给图片预处理和响应解析留出缓冲空间。
  */
-private const val GEMINI_TOTAL_TIMEOUT_MS = 150_000L
+private const val CLOUD_MODEL_TOTAL_TIMEOUT_MS = 150_000L
 private const val DEFAULT_IMAGE_MIME_TYPE = "image/jpeg"
-private const val GEMINI_PROXY_USER_AGENT = "Autobook-Android-GeminiProxy/1.0"
+private const val CLOUD_MODEL_PROXY_USER_AGENT = "Autobook-Android-CloudModelProxy/1.0"
 private const val MAX_IMAGE_DIMENSION = 2048
 private const val TARGET_INLINE_IMAGE_BYTES = 4L * 1024L * 1024L
 private const val MAX_INLINE_IMAGE_BYTES = 18L * 1024L * 1024L
 private const val INITIAL_JPEG_QUALITY = 85
 private const val MIN_JPEG_QUALITY = 45
 private const val JPEG_QUALITY_STEP = 10
-private const val TAG = "GeminiImageImportApi"
+private const val TAG = "CloudImageImportApi"

@@ -13,8 +13,8 @@ import com.autobook.cn.core.model.LocalModelInstallStatus
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.OperationResult
 import com.autobook.cn.core.model.ParseConfidence
-import com.autobook.cn.core.network.GeminiImageImportApi
-import com.autobook.cn.core.network.GeminiImageImportRequest
+import com.autobook.cn.core.network.CloudImageImportApi
+import com.autobook.cn.core.network.CloudImageImportRequest
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
@@ -24,13 +24,13 @@ import kotlinx.coroutines.flow.first
  *
  * 用途说明：
  * - 在真实图片选择、真实 OCR、真实云端多模态尚未接入前，先把产品路由规则固化下来。
- * - 当前云端路径已切到 `gemini-3.1-pro-preview` 代理链路，且仍通过独立网络边界接口取结果，便于后续继续替换真实后端时保持接口语义一致。
- * - 根据当前设置和本地模型状态，返回“Gemini 3.1 Pro 代理链路”“本地 OCR + 端侧 Qwen”或“手动确认草稿”三种结果。
+ * - 当前云端路径已收口成“云端大模型代理链路”，且仍通过独立网络边界接口取结果，便于后续继续替换真实后端时保持接口语义一致。
+ * - 根据当前设置和本地模型状态，返回“云端大模型代理链路”“本地 OCR + 端侧 Qwen”或“手动确认草稿”三种结果。
  *
  * 参数说明：
- * - settingsRepository：读取云端分析开关，决定是否优先走 Gemini 3.1 Pro 代理链路。
+ * - settingsRepository：读取云端分析开关，决定是否优先走云端大模型代理链路。
  * - localModelRepository：读取当前本地模型安装状态，决定是否允许走本地 OCR + 端侧 Qwen 路径。
- * - geminiImageImportApi：Gemini 云端图片分析接口，当前由 fake 实现返回固定结构化建议。
+ * - cloudImageImportApi：云端大模型图片分析接口，当前由网络层负责把图片请求转发到代理。
  * - imageImportLocalOcrEngine：本地图片 OCR 层，当前由 ML Kit 识别图片文字。
  * - imageImportLocalReasoner：本地端侧推理层，当前由 `llama.cpp + Qwen` 生成结构化记账建议。
  */
@@ -38,7 +38,7 @@ import kotlinx.coroutines.flow.first
 class MockImageImportAnalyzer @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val localModelRepository: LocalModelRepository,
-    private val geminiImageImportApi: GeminiImageImportApi,
+    private val cloudImageImportApi: CloudImageImportApi,
     private val imageImportLocalOcrEngine: ImageImportLocalOcrEngine,
     private val imageImportLocalReasoner: ImageImportLocalReasoner,
     private val candidatePostProcessor: ImageImportCandidatePostProcessor,
@@ -52,13 +52,13 @@ class MockImageImportAnalyzer @Inject constructor(
     override suspend fun analyze(imageRef: String): OperationResult<ImageImportSuggestion> {
         val settings = settingsRepository.settings.first()
         if (settings.cloudAnalysisEnabled) {
-            val response = geminiImageImportApi.analyze(
-                GeminiImageImportRequest(
+            val response = cloudImageImportApi.analyze(
+                CloudImageImportRequest(
                     imageRef = imageRef,
                     promptVersion = IMAGE_IMPORT_PROMPT_VERSION,
                     requireManualConfirmation = true,
                 ),
-            ) ?: return OperationResult.RetryableFailure("Gemini image import service is unavailable")
+            ) ?: return OperationResult.RetryableFailure("Cloud image import service is unavailable")
 
             return OperationResult.Success(
                 candidatePostProcessor.postProcess(
@@ -70,7 +70,7 @@ class MockImageImportAnalyzer @Inject constructor(
                     note = response.note,
                     orderId = response.orderId,
                     confidence = ParseConfidence(response.candidates.maxOfOrNull { it.confidenceScore } ?: DEFAULT_IMAGE_IMPORT_CLOUD_CONFIDENCE),
-                    tracePath = ImageImportAnalysisPath.GEMINI_3_FLASH_PROXY,
+                    tracePath = ImageImportAnalysisPath.CLOUD_LLM_PROXY,
                     message = response.message,
                     requiresManualConfirmation = response.requiresManualConfirmation,
                     candidates = response.candidates.map { candidate ->

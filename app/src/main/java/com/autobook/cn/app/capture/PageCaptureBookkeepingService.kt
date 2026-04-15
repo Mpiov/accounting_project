@@ -1,5 +1,6 @@
 package com.autobook.cn.app.capture
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -30,34 +31,47 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * 当前页面截图记账后台服务。
+ * 当前页面截图记账的前台服务。
  *
  * 用途说明：
- * - 通过常驻前台通知给用户提供“当前页面一键截图记账”入口。
- * - 点击通知动作后会直接抓取当前页面截图，交给图片分析链路，再按置信度对多条有效候选执行批量自动入账或待确认。
+ * - 负责维持通知栏中的“截图快捷记账”常驻入口。
+ * - 负责串起“截图 -> 图片分析 -> 自动入账或进入待确认”的完整链路。
+ * - 负责把结果通过前台通知或结果通知反馈给用户。
  *
- * 参数说明：
- * - Service 由系统创建，本类无显式构造参数。
+ * 参数解释：
+ * - Service 由系统按需创建，本类无显式构造参数。
  */
 class PageCaptureBookkeepingService : Service() {
-    /** 说明：截图、OCR、模型推理和数据库写入都属于后台 I/O 任务，统一放到服务协程作用域里执行。 */
+
+    /**
+     * 服务级协程作用域。
+     *
+     * 用途说明：
+     * - 截图、OCR、模型分析和仓库写入都属于后台 I/O 工作，统一放到该作用域执行。
+     */
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
-     * 前台服务不提供绑定能力。
+     * 当前前台服务不提供绑定能力。
      *
-     * 参数说明：
-     * - intent：绑定请求；当前不会使用。
+     * 参数解释：
+     * - `intent`：绑定请求参数；当前实现不会使用。
+     *
+     * 返回值说明：
+     * - 始终返回 `null`，表示不支持 `bindService`。
      */
     override fun onBind(intent: Intent?): IBinder? = null
 
     /**
-     * 处理常驻通知的启动、截图和关闭动作。
+     * 处理服务启动、截图触发以及内部停止动作。
      *
-     * 参数说明：
-     * - intent：包含本次服务动作的启动参数。
-     * - flags：系统传入的启动标记。
-     * - startId：本次启动序号。
+     * 参数解释：
+     * - `intent`：本次启动携带的动作参数。
+     * - `flags`：系统传入的启动标记。
+     * - `startId`：本次启动序号，用于在停止服务时对应当前请求。
+     *
+     * 返回值说明：
+     * - 返回 `START_STICKY`，表示系统回收后可以按需要重新拉起服务。
      */
     override fun onStartCommand(
         intent: Intent?,
@@ -70,16 +84,20 @@ class PageCaptureBookkeepingService : Service() {
             ACTION_START_PERSISTENT -> {
                 Log.d(LOG_TAG, "Handling start persistent action")
                 startPersistentForeground(
-                    NOTIFICATION_ID,
-                    buildPersistentNotification(statusText = "点击这条通知即可截图记账"),
+                    notificationId = NOTIFICATION_ID,
+                    notification = buildPersistentNotification(
+                        statusText = DEFAULT_IDLE_STATUS_TEXT,
+                    ),
                 )
             }
 
             ACTION_TRIGGER_CAPTURE -> {
                 Log.d(LOG_TAG, "Handling trigger capture action")
                 startPersistentForeground(
-                    NOTIFICATION_ID,
-                    buildPersistentNotification(statusText = "正在截屏并准备分析，请稍候..."),
+                    notificationId = NOTIFICATION_ID,
+                    notification = buildPersistentNotification(
+                        statusText = CAPTURING_STATUS_TEXT,
+                    ),
                 )
                 serviceScope.launch {
                     Log.d(LOG_TAG, "Starting capture coroutine")
@@ -87,13 +105,16 @@ class PageCaptureBookkeepingService : Service() {
                         runCaptureAndBookkeeping()
                     }.onFailure { error ->
                         Log.e(LOG_TAG, "runCaptureAndBookkeeping crashed", error)
-                        updateForegroundStatus("截图链路异常：${error.message ?: error.javaClass.simpleName}")
+                        updateForegroundStatus(
+                            "截图链路异常：${error.message ?: error.javaClass.simpleName}",
+                        )
                     }
                 }
             }
 
             ACTION_STOP_PERSISTENT -> {
                 Log.d(LOG_TAG, "Handling stop persistent action")
+                // 停止动作仅保留给设置页内部调用，通知侧不再暴露这条路径。
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf(startId)
             }
@@ -101,21 +122,29 @@ class PageCaptureBookkeepingService : Service() {
             else -> {
                 Log.d(LOG_TAG, "Handling fallback start action")
                 startPersistentForeground(
-                    NOTIFICATION_ID,
-                    buildPersistentNotification(statusText = "点击这条通知即可截图记账"),
+                    notificationId = NOTIFICATION_ID,
+                    notification = buildPersistentNotification(
+                        statusText = DEFAULT_IDLE_STATUS_TEXT,
+                    ),
                 )
             }
         }
         return START_STICKY
     }
 
+    /**
+     * 在服务销毁时回收协程资源。
+     */
     override fun onDestroy() {
         serviceScope.cancel()
         super.onDestroy()
     }
 
     /**
-     * 执行一次完整的“当前页面截图 -> 分析 -> 入账/待确认”流程。
+     * 执行完整的截图记账流程。
+     *
+     * 参数解释：
+     * - 无显式参数；内部直接从应用容器获取依赖，并串行执行截图与分析。
      */
     private suspend fun runCaptureAndBookkeeping() {
         Log.d(LOG_TAG, "runCaptureAndBookkeeping started")
@@ -139,14 +168,9 @@ class PageCaptureBookkeepingService : Service() {
         }
 
         val screenshotRef = screenshotResult.data
-        /**
-         * 截图成功后立即给用户一个“已进入异步分析”的反馈。
-         *
-         * 用途说明：
-         * - 让用户在点击通知后的第一时间获得正反馈，而不是一直盯着“分析中”等待。
-         * - 后续真正的分析结果会再通过同一条常驻通知或结果通知同步回来。
-         */
+        // 截图已经拿到后，先用前台通知告诉用户系统正在异步分析，避免误以为点击无效。
         updateForegroundStatus("已截屏分析，稍后结果会同步")
+
         val analyzeResult = entryPoint.imageImportAnalyzer().analyze(screenshotRef)
         Log.d(LOG_TAG, "Image analyze result=${analyzeResult::class.simpleName}")
         if (analyzeResult !is OperationResult.Success) {
@@ -195,15 +219,17 @@ class PageCaptureBookkeepingService : Service() {
 
         if (pendingCount > 0) {
             notifyPendingReviewResult(pendingCount = pendingCount)
-            updateForegroundStatus("$analysisPathLabel：已生成待确认结果，点击这条通知即可再次截图记账")
+            updateForegroundStatus("$analysisPathLabel：已生成待确认结果，点击这条通知即可截图记账")
         } else {
             updateForegroundStatus(
-                "$analysisPathLabel：" + buildCaptureSummary(
-                    autoLedgerCount = autoLedgerCount,
-                    pendingCount = pendingCount,
-                    filteredCount = suggestion.filteredOutCandidateCount,
-                    totalValidCount = validCandidates.size,
-                ),
+                "$analysisPathLabel：${
+                    buildCaptureSummary(
+                        autoLedgerCount = autoLedgerCount,
+                        pendingCount = pendingCount,
+                        filteredCount = suggestion.filteredOutCandidateCount,
+                        totalValidCount = validCandidates.size,
+                    )
+                }",
             )
         }
     }
@@ -211,32 +237,27 @@ class PageCaptureBookkeepingService : Service() {
     /**
      * 更新常驻前台通知中的状态文案。
      *
-     * 参数说明：
-     * - statusText：要展示在通知里的状态摘要。
+     * 参数解释：
+     * - `statusText`：要展示在通知里的最新状态摘要。
      */
     private fun updateForegroundStatus(statusText: String) {
         Log.d(LOG_TAG, "updateForegroundStatus status=$statusText")
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(
+        getSystemService(NotificationManager::class.java).notify(
             NOTIFICATION_ID,
             buildPersistentNotification(statusText = statusText),
         )
     }
 
     /**
-     * 以显式的 `dataSync` 类型启动前台服务。
+     * 以显式 `dataSync` 类型启动前台服务。
      *
-     * 用途说明：
-     * - Android 14+ 会同时校验 Manifest 中声明的前台服务类型和运行时传入的服务类型。
-     * - 这里统一走 `ServiceCompat.startForeground`，避免目标 SDK 35 下因为类型不明确导致系统行为不一致。
-     *
-     * 参数说明：
-     * - notificationId：当前前台通知 ID。
-     * - notification：当前要展示的前台通知实例。
+     * 参数解释：
+     * - `notificationId`：本次前台通知的通知 ID。
+     * - `notification`：本次需要展示的通知实例。
      */
     private fun startPersistentForeground(
         notificationId: Int,
-        notification: android.app.Notification,
+        notification: Notification,
     ) {
         ServiceCompat.startForeground(
             this,
@@ -244,28 +265,17 @@ class PageCaptureBookkeepingService : Service() {
             notification,
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
-        /**
-         * 某些系统第一次只完成前台服务注册，但不会立刻把通知刷新到通知栏。
-         *
-         * 用途说明：
-         * - 在 `startForeground()` 之后再显式 `notify(...)` 一次，能让通知管理器立刻重绘当前常驻通知，
-         *   减少“第一次点启动常驻入口不显示，必须再开关一次”的问题。
-         */
+        // 某些系统首次前台化后不会立刻刷新通知栏，这里主动补一次 notify 保证入口可见。
         getSystemService(NotificationManager::class.java).notify(notificationId, notification)
     }
 
     /**
-     * 当本次截图分析产生待确认记录时，额外发送一条结果通知。
+     * 当本次截图分析产出待确认记录时，额外发送一条结果通知。
      *
-     * 用途说明：
-     * - 只在确实需要用户介入时发明确通知，避免自动入账或全过滤场景打扰用户。
-     * - 通知文案保持保守抽象，不直接暴露“重复/退还过滤了几条”这类内部推断细节。
-     *
-     * 参数说明：
-     * - pendingCount：本次截图分析后新增的待确认记录数。
+     * 参数解释：
+     * - `pendingCount`：本次新增的待确认记录数量。
      */
     private fun notifyPendingReviewResult(pendingCount: Int) {
-        val manager = getSystemService(NotificationManager::class.java)
         val openAppPendingIntent = PendingIntent.getActivity(
             this,
             REQUEST_CODE_OPEN_RESULT,
@@ -274,7 +284,7 @@ class PageCaptureBookkeepingService : Service() {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        manager.notify(
+        getSystemService(NotificationManager::class.java).notify(
             RESULT_NOTIFICATION_ID,
             NotificationCompat.Builder(this, RESULT_NOTIFICATION_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -288,27 +298,26 @@ class PageCaptureBookkeepingService : Service() {
     }
 
     /**
-     * 构造常驻通知。
+     * 构造截图记账常驻通知。
      *
-     * 参数说明：
-     * - statusText：当前通知中展示的状态摘要。
+     * 参数解释：
+     * - `statusText`：通知中需要展示给用户的当前状态摘要。
+     *
+     * 返回值说明：
+     * - 返回仅保留“点击整条通知即可截图”交互的前台通知实例。
      */
-    private fun buildPersistentNotification(statusText: String): android.app.Notification {
+    private fun buildPersistentNotification(statusText: String): Notification {
         val capturePendingIntent = PendingIntent.getActivity(
             this,
             REQUEST_CODE_CAPTURE,
             Intent(this, PageCaptureActionActivity::class.java).apply {
                 action = PageCaptureActionActivity.ACTION_TRIGGER_CAPTURE
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val stopPendingIntent = PendingIntent.getActivity(
-            this,
-            REQUEST_CODE_STOP,
-            Intent(this, PageCaptureActionActivity::class.java).apply {
-                action = PageCaptureActionActivity.ACTION_STOP_PERSISTENT
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                // 显式回到应用内未导出的透明 Activity，避免外部应用伪造入口。
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION,
+                )
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -317,15 +326,12 @@ class PageCaptureBookkeepingService : Service() {
             .setContentTitle("截图快捷记账")
             .setContentText(statusText)
             .setContentIntent(capturePendingIntent)
-            /**
-             * 改回系统原生前台服务通知样式，只保留“点击整条通知即可截图”。
-             *
-             * 用途说明：
-             * - 不再依赖 ROM 是否渲染 action 按钮或自定义通知布局。
-             * - 只要通知本身能显示，用户就始终可以通过点击整条通知触发截图链路。
-             */
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$statusText\n点击这条通知即可截图记账"))
-            // 说明：提高兼容层优先级与可见性，尽量让系统保留可点击入口与 action 按钮。
+            // 只保留整条通知点击交互，通知内不再挂 stop action 或额外按钮。
+            .setStyle(
+                NotificationCompat.BigTextStyle().bigText(
+                    "$statusText\n点击这条通知即可截图记账",
+                ),
+            )
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -336,25 +342,23 @@ class PageCaptureBookkeepingService : Service() {
     }
 
     /**
-     * 创建通知渠道。
+     * 确保通知渠道存在且等级满足当前通知策略。
      */
     private fun ensureNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return
         }
         val manager = getSystemService(NotificationManager::class.java)
-        // 说明：旧渠道曾使用 LOW 等级，这会导致部分 ROM 不展示 action 按钮。
-        // 这里先清理旧渠道，再确保当前渠道至少以 DEFAULT 等级创建。
+        // 老渠道可能残留较低 importance，这里先清理遗留渠道，再保证当前渠道以默认等级存在。
         manager.deleteNotificationChannel(LEGACY_NOTIFICATION_CHANNEL_ID)
         val existing = manager.getNotificationChannel(NOTIFICATION_CHANNEL_ID)
-        if (existing != null &&
-            existing.importance >= NotificationManager.IMPORTANCE_DEFAULT
-        ) {
+        if (existing != null && existing.importance >= NotificationManager.IMPORTANCE_DEFAULT) {
             return
         }
         if (existing != null) {
             manager.deleteNotificationChannel(NOTIFICATION_CHANNEL_ID)
         }
+
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
             "截图快捷记账",
@@ -385,13 +389,17 @@ class PageCaptureBookkeepingService : Service() {
         private const val NOTIFICATION_ID = 2001
         private const val RESULT_NOTIFICATION_ID = 2002
         private const val REQUEST_CODE_CAPTURE = 3001
-        private const val REQUEST_CODE_STOP = 3002
         private const val REQUEST_CODE_OPEN_RESULT = 3003
         private const val AUTO_LEDGER_THRESHOLD = 0.85f
         private const val LOG_TAG = "PageCaptureService"
+        private const val DEFAULT_IDLE_STATUS_TEXT = "点击这条通知即可截图记账"
+        private const val CAPTURING_STATUS_TEXT = "正在截屏并准备分析，请稍候..."
 
         /**
-         * 创建“启动常驻入口”的 Intent。
+         * 创建“启动截图常驻入口”的显式 Intent。
+         *
+         * 参数解释：
+         * - `context`：用于构造目标 Service 显式 Intent 的上下文。
          */
         fun createStartPersistentIntent(context: Context): Intent {
             return Intent(context, PageCaptureBookkeepingService::class.java).apply {
@@ -400,7 +408,10 @@ class PageCaptureBookkeepingService : Service() {
         }
 
         /**
-         * 创建“立即截图记账”的 Intent。
+         * 创建“立即截图记账”的显式 Intent。
+         *
+         * 参数解释：
+         * - `context`：用于构造目标 Service 显式 Intent 的上下文。
          */
         fun createTriggerCaptureIntent(context: Context): Intent {
             return Intent(context, PageCaptureBookkeepingService::class.java).apply {
@@ -409,7 +420,13 @@ class PageCaptureBookkeepingService : Service() {
         }
 
         /**
-         * 创建“关闭常驻入口”的 Intent。
+         * 创建“关闭截图常驻入口”的显式 Intent。
+         *
+         * 参数解释：
+         * - `context`：用于构造目标 Service 显式 Intent 的上下文。
+         *
+         * 说明：
+         * - 该动作仅供设置页内部使用，不再从通知栏直接暴露。
          */
         fun createStopPersistentIntent(context: Context): Intent {
             return Intent(context, PageCaptureBookkeepingService::class.java).apply {
@@ -420,10 +437,10 @@ class PageCaptureBookkeepingService : Service() {
 }
 
 /**
- * 把图片候选转成账本记录。
+ * 把图片候选转换成正式账本记录。
  *
- * 参数说明：
- * - 接收者：当前已筛选出的最佳图片候选。
+ * 参数解释：
+ * - `analysisPath`：当前图片分析最终走到的识别路径。
  */
 private fun ImageImportCandidate.toLedgerEntry(
     analysisPath: ImageImportAnalysisPath,
@@ -445,11 +462,11 @@ private fun ImageImportCandidate.toLedgerEntry(
 }
 
 /**
- * 把图片候选转成待确认记录。
+ * 把图片候选转换成待确认记录。
  *
- * 参数说明：
- * - 接收者：当前已筛选出的最佳图片候选。
- * - reason：进入待确认的原因。
+ * 参数解释：
+ * - `analysisPath`：当前图片分析最终走到的识别路径。
+ * - `reason`：进入待确认列表的原因说明。
  */
 private fun ImageImportCandidate.toPendingEntry(
     analysisPath: ImageImportAnalysisPath,
@@ -472,12 +489,11 @@ private fun ImageImportCandidate.toPendingEntry(
 }
 
 /**
- * 统一拼接待确认原因。
+ * 统一生成待确认原因文案。
  *
- * 参数说明：
- * - suggestionMessage：图片分析结果摘要。
- * - multipleCandidatesDetected：本次是否保留了多条候选。
- * - autoAccountingEnabled：当前是否开启自动记账。
+ * 参数解释：
+ * - `suggestionMessage`：图片分析结果的摘要说明。
+ * - `autoAccountingEnabled`：当前是否开启了自动记账。
  */
 private fun buildPendingReason(
     suggestionMessage: String,
@@ -492,8 +508,8 @@ private fun buildPendingReason(
 /**
  * 从统一结果对象中提取失败摘要。
  *
- * 参数说明：
- * - result：失败结果。
+ * 参数解释：
+ * - `result`：统一操作结果对象。
  */
 private fun extractFailureMessage(result: OperationResult<*>): String {
     return when (result) {
@@ -504,21 +520,13 @@ private fun extractFailureMessage(result: OperationResult<*>): String {
 }
 
 /**
- * 格式化金额显示。
+ * 生成截图记账结果摘要。
  *
- * 参数说明：
- * - amount：待展示金额。
- */
-private fun formatAmount(amount: Double): String = "¥${"%.2f".format(amount)}"
-
-/**
- * 生成截图记账摘要。
- *
- * 参数说明：
- * - autoLedgerCount：自动入账条数。
- * - pendingCount：待确认条数。
- * - filteredCount：过滤条数。
- * - totalValidCount：有效候选条数。
+ * 参数解释：
+ * - `autoLedgerCount`：自动入账的条数。
+ * - `pendingCount`：进入待确认的条数。
+ * - `filteredCount`：被过滤的条数。
+ * - `totalValidCount`：保留下来的有效候选数。
  */
 private fun buildCaptureSummary(
     autoLedgerCount: Int,
@@ -541,14 +549,14 @@ private fun buildCaptureSummary(
         } else if (totalValidCount > 1) {
             add("共保留 $totalValidCount 条有效记录")
         }
-    }.joinToString(separator = "，")
+    }.joinToString(separator = "；")
 }
 
 /**
  * 生成待确认结果通知标题。
  *
- * 参数说明：
- * - pendingCount：待确认记录数。
+ * 参数解释：
+ * - `pendingCount`：待确认记录数量。
  */
 private fun buildPendingResultTitle(pendingCount: Int): String {
     return if (pendingCount == 1) {
@@ -561,8 +569,8 @@ private fun buildPendingResultTitle(pendingCount: Int): String {
 /**
  * 生成待确认结果通知正文。
  *
- * 参数说明：
- * - pendingCount：待确认记录数。
+ * 参数解释：
+ * - `pendingCount`：待确认记录数量。
  */
 private fun buildPendingResultText(pendingCount: Int): String {
     return if (pendingCount == 1) {
@@ -575,9 +583,9 @@ private fun buildPendingResultText(pendingCount: Int): String {
 /**
  * 统一拼接截图候选的备注信息。
  *
- * 参数说明：
- * - note：模型原始备注。
- * - evidence：模型给出的证据片段。
+ * 参数解释：
+ * - `note`：模型给出的备注说明。
+ * - `evidence`：模型给出的证据片段。
  */
 private fun buildCaptureCandidateNote(
     note: String,
@@ -594,14 +602,14 @@ private fun buildCaptureCandidateNote(
 }
 
 /**
- * 把图片分析路径转成通知里更容易理解的中文标签。
+ * 把分析路径转换成通知里更易理解的中文标签。
  *
- * 参数说明：
- * - 接收者：当前截图分析实际走到的图片分析路径。
+ * 参数解释：
+ * - 接收者：当前截图分析实际走到的识别路径。
  */
 private fun ImageImportAnalysisPath.toStatusLabel(): String {
     return when (this) {
-        ImageImportAnalysisPath.GEMINI_3_FLASH_PROXY -> "云端 Gemini"
+        ImageImportAnalysisPath.CLOUD_LLM_PROXY -> "云端大模型"
         ImageImportAnalysisPath.OCR_PLUS_LOCAL_LLM -> "本地 OCR + 模型"
         ImageImportAnalysisPath.MANUAL_CONFIRMATION_REQUIRED -> "手动确认草稿"
     }

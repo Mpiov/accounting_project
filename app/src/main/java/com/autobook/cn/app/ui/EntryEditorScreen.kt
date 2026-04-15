@@ -180,7 +180,7 @@ fun EntryEditorScreen(
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            text = "无论当前是 gemini-3.1-pro-preview 建议还是本地图片分析建议，都不会自动入账。请手动核对金额、分类、商户、备注后再保存。",
+                            text = "无论当前是云端大模型建议还是本地图片分析建议，都不会自动入账。请手动核对金额、分类、商户、备注后再保存。",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -200,7 +200,7 @@ fun EntryEditorScreen(
 /**
  * 用途说明：
  * - 展示图片导入记账入口、导入提示、过滤摘要和多候选切换区域。
- * - 把云端 Gemini 建议与端侧 OCR/本地模型建议统一收敛到同一块 UI，避免用户理解两套流程。
+ * - 把云端大模型建议与端侧 OCR/本地模型建议统一收敛到同一块 UI，避免用户理解两套流程。
  *
  * 参数说明：
  * - state：编辑页当前状态，包含图片导入链路产生的候选、提示和过滤统计。
@@ -220,7 +220,7 @@ private fun ImageImportSection(
         ) {
             Text("图片导入记账", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "当前已接入真实选图入口。关闭云端分析并开启 OCR 后，可直接走端内 ML Kit OCR + 本地 Qwen 生成建议；开启云端分析时走经 `api.wenapi.shop` 反代的 gemini-3.1-pro-preview 链路。",
+                text = "当前已接入真实选图入口。关闭云端分析并开启 OCR 后，可直接走端内 ML Kit OCR + 本地 Qwen 生成建议；开启云端分析时走经 `api.wenapi.shop` 反代的云端大模型链路。",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Button(

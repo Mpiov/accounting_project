@@ -68,6 +68,19 @@ fun SettingsScreen(
 ) {
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
+    val enableCaptureShortcutAction: () -> Unit = {
+        enableCaptureShortcut(
+            context = context,
+            onCaptureEnabledChanged = onCaptureEnabledChanged,
+            requestNotificationPermission = { },
+        )
+    }
+    val disableCaptureShortcutAction: () -> Unit = {
+        disableCaptureShortcut(
+            context = context,
+            onCaptureEnabledChanged = onCaptureEnabledChanged,
+        )
+    }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -77,8 +90,9 @@ fun SettingsScreen(
          * - 因此前台服务入口只在授权成功后继续启动，避免出现“服务启动了但通知没有显示”的误解。
          */
         if (granted) {
-            startPersistentCaptureEntry(context)
+            enableCaptureShortcutAction()
         } else {
+            onCaptureEnabledChanged(false)
             Toast.makeText(
                 context,
                 "未授予通知权限或应用通知已关闭，常驻入口不会显示在通知栏",
@@ -124,7 +138,13 @@ fun SettingsScreen(
                 title = "图片导入：截图分析",
                 summary = "当前不参与通知自动记账。该开关保留给后续图片预处理与截图辅助链路使用。",
                 checked = state.captureEnabled,
-                onCheckedChange = onCaptureEnabledChanged,
+                onCheckedChange = { enabled ->
+                    if (enabled) {
+                        enableCaptureShortcutAction()
+                    } else {
+                        disableCaptureShortcutAction()
+                    }
+                },
             )
             SettingSwitchCard(
                 title = "图片导入：OCR 识别",
@@ -170,18 +190,20 @@ fun SettingsScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(
                             onClick = {
-                                if (canPostForegroundNotification(context)) {
-                                    startPersistentCaptureEntry(context)
-                                } else {
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                }
+                                enableCaptureShortcut(
+                                    context = context,
+                                    onCaptureEnabledChanged = onCaptureEnabledChanged,
+                                    requestNotificationPermission = {
+                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    },
+                                )
                             },
                         ) {
                             Text("启动常驻入口")
                         }
                         TextButton(
                             onClick = {
-                                context.startService(PageCaptureBookkeepingService.createStopPersistentIntent(context))
+                                disableCaptureShortcutAction()
                             },
                         ) {
                             Text("关闭常驻入口")
@@ -436,6 +458,51 @@ private fun buildPreviewSnippet(csv: String): String {
         .joinToString("\n")
 }
 
+/**
+ * 统一处理“启用截图快捷入口”的前置校验与状态回写。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于检查通知权限并启动前台服务。
+ * - onCaptureEnabledChanged：根据真实启停结果回写截图快捷入口总开关。
+ * - requestNotificationPermission：当缺少 Android 13+ 通知运行时权限时，触发系统权限申请。
+ */
+private fun enableCaptureShortcut(
+    context: Context,
+    onCaptureEnabledChanged: (Boolean) -> Unit,
+    requestNotificationPermission: () -> Unit,
+) {
+    if (canPostForegroundNotification(context)) {
+        val started = startPersistentCaptureEntry(context)
+        onCaptureEnabledChanged(started)
+        return
+    }
+    if (shouldRequestNotificationPermission(context)) {
+        requestNotificationPermission()
+        return
+    }
+    onCaptureEnabledChanged(false)
+    Toast.makeText(
+        context,
+        "请先在系统中打开应用通知，再启用截图快捷记账。",
+        Toast.LENGTH_LONG,
+    ).show()
+}
+
+/**
+ * 统一处理“关闭截图快捷入口”逻辑，确保前台服务和持久化开关一起关闭。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于发送停止常驻入口服务的 Intent。
+ * - onCaptureEnabledChanged：用于同步关闭设置项中的截图快捷入口状态。
+ */
+private fun disableCaptureShortcut(
+    context: Context,
+    onCaptureEnabledChanged: (Boolean) -> Unit,
+) {
+    onCaptureEnabledChanged(false)
+    context.startService(PageCaptureBookkeepingService.createStopPersistentIntent(context))
+}
+
 private const val PREVIEW_MAX_LINES = 12
 
 /**
@@ -471,7 +538,26 @@ private fun canPostForegroundNotification(context: Context): Boolean {
  * 参数说明：
  * - context：当前界面上下文，用于构造并启动前台服务 Intent。
  */
-private fun startPersistentCaptureEntry(context: Context) {
+/**
+ * 判断当前是否应该发起 Android 13+ 的通知权限申请。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于读取应用通知总开关和运行时权限状态。
+ */
+private fun shouldRequestNotificationPermission(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        return false
+    }
+    if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+        return false
+    }
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS,
+    ) != PackageManager.PERMISSION_GRANTED
+}
+
+private fun startPersistentCaptureEntry(context: Context): Boolean {
     /**
      * 当前页面截图链路依赖无障碍服务提供截图运行时。
      *
@@ -494,12 +580,13 @@ private fun startPersistentCaptureEntry(context: Context) {
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             },
         )
-        return
+        return false
     }
     ContextCompat.startForegroundService(
         context,
         PageCaptureBookkeepingService.createStartPersistentIntent(context),
     )
+    return true
 }
 
 private const val ACCESSIBILITY_SERVICE_CLASS_NAME =

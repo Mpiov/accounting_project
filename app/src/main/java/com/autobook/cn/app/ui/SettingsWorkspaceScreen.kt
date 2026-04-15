@@ -1,5 +1,12 @@
 package com.autobook.cn.app.ui
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,10 +42,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.autobook.cn.app.capture.PageCaptureBookkeepingService
 import com.autobook.cn.app.viewmodel.SettingsUiState
+import com.autobook.cn.core.common.PermissionStatusChecker
+import com.autobook.cn.core.common.SettingsIntents
 import com.autobook.cn.core.model.LocalModelInstallStatus
 import com.autobook.cn.core.model.NotificationSourceApp
 
@@ -80,6 +93,47 @@ fun SettingsWorkspaceScreen(
     onLoadExportPreview: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val enableCaptureShortcutAction: () -> Unit = {
+        enableCaptureShortcut(
+            context = context,
+            onCaptureEnabledChanged = onCaptureEnabledChanged,
+            requestNotificationPermission = { },
+        )
+    }
+    val disableCaptureShortcutAction: () -> Unit = {
+        disableCaptureShortcut(
+            context = context,
+            onCaptureEnabledChanged = onCaptureEnabledChanged,
+        )
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        /**
+         * 权限回调里再次走统一启用逻辑，确保状态写入、前台服务启动和失败兜底保持一致。
+         */
+        if (granted) {
+            enableCaptureShortcutAction()
+        } else {
+            onCaptureEnabledChanged(false)
+            Toast.makeText(
+                context,
+                "未授予通知权限，截图快捷入口不会显示在通知栏。",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+    val requestEnableCaptureShortcut: () -> Unit = {
+        enableCaptureShortcut(
+            context = context,
+            onCaptureEnabledChanged = onCaptureEnabledChanged,
+            requestNotificationPermission = {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            },
+        )
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 120.dp),
@@ -111,12 +165,6 @@ fun SettingsWorkspaceScreen(
                         onCheckedChange = onCloudAnalysisChanged,
                     )
                     ToggleRow(
-                        title = "截图分析",
-                        summary = "开启后会调起本地截图链路供 OCR 补全文本。",
-                        checked = state.captureEnabled,
-                        onCheckedChange = onCaptureEnabledChanged,
-                    )
-                    ToggleRow(
                         title = "OCR 识别",
                         summary = "使用端内 OCR 识别截图文字，不依赖云端。",
                         checked = state.ocrEnabled,
@@ -130,6 +178,20 @@ fun SettingsWorkspaceScreen(
                     )
                 }
             }
+        }
+        item(key = "capture_shortcut_card") {
+            CaptureShortcutCard(
+                captureEnabled = state.captureEnabled,
+                onCaptureEnabledChanged = { enabled ->
+                    if (enabled) {
+                        requestEnableCaptureShortcut()
+                    } else {
+                        disableCaptureShortcutAction()
+                    }
+                },
+                onStartCaptureShortcut = requestEnableCaptureShortcut,
+                onStopCaptureShortcut = disableCaptureShortcutAction,
+            )
         }
         item(key = "source_section") {
             SettingsSectionTitle(
@@ -405,6 +467,58 @@ private fun ToggleRow(
 }
 
 /** 留存天数使用独立区块展示，避免滑杆互相抢视线。 */
+/**
+ * 展示“截图快捷记账”的总开关和显式启动/关闭入口。
+ *
+ * 参数说明：
+ * - captureEnabled：当前截图快捷入口的持久化状态。
+ * - onCaptureEnabledChanged：点击总开关后的回调，调用方会把状态与服务启停同步起来。
+ * - onStartCaptureShortcut：点击“启动常驻入口”按钮后的回调。
+ * - onStopCaptureShortcut：点击“关闭常驻入口”按钮后的回调。
+ */
+@Composable
+private fun CaptureShortcutCard(
+    captureEnabled: Boolean,
+    onCaptureEnabledChanged: (Boolean) -> Unit,
+    onStartCaptureShortcut: () -> Unit,
+    onStopCaptureShortcut: () -> Unit,
+) {
+    Card(shape = RoundedCornerShape(26.dp)) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ToggleRow(
+                title = "截图快捷记账",
+                summary = "把通知栏常驻入口作为总开关管理；开启后允许点击通知直接截屏并进入图片分析。",
+                checked = captureEnabled,
+                onCheckedChange = onCaptureEnabledChanged,
+            )
+            Text(
+                text = "启动后会显示“立即截图记账”常驻通知；关闭时会同步停止服务，避免 captureEnabled 只改展示不改行为。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = onStartCaptureShortcut,
+                    modifier = Modifier.weight(1f),
+                    enabled = !captureEnabled,
+                ) {
+                    Text("启动常驻入口")
+                }
+                TextButton(
+                    onClick = onStopCaptureShortcut,
+                    modifier = Modifier.weight(1f),
+                    enabled = captureEnabled,
+                ) {
+                    Text("关闭常驻入口")
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun RetentionSlider(
     title: String,
@@ -644,11 +758,132 @@ private fun buildPreviewSnippet(csv: String): String {
 }
 
 /** 设置页里的来源名称映射。 */
+/**
+ * 统一处理“启用截图快捷入口”的前置校验与状态回写。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于检查权限并启动前台服务。
+ * - onCaptureEnabledChanged：当真实启停结果明确后，用来回写持久化开关状态。
+ * - requestNotificationPermission：当缺少 Android 13+ 通知运行时权限时，触发系统权限申请。
+ */
+private fun enableCaptureShortcut(
+    context: Context,
+    onCaptureEnabledChanged: (Boolean) -> Unit,
+    requestNotificationPermission: () -> Unit,
+) {
+    if (canPostForegroundNotification(context)) {
+        val started = startPersistentCaptureEntry(context)
+        onCaptureEnabledChanged(started)
+        return
+    }
+    if (shouldRequestNotificationPermission(context)) {
+        requestNotificationPermission()
+        return
+    }
+    onCaptureEnabledChanged(false)
+    Toast.makeText(
+        context,
+        "请先在系统中打开应用通知，再启用截图快捷记账。",
+        Toast.LENGTH_LONG,
+    ).show()
+}
+
+/**
+ * 统一处理“关闭截图快捷入口”逻辑，确保设置状态和服务状态一起回落。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于发送停止前台服务的 Intent。
+ * - onCaptureEnabledChanged：用于把总开关同步写回关闭状态。
+ */
+private fun disableCaptureShortcut(
+    context: Context,
+    onCaptureEnabledChanged: (Boolean) -> Unit,
+) {
+    onCaptureEnabledChanged(false)
+    context.startService(PageCaptureBookkeepingService.createStopPersistentIntent(context))
+}
+
+/**
+ * 判断当前是否应该发起 Android 13+ 的通知权限申请。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于读取通知权限状态。
+ */
+private fun shouldRequestNotificationPermission(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        return false
+    }
+    if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+        return false
+    }
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS,
+    ) != PackageManager.PERMISSION_GRANTED
+}
+
+/**
+ * 判断当前设备是否已经满足展示截图快捷入口前台通知的条件。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于检查应用通知总开关和运行时权限。
+ */
+private fun canPostForegroundNotification(context: Context): Boolean {
+    if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+        return false
+    }
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        return true
+    }
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS,
+    ) == PackageManager.PERMISSION_GRANTED
+}
+
+/**
+ * 启动“截图快捷记账”的常驻前台服务，并在失败时把用户引导到无障碍设置。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于校验无障碍能力并启动前台服务。
+ *
+ * 返回值说明：
+ * - `true`：已满足前置条件，并成功发起常驻入口服务。
+ * - `false`：缺少无障碍能力，已中断启动并提示用户处理。
+ */
+private fun startPersistentCaptureEntry(context: Context): Boolean {
+    if (!PermissionStatusChecker.hasAccessibilityAccess(
+            context = context,
+            serviceClassName = ACCESSIBILITY_SERVICE_CLASS_NAME,
+        )
+    ) {
+        Toast.makeText(
+            context,
+            "请先开启无障碍自动化，截图快捷记账才能使用。",
+            Toast.LENGTH_LONG,
+        ).show()
+        context.startActivity(
+            SettingsIntents.accessibilityAccess().apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+        )
+        return false
+    }
+    ContextCompat.startForegroundService(
+        context,
+        PageCaptureBookkeepingService.createStartPersistentIntent(context),
+    )
+    return true
+}
+
 private fun NotificationSourceApp.toDisplayLabel(): String = when (this) {
     NotificationSourceApp.WECHAT -> "微信支付"
     NotificationSourceApp.ALIPAY -> "支付宝"
     NotificationSourceApp.BANK_SMS -> "银行卡短信"
     NotificationSourceApp.UNKNOWN -> "未知来源"
 }
+
+private const val ACCESSIBILITY_SERVICE_CLASS_NAME =
+    "com.autobook.cn.service.automation.AutobookAccessibilityService"
 
 private const val PREVIEW_MAX_LINES = 8

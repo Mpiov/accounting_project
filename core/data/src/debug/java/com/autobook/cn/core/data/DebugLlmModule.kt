@@ -1,6 +1,8 @@
 package com.autobook.cn.core.data
 
+import com.autobook.cn.core.data.impl.DebugLocalTextGenerationRuntime
 import com.autobook.cn.core.data.impl.StubOnDeviceLlmEngine
+import com.autobook.cn.core.llm.LocalTextGenerationRuntime
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -24,4 +26,13 @@ abstract class DebugLlmModule {
      */
     @Binds
     abstract fun bindOnDeviceLlmEngine(impl: StubOnDeviceLlmEngine): OnDeviceLlmEngine
+
+    /**
+     * 绑定 debug 变体下的文本生成运行时。
+     *
+     * 参数说明：
+     * - impl：不依赖 JNI 的 debug stub 运行时，用于让图片导入链路在 debug 包里也能完成依赖注入。
+     */
+    @Binds
+    abstract fun bindLocalTextGenerationRuntime(impl: DebugLocalTextGenerationRuntime): LocalTextGenerationRuntime
 }

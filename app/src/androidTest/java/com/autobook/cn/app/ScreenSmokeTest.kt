@@ -45,8 +45,9 @@ class ScreenSmokeTest {
     fun overviewScreenRenders() {
         composeRule.setContent {
             OverviewScreen(
-                state = LedgerUiState(),
+                state = LedgerUiState(pendingCount = 3),
                 onRangeChange = {},
+                onOpenPending = {},
                 onOpenAllRecords = {},
                 onOpenBudgetSettings = {},
                 onOpenEntry = {},
@@ -55,6 +56,7 @@ class ScreenSmokeTest {
         }
 
         composeRule.onNodeWithText("总览").assertIsDisplayed()
+        composeRule.onNodeWithText("有 3 条待确认记录").assertIsDisplayed()
     }
 
     @Test
@@ -76,9 +78,8 @@ class ScreenSmokeTest {
                         )
                     },
                 ),
+                onBack = {},
                 onSearchChange = {},
-                onSearchSubmit = {},
-                onRangeChange = {},
                 onPreviousMonthClick = {},
                 onNextMonthClick = {},
                 onCalendarDateClick = { _ -> },
@@ -144,6 +145,8 @@ class ScreenSmokeTest {
                 onOrderIdChange = {},
                 onDirectionChange = {},
                 onApplyTemplate = {},
+                onImportFromImage = {},
+                onSelectImageImportCandidate = {},
                 onSave = {},
                 onDelete = {},
             )
