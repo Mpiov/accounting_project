@@ -1,6 +1,8 @@
 package com.autobook.cn.core.database
 
 import android.content.Context
+import android.os.Build
+import android.util.Log
 import androidx.room.Room
 import com.autobook.cn.core.database.dao.LedgerEntryDao
 import com.autobook.cn.core.database.dao.NotificationEventDao
@@ -52,18 +54,35 @@ object DatabaseModule {
     fun provideDatabase(
         @ApplicationContext context: Context,
     ): AutobookDatabase {
-        // 新版 sqlcipher-android 需要在构建 Room 工厂之前先加载 native 库，否则可能在启动阶段直接崩溃。
-        SqlcipherNativeLoader.ensureLoaded()
+        return runCatching {
+            // 新版 sqlcipher-android 需要在构建 Room 工厂之前先加载 native 库，否则可能在启动阶段直接崩溃。
+            SqlcipherNativeLoader.ensureLoaded()
 
-        // SQLCipher 需要二进制口令，这里统一从受保护的本地存储中读取或生成。
-        val passphrase = DatabasePassphraseProvider(context).getOrCreate()
-        deleteLegacyPlaintextDatabaseIfNeeded(context)
-        val factory = SupportOpenHelperFactory(passphrase)
+            // SQLCipher 需要二进制口令，这里统一从受保护的本地存储中读取或生成。
+            val passphrase = DatabasePassphraseProvider(context).getOrCreate()
+            deleteLegacyPlaintextDatabaseIfNeeded(context)
+            val factory = SupportOpenHelperFactory(passphrase)
 
-        return Room.databaseBuilder(context, AutobookDatabase::class.java, DATABASE_NAME)
-            .openHelperFactory(factory)
-            .fallbackToDestructiveMigration()
-            .build()
+            Room.databaseBuilder(context, AutobookDatabase::class.java, DATABASE_NAME)
+                .openHelperFactory(factory)
+                .fallbackToDestructiveMigration()
+                .build()
+        }.getOrElse { throwable ->
+            // 某些 x86_64 / 模拟器环境即便 so 已经 16 KB 对齐，仍可能在 native 初始化阶段直接失败。
+            // 为了保证 Android Studio 调试可继续进行，这里仅在模拟器环境下回退到明文 Room 数据库。
+            if (!isLikelyEmulator()) {
+                throw throwable
+            }
+
+            Log.e(
+                DATABASE_TAG,
+                "SQLCipher init failed on emulator, fallback to plaintext Room for local testing.",
+                throwable,
+            )
+            Room.databaseBuilder(context, AutobookDatabase::class.java, EMULATOR_DATABASE_NAME)
+                .fallbackToDestructiveMigration()
+                .build()
+        }
     }
 
     /**
@@ -145,5 +164,22 @@ private fun deleteIfExists(file: File) {
     }
 }
 
+/**
+ * 用途说明：
+ * - 判断当前运行环境是否高度疑似模拟器。
+ * - 仅用于数据库 native 初始化失败后的兼容兜底，不参与正式业务逻辑判断。
+ */
+private fun isLikelyEmulator(): Boolean {
+    return Build.FINGERPRINT.contains("generic", ignoreCase = true) ||
+        Build.MODEL.contains("Emulator", ignoreCase = true) ||
+        Build.MODEL.contains("sdk_gphone", ignoreCase = true) ||
+        Build.MANUFACTURER.contains("Genymotion", ignoreCase = true) ||
+        Build.PRODUCT.contains("sdk", ignoreCase = true) ||
+        Build.BRAND.startsWith("generic", ignoreCase = true) ||
+        Build.DEVICE.startsWith("generic", ignoreCase = true)
+}
+
 private const val DATABASE_NAME = "autobook.db"
+private const val EMULATOR_DATABASE_NAME = "autobook-emulator.db"
+private const val DATABASE_TAG = "AutobookDatabase"
 private val SQLITE_HEADER = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
