@@ -187,6 +187,25 @@ interface LedgerRepository {
     suspend fun delete(id: Long)
     suspend fun getById(id: Long): LedgerEntry?
     suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry?
+    /**
+     * 针对图片/截图导入场景执行更宽松的历史判重。
+     *
+     * 用途说明：
+     * - 截图里出现的往往是历史交易列表，不能再依赖“当前时间 ±5 秒”的实时窗口。
+     * - 因此这里优先按 `orderId` 精确匹配，其次退回到“同方向 + 同金额 + 同商户”的历史查重。
+     *
+     * 参数说明：
+     * - orderId：候选订单号；命中时优先视为重复。
+     * - amount：候选金额。
+     * - direction：候选方向。
+     * - merchant：候选商户或交易对象。
+     */
+    suspend fun findPotentialImageImportDuplicate(
+        orderId: String?,
+        amount: Double,
+        direction: MoneyDirection,
+        merchant: String,
+    ): LedgerEntry?
     suspend fun exportCsv(): String
 }
 

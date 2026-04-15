@@ -49,4 +49,24 @@ interface LedgerEntryDao {
         windowStart: Long,
         windowEnd: Long,
     ): LedgerEntryEntity?
+
+    @Query(
+        """
+        SELECT * FROM ledger_entries
+        WHERE (:orderId IS NOT NULL AND orderId = :orderId)
+           OR (
+                amount = :amount
+                AND direction = :direction
+                AND merchant = :merchant
+           )
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun findPotentialImageImportDuplicate(
+        orderId: String?,
+        amount: Double,
+        direction: String,
+        merchant: String,
+    ): LedgerEntryEntity?
 }

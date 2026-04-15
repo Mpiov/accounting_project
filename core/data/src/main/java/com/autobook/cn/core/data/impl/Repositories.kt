@@ -24,6 +24,7 @@ import com.autobook.cn.core.model.CaptureSession
 import com.autobook.cn.core.model.CaptureSessionState
 import com.autobook.cn.core.model.DEFAULT_LOCAL_MODEL_ID
 import com.autobook.cn.core.model.LedgerEntry
+import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.NotificationEvent
 import com.autobook.cn.core.model.NotificationProcessOutcome
 import com.autobook.cn.core.model.NotificationProcessStatus
@@ -72,6 +73,34 @@ class LedgerRepositoryImpl @Inject constructor(
             merchant = candidate.merchant,
             windowStart = candidate.timestamp - DUPLICATE_WINDOW_MS,
             windowEnd = candidate.timestamp + DUPLICATE_WINDOW_MS,
+        )
+        return duplicate?.toDomain()
+    }
+
+    /**
+     * 针对图片导入历史记录执行宽松判重。
+     *
+     * 用途说明：
+     * - 截图里的交易很可能早已发生，不能再依赖实时时间窗。
+     * - 这里优先命中订单号；如果没有订单号，则退回到“同方向 + 同金额 + 同商户”的历史重复判断。
+     *
+     * 参数说明：
+     * - orderId：候选订单号。
+     * - amount：候选金额。
+     * - direction：候选方向。
+     * - merchant：候选商户或交易对象。
+     */
+    override suspend fun findPotentialImageImportDuplicate(
+        orderId: String?,
+        amount: Double,
+        direction: MoneyDirection,
+        merchant: String,
+    ): LedgerEntry? {
+        val duplicate = ledgerEntryDao.findPotentialImageImportDuplicate(
+            orderId = orderId,
+            amount = amount,
+            direction = direction.name,
+            merchant = merchant,
         )
         return duplicate?.toDomain()
     }

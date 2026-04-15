@@ -236,21 +236,71 @@ data class LocalModelSnapshot(
  * 图片导入记账的分析路径标识。
  *
  * 用途说明：
- * - 用统一枚举标记本次图片建议是来自 `gemini-3-flash-preview` 代理链路、本地 OCR + 端侧 LLM，还是仅进入手动确认草稿。
+ * - 用统一枚举标记本次图片建议是来自 `gemini-3.1-pro-preview` 代理链路、本地 OCR + 端侧 LLM，还是仅进入手动确认草稿。
  * - 便于后续在 UI、埋点和审计字段中统一展示来源。
  */
 enum class ImageImportAnalysisPath {
-    GEMINI_3_1_PRO_PREVIEW_MOCK,
+    GEMINI_3_FLASH_PROXY,
     OCR_PLUS_LOCAL_LLM,
     MANUAL_CONFIRMATION_REQUIRED,
 }
+
+/**
+ * 图片候选交易当前状态。
+ *
+ * 用途说明：
+ * - 用于标记一条截图里识别出的候选记录当前是有效交易、已退还、已退款、已撤销还是未知状态。
+ * - 后续本地过滤器会优先把“已退还/已退款/已撤销”候选剔除，避免把历史无效记录再次入账。
+ */
+enum class ImageImportTransactionState {
+    ACTIVE,
+    REFUNDED,
+    RETURNED,
+    REVERSED,
+    CANCELLED,
+    UNKNOWN,
+}
+
+/**
+ * 图片导入分析出的单条候选交易。
+ *
+ * 用途说明：
+ * - 统一承载大模型或本地模型从一张截图中提取出的单笔候选记录。
+ * - 当前设计允许一次分析返回多条候选，再由本地过滤层执行去重、剔除退还记录和择优展示。
+ *
+ * 参数说明：
+ * - amount：候选金额；为空表示当前无法稳定识别。
+ * - direction：候选方向。
+ * - merchant：候选商户或交易对象。
+ * - category：候选分类。
+ * - note：候选备注。
+ * - orderId：候选订单号。
+ * - confidence：候选置信度。
+ * - transactionState：候选交易状态。
+ * - stateReason：模型判断该状态的简短原因。
+ * - evidence：用于调试或后续 UI 展示的简短证据片段。
+ * - filterReason：如果该候选被本地过滤，则记录原因。
+ */
+data class ImageImportCandidate(
+    val amount: Double? = null,
+    val direction: MoneyDirection = MoneyDirection.EXPENSE,
+    val merchant: String = "",
+    val category: String = "待分类",
+    val note: String = "",
+    val orderId: String? = null,
+    val confidence: ParseConfidence = ParseConfidence(0f),
+    val transactionState: ImageImportTransactionState = ImageImportTransactionState.UNKNOWN,
+    val stateReason: String = "",
+    val evidence: String = "",
+    val filterReason: String? = null,
+)
 
 /**
  * 图片导入记账建议。
  *
  * 用途说明：
  * - 作为“用户主动上传图片记账”能力的统一输出协议。
- * - 当前阶段由 `gemini-3-flash-preview` 代理链路或本地 OCR/LLM 分析结果驱动编辑页预填。
+ * - 当前阶段由 `gemini-3.1-pro-preview` 代理链路或本地 OCR/LLM 分析结果驱动编辑页预填。
  *
  * 参数说明：
  * - amount：建议金额；为空表示当前无法可靠提取金额，需要用户手动输入。
@@ -259,9 +309,14 @@ enum class ImageImportAnalysisPath {
  * - category：建议分类。
  * - note：建议备注；当前也会包含“来自本地 OCR + 端侧 LLM”这类链路说明，帮助用户理解建议来源。
  * - orderId：建议订单号。
+ * - confidence：当前被选中候选的置信度。
  * - tracePath：本次建议的分析路径。
  * - message：面向用户的状态说明。
  * - requiresManualConfirmation：是否要求用户手动确认后才能保存。
+ * - candidates：本次分析得到且尚未被过滤掉的候选列表。
+ * - filteredOutCandidateCount：本次分析中被本地过滤掉的候选数量。
+ * - duplicateFilteredCount：因本地账本判重被剔除的候选数量。
+ * - inactiveFilteredCount：因已退还/已退款/已撤销状态被剔除的候选数量。
  */
 data class ImageImportSuggestion(
     val amount: Double? = null,
@@ -270,9 +325,14 @@ data class ImageImportSuggestion(
     val category: String = "待分类",
     val note: String = "",
     val orderId: String? = null,
+    val confidence: ParseConfidence = ParseConfidence(0f),
     val tracePath: ImageImportAnalysisPath,
     val message: String,
     val requiresManualConfirmation: Boolean = true,
+    val candidates: List<ImageImportCandidate> = emptyList(),
+    val filteredOutCandidateCount: Int = 0,
+    val duplicateFilteredCount: Int = 0,
+    val inactiveFilteredCount: Int = 0,
 )
 
 /** 当前默认推荐的本地模型标识。 */

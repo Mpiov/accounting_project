@@ -1,5 +1,12 @@
 package com.autobook.cn.app.ui
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,12 +27,18 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.runtime.Composable
+import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.autobook.cn.app.viewmodel.SettingsUiState
+import com.autobook.cn.app.capture.PageCaptureBookkeepingService
+import com.autobook.cn.core.common.PermissionStatusChecker
+import com.autobook.cn.core.common.SettingsIntents
 import com.autobook.cn.core.model.LocalModelInstallStatus
 import com.autobook.cn.core.model.NotificationSourceApp
 
@@ -54,6 +67,25 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        /**
+         * 通知权限回调说明：
+         * - Android 13+ 只有在用户授予通知权限后，前台服务通知才能稳定显示在通知栏。
+         * - 因此前台服务入口只在授权成功后继续启动，避免出现“服务启动了但通知没有显示”的误解。
+         */
+        if (granted) {
+            startPersistentCaptureEntry(context)
+        } else {
+            Toast.makeText(
+                context,
+                "未授予通知权限或应用通知已关闭，常驻入口不会显示在通知栏",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -125,6 +157,38 @@ fun SettingsScreen(
                 range = 1..30,
                 onValueChange = onScreenshotRetentionChanged,
             )
+            Card {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("截图快捷记账", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "启动后会在通知栏常驻一个“立即截图记账”入口。点击后会截取当前页面，交给图片分析链路，再按置信度决定自动入账或进入待确认。",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = {
+                                if (canPostForegroundNotification(context)) {
+                                    startPersistentCaptureEntry(context)
+                                } else {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            },
+                        ) {
+                            Text("启动常驻入口")
+                        }
+                        TextButton(
+                            onClick = {
+                                context.startService(PageCaptureBookkeepingService.createStopPersistentIntent(context))
+                            },
+                        ) {
+                            Text("关闭常驻入口")
+                        }
+                    }
+                }
+            }
             DataOverviewCard(state = state)
             Card {
                 Column(
@@ -373,6 +437,73 @@ private fun buildPreviewSnippet(csv: String): String {
 }
 
 private const val PREVIEW_MAX_LINES = 12
+
+/**
+ * 判断当前设备是否允许把前台服务通知正常展示到通知栏。
+ *
+ * 用途说明：
+ * - Android 13 以下没有 `POST_NOTIFICATIONS` 运行时权限，可直接展示通知。
+ * - Android 13 及以上必须先拿到通知权限，否则“常驻入口”即使启动，通知也可能不出现在通知栏。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于读取通知运行时权限状态。
+ */
+private fun canPostForegroundNotification(context: Context): Boolean {
+    if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+        return false
+    }
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        return true
+    }
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS,
+    ) == PackageManager.PERMISSION_GRANTED
+}
+
+/**
+ * 真正启动“截图快捷记账”常驻前台服务。
+ *
+ * 用途说明：
+ * - 统一收口服务启动逻辑，避免权限判断和真正的服务拉起逻辑散落在按钮点击代码里。
+ * - 后续如果需要补充更多前置校验，只需要改这一处。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于构造并启动前台服务 Intent。
+ */
+private fun startPersistentCaptureEntry(context: Context) {
+    /**
+     * 当前页面截图链路依赖无障碍服务提供截图运行时。
+     *
+     * 用途说明：
+     * - 如果用户还没在系统设置里真正开启无障碍服务，就提前拦住，不要先启动一个“点了必失败”的常驻通知。
+     * - 这里直接引导去系统无障碍设置，减少“通知有了但截图能力不可用”的困惑。
+     */
+    if (!PermissionStatusChecker.hasAccessibilityAccess(
+            context = context,
+            serviceClassName = ACCESSIBILITY_SERVICE_CLASS_NAME,
+        )
+    ) {
+        Toast.makeText(
+            context,
+            "请先开启无障碍自动化，截图快捷记账才能使用",
+            Toast.LENGTH_LONG,
+        ).show()
+        context.startActivity(
+            SettingsIntents.accessibilityAccess().apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+        )
+        return
+    }
+    ContextCompat.startForegroundService(
+        context,
+        PageCaptureBookkeepingService.createStartPersistentIntent(context),
+    )
+}
+
+private const val ACCESSIBILITY_SERVICE_CLASS_NAME =
+    "com.autobook.cn.service.automation.AutobookAccessibilityService"
 
 /** 生成模型行文案，强调当前选中项和推荐项。 */
 private fun buildModelRowLabel(

@@ -11,7 +11,9 @@ android {
 
     defaultConfig {
         minSdk = 29
-        buildConfigField("String", "GEMINI_IMAGE_MODEL", "\"gemini-3-flash-preview\"")
+        // 说明：
+        // - 按当前项目代理环境实际可用的模型标识切到 `gemini-3.1-pro-preview`。
+        buildConfigField("String", "GEMINI_IMAGE_MODEL", "\"gemini-3.1-pro-preview\"")
     }
 
     buildFeatures {

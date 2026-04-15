@@ -7,6 +7,7 @@ import android.util.Log
 import com.autobook.cn.core.data.ImageImportAnalyzer
 import com.autobook.cn.core.data.LedgerRepository
 import com.autobook.cn.core.data.PendingRepository
+import com.autobook.cn.core.model.ImageImportCandidate
 import com.autobook.cn.core.model.ImageImportAnalysisPath
 import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.MoneyDirection
@@ -40,6 +41,16 @@ data class EntryEditorUiState(
     val imageImportMessage: String? = null,
     val imageImportTracePath: ImageImportAnalysisPath? = null,
     val importedImageRef: String? = null,
+    /** 图片分析后保留下来的候选列表，默认按后处理层给出的优先级排序。 */
+    val imageImportCandidates: List<ImageImportCandidate> = emptyList(),
+    /** 当前编辑页正在展示的候选索引；没有候选时为空。 */
+    val selectedImageImportCandidateIndex: Int? = null,
+    /** 本次图片分析中被本地过滤掉的候选总数。 */
+    val filteredOutCandidateCount: Int = 0,
+    /** 因本地账本判重被过滤的候选数。 */
+    val duplicateFilteredCount: Int = 0,
+    /** 因已退还/已撤销状态被过滤的候选数。 */
+    val inactiveFilteredCount: Int = 0,
     /** 图片导入分析结果默认只作为建议，是否仍需用户手动确认后保存。 */
     val imageImportRequiresManualConfirmation: Boolean = false,
     val finished: Boolean = false,
@@ -108,6 +119,20 @@ class EntryEditorViewModel @Inject constructor(
     fun applyTemplate(templateId: String) = updateState { applyEntryTemplate(templateId) }
 
     /**
+     * 切换当前正在查看的图片分析候选。
+     *
+     * 用途说明：
+     * - 当一张截图识别出多条候选后，允许用户在编辑页里切换当前要采纳的候选。
+     * - 切换时会把表单字段回填为对应候选的内容，便于用户继续微调。
+     *
+     * 参数说明：
+     * - index：希望切换到的候选索引。
+     */
+    fun selectImageImportCandidate(index: Int) {
+        updateState { applyImageImportCandidate(index) }
+    }
+
+    /**
      * 触发一次图片导入记账建议填充。
      *
      * 用途说明：
@@ -131,7 +156,8 @@ class EntryEditorViewModel @Inject constructor(
                     is com.autobook.cn.core.model.OperationResult.Success -> {
                         val suggestion = result.data
                         updateState {
-                            copy(
+                            val selectedIndex = suggestion.candidates.indices.firstOrNull()
+                            val baseState = copy(
                                 amount = suggestion.amount?.toString() ?: amount,
                                 direction = suggestion.direction,
                                 merchant = suggestion.merchant.ifBlank { merchant },
@@ -141,9 +167,19 @@ class EntryEditorViewModel @Inject constructor(
                                 imageImportMessage = suggestion.message,
                                 imageImportTracePath = suggestion.tracePath,
                                 importedImageRef = imageRef,
+                                imageImportCandidates = suggestion.candidates,
+                                selectedImageImportCandidateIndex = selectedIndex,
+                                filteredOutCandidateCount = suggestion.filteredOutCandidateCount,
+                                duplicateFilteredCount = suggestion.duplicateFilteredCount,
+                                inactiveFilteredCount = suggestion.inactiveFilteredCount,
                                 imageImportRequiresManualConfirmation = suggestion.requiresManualConfirmation,
                                 errorMessage = null,
                             )
+                            if (selectedIndex != null) {
+                                baseState.applyImageImportCandidate(selectedIndex)
+                            } else {
+                                baseState
+                            }
                         }
                     }
 
@@ -153,6 +189,11 @@ class EntryEditorViewModel @Inject constructor(
                                 imageImportMessage = result.message,
                                 imageImportTracePath = null,
                                 importedImageRef = imageRef,
+                                imageImportCandidates = emptyList(),
+                                selectedImageImportCandidateIndex = null,
+                                filteredOutCandidateCount = 0,
+                                duplicateFilteredCount = 0,
+                                inactiveFilteredCount = 0,
                                 imageImportRequiresManualConfirmation = true,
                                 errorMessage = null,
                             )
@@ -165,6 +206,11 @@ class EntryEditorViewModel @Inject constructor(
                                 imageImportMessage = result.message,
                                 imageImportTracePath = null,
                                 importedImageRef = imageRef,
+                                imageImportCandidates = emptyList(),
+                                selectedImageImportCandidateIndex = null,
+                                filteredOutCandidateCount = 0,
+                                duplicateFilteredCount = 0,
+                                inactiveFilteredCount = 0,
                                 imageImportRequiresManualConfirmation = true,
                                 errorMessage = null,
                             )
@@ -178,6 +224,11 @@ class EntryEditorViewModel @Inject constructor(
                         imageImportMessage = "图片分析失败：${throwable.message ?: throwable.javaClass.simpleName}",
                         imageImportTracePath = null,
                         importedImageRef = imageRef,
+                        imageImportCandidates = emptyList(),
+                        selectedImageImportCandidateIndex = null,
+                        filteredOutCandidateCount = 0,
+                        duplicateFilteredCount = 0,
+                        inactiveFilteredCount = 0,
                         imageImportRequiresManualConfirmation = true,
                         errorMessage = null,
                     )
@@ -390,6 +441,26 @@ private val ENTRY_TEMPLATE_MODELS = ENTRY_TEMPLATES.map { template ->
     EntryTemplateUiModel(
         id = template.id,
         label = template.label,
+    )
+}
+
+/**
+ * 把指定图片候选应用到当前表单。
+ *
+ * 参数说明：
+ * - index：待应用候选的索引。
+ */
+internal fun EntryEditorUiState.applyImageImportCandidate(index: Int): EntryEditorUiState {
+    val candidate = imageImportCandidates.getOrNull(index) ?: return this
+    return copy(
+        amount = candidate.amount?.toString() ?: amount,
+        direction = candidate.direction,
+        merchant = candidate.merchant.ifBlank { merchant },
+        category = candidate.category.ifBlank { category },
+        note = candidate.note.ifBlank { note },
+        orderId = candidate.orderId ?: orderId,
+        selectedImageImportCandidateIndex = index,
+        errorMessage = null,
     )
 }
 

@@ -188,6 +188,7 @@ private fun EntryEditorRoute(
         onDirectionChange = viewModel::updateDirection,
         onApplyTemplate = viewModel::applyTemplate,
         onImportFromImage = { imagePickerLauncher.launch("image/*") },
+        onSelectImageImportCandidate = viewModel::selectImageImportCandidate,
         onSave = viewModel::save,
         onDelete = viewModel::delete,
     )

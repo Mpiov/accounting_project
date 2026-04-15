@@ -49,6 +49,12 @@ class TransactionPipelineTest {
             override suspend fun delete(id: Long) = Unit
             override suspend fun getById(id: Long): LedgerEntry? = null
             override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? = null
+            override suspend fun findPotentialImageImportDuplicate(
+                orderId: String?,
+                amount: Double,
+                direction: MoneyDirection,
+                merchant: String,
+            ): LedgerEntry? = null
             override suspend fun exportCsv(): String = ""
         }
         val pendingRepository = object : PendingRepository {
@@ -128,6 +134,12 @@ class TransactionPipelineTest {
             override suspend fun delete(id: Long) = Unit
             override suspend fun getById(id: Long): LedgerEntry? = null
             override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? = null
+            override suspend fun findPotentialImageImportDuplicate(
+                orderId: String?,
+                amount: Double,
+                direction: MoneyDirection,
+                merchant: String,
+            ): LedgerEntry? = null
             override suspend fun exportCsv(): String = ""
         }
         val pendingRepository = object : PendingRepository {
@@ -194,6 +206,12 @@ class TransactionPipelineTest {
             override suspend fun delete(id: Long) = Unit
             override suspend fun getById(id: Long): LedgerEntry? = null
             override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? = null
+            override suspend fun findPotentialImageImportDuplicate(
+                orderId: String?,
+                amount: Double,
+                direction: MoneyDirection,
+                merchant: String,
+            ): LedgerEntry? = null
             override suspend fun exportCsv(): String = ""
         }
         val pendingRepository = object : PendingRepository {

@@ -41,7 +41,24 @@ class AutobookAccessibilityService : AccessibilityService() {
 
         override suspend fun captureScreenshot(): OperationResult<Bitmap> = captureCurrentDisplay()
 
-        override fun collapseSystemUi(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
+        override fun collapseSystemUi(): Boolean {
+            /**
+             * 这里不能再用 `GLOBAL_ACTION_BACK` 收起通知栏。
+             *
+             * 用途说明：
+             * - `GLOBAL_ACTION_BACK` 本质上就是一次真实的系统返回键事件。
+             * - 用户从通知点进截图入口时，如果我们为了收起通知栏去执行 BACK，
+             *   前台应用就很可能直接回退到上一页，这正是当前线上现象。
+             * - Android 12 / API 31 开始官方提供了 `GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE`，
+             *   它只负责收起通知栏，不会额外触发页面返回。
+             * - 对更低版本，这里宁可不主动发“返回键”，也不要再制造页面回退副作用。
+             */
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+            } else {
+                true
+            }
+        }
     }
 
     override fun onServiceConnected() {

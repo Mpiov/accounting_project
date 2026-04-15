@@ -27,13 +27,21 @@ class ImageImportOnDeviceLocalReasonerTest {
                 LocalTextGenerationResult(
                     text = """
                         {
-                          "amount": 18.0,
-                          "direction": "EXPENSE",
-                          "merchant": "小象超市",
-                          "category": "购物",
-                          "note": "识别到支付成功、商户和金额",
-                          "orderId": "IMG-REAL-001",
-                          "confidenceScore": 0.91,
+                          "candidates": [
+                            {
+                              "amount": 18.0,
+                              "direction": "EXPENSE",
+                              "merchant": "小象超市",
+                              "category": "购物",
+                              "note": "识别到支付成功、商户和金额",
+                              "orderId": "IMG-REAL-001",
+                              "confidenceScore": 0.91,
+                              "transactionState": "ACTIVE",
+                              "stateReason": "当前记录未见退款或撤销标记",
+                              "evidence": "支付成功 18.00 元"
+                            }
+                          ],
+                          "message": "已识别当前页面中的交易候选",
                           "requiresManualConfirmation": true
                         }
                     """.trimIndent(),

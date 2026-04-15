@@ -1,6 +1,7 @@
 package com.autobook.cn.core.data
 
 import com.autobook.cn.core.data.impl.MockImageImportAnalyzer
+import com.autobook.cn.core.data.impl.ImageImportCandidatePostProcessor
 import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.ImageImportAnalysisPath
 import com.autobook.cn.core.model.LocalModelInstallStatus
@@ -27,13 +28,14 @@ class MockImageImportAnalyzerTest {
             geminiImageImportApi = fakeGeminiApi(),
             imageImportLocalOcrEngine = fakeLocalOcrEngine(),
             imageImportLocalReasoner = fakeLocalReasoner(),
+            candidatePostProcessor = ImageImportCandidatePostProcessor(fakeLedgerRepository()),
         )
 
         val result = analyzer.analyze("mock://cloud")
 
         assertTrue(result is OperationResult.Success)
         val suggestion = (result as OperationResult.Success).data
-        assertEquals(ImageImportAnalysisPath.GEMINI_3_1_PRO_PREVIEW_MOCK, suggestion.tracePath)
+        assertEquals(ImageImportAnalysisPath.GEMINI_3_FLASH_PROXY, suggestion.tracePath)
         assertEquals("Gemini 图片建议商户", suggestion.merchant)
         assertEquals(32.5, suggestion.amount)
         assertTrue(suggestion.requiresManualConfirmation)
@@ -52,6 +54,7 @@ class MockImageImportAnalyzerTest {
             geminiImageImportApi = fakeGeminiApi(),
             imageImportLocalOcrEngine = fakeLocalOcrEngine(),
             imageImportLocalReasoner = fakeLocalReasoner(),
+            candidatePostProcessor = ImageImportCandidatePostProcessor(fakeLedgerRepository()),
         )
 
         val result = analyzer.analyze("mock://local")
@@ -77,6 +80,7 @@ class MockImageImportAnalyzerTest {
             geminiImageImportApi = fakeGeminiApi(),
             imageImportLocalOcrEngine = fakeLocalOcrEngine(),
             imageImportLocalReasoner = fakeLocalReasoner(),
+            candidatePostProcessor = ImageImportCandidatePostProcessor(fakeLedgerRepository()),
         )
 
         val result = analyzer.analyze("mock://manual")
@@ -102,6 +106,7 @@ class MockImageImportAnalyzerTest {
             geminiImageImportApi = fakeGeminiApi(),
             imageImportLocalOcrEngine = fakeLocalOcrEngine(),
             imageImportLocalReasoner = fakeLocalReasoner(),
+            candidatePostProcessor = ImageImportCandidatePostProcessor(fakeLedgerRepository()),
         )
 
         val result = analyzer.analyze("mock://ocr-disabled")
@@ -142,6 +147,25 @@ private fun fakeLocalModelRepository(snapshot: LocalModelSnapshot): LocalModelRe
     }
 }
 
+/** 构造不会命中重复记录的账本仓储替身，供图片导入后处理测试复用。 */
+private fun fakeLedgerRepository(): LedgerRepository {
+    return object : LedgerRepository {
+        override fun observeEntries(): Flow<List<com.autobook.cn.core.model.LedgerEntry>> = flowOf(emptyList())
+        override suspend fun add(entry: com.autobook.cn.core.model.LedgerEntry): Long = 1L
+        override suspend fun update(entry: com.autobook.cn.core.model.LedgerEntry) = Unit
+        override suspend fun delete(id: Long) = Unit
+        override suspend fun getById(id: Long): com.autobook.cn.core.model.LedgerEntry? = null
+        override suspend fun findPotentialDuplicate(candidate: com.autobook.cn.core.model.TransactionCandidate): com.autobook.cn.core.model.LedgerEntry? = null
+        override suspend fun findPotentialImageImportDuplicate(
+            orderId: String?,
+            amount: Double,
+            direction: com.autobook.cn.core.model.MoneyDirection,
+            merchant: String,
+        ): com.autobook.cn.core.model.LedgerEntry? = null
+        override suspend fun exportCsv(): String = ""
+    }
+}
+
 /** 构造固定 Gemini 图片分析响应的 fake 网络接口。 */
 private fun fakeGeminiApi(): GeminiImageImportApi {
     return object : GeminiImageImportApi {
@@ -156,6 +180,32 @@ private fun fakeGeminiApi(): GeminiImageImportApi {
                 modelName = "gemini-3-flash-preview",
                 message = "已按 gemini-3-flash-preview 代理链路生成建议，请核对金额、商户和备注后确认保存。",
                 requiresManualConfirmation = true,
+                candidates = listOf(
+                    com.autobook.cn.core.network.GeminiImageImportCandidateResponse(
+                        amount = 32.5,
+                        direction = "EXPENSE",
+                        merchant = "Gemini 图片建议商户",
+                        category = "餐饮",
+                        note = "来自 gemini-3-flash-preview proxy，建议人工确认后保存",
+                        orderId = "IMG-GEMINI3FLASH-PROXY-001",
+                        confidenceScore = 0.88f,
+                        transactionState = "ACTIVE",
+                        stateReason = "页面显示支付成功",
+                        evidence = "支付成功 32.50 元",
+                    ),
+                    com.autobook.cn.core.network.GeminiImageImportCandidateResponse(
+                        amount = 32.5,
+                        direction = "EXPENSE",
+                        merchant = "Gemini 旧交易记录",
+                        category = "餐饮",
+                        note = "已退款记录",
+                        orderId = "IMG-GEMINI3FLASH-PROXY-REFUND-001",
+                        confidenceScore = 0.64f,
+                        transactionState = "REFUNDED",
+                        stateReason = "页面展示退款成功",
+                        evidence = "退款成功 32.50 元",
+                    ),
+                ),
             )
         }
     }

@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!--
+        前台服务权限说明：
+        1. 基础前台服务权限用于允许应用启动前台服务。
+        2. Android 14+ 要求按 foregroundServiceType 额外声明对应权限；
+           当前页面截图记账服务声明的是 dataSync，因此必须同时声明
+           FOREGROUND_SERVICE_DATA_SYNC，否则在调用 startForeground() 时会抛出 SecurityException。
+    -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -30,6 +38,42 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+            通知栏快捷动作跳板 Activity：
+            1. 负责承接“立即截图记账 / 关闭入口”的通知 action。
+            2. 自身不展示 UI，只做动作转发，完成后立即结束。
+            3. 通过透明 Activity 兜底，提升通知 action 在 MIUI 等 ROM 上的触发稳定性。
+        -->
+        <activity
+            android:name="com.autobook.cn.app.capture.PageCaptureActionActivity"
+            android:enabled="true"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:finishOnTaskLaunch="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <service
+            android:name="com.autobook.cn.app.capture.PageCaptureBookkeepingService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!--
+            通知栏快捷动作接收器：
+            1. 负责承接“立即截图记账 / 关闭入口”的通知 action。
+            2. 先由广播接收器接住通知动作，再转发给前台服务，提升 OEM 系统上的触发稳定性。
+        -->
+        <receiver
+            android:name="com.autobook.cn.app.capture.PageCaptureActionReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.autobook.cn.app.capture.ACTION_TRIGGER_CAPTURE_FROM_NOTIFICATION" />
+                <action android:name="com.autobook.cn.app.capture.ACTION_STOP_PERSISTENT_FROM_NOTIFICATION" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

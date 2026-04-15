@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -26,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.autobook.cn.app.viewmodel.EntryTemplateUiModel
 import com.autobook.cn.app.viewmodel.EntryEditorUiState
+import com.autobook.cn.core.model.ImageImportCandidate
 import com.autobook.cn.core.model.MoneyDirection
 
 /** 手动新建、编辑账本记录、处理待确认项共用的编辑页。 */
@@ -42,6 +44,7 @@ fun EntryEditorScreen(
     onDirectionChange: (MoneyDirection) -> Unit,
     onApplyTemplate: (String) -> Unit,
     onImportFromImage: () -> Unit,
+    onSelectImageImportCandidate: (Int) -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
@@ -87,6 +90,7 @@ fun EntryEditorScreen(
             ImageImportSection(
                 state = state,
                 onImportFromImage = onImportFromImage,
+                onSelectImageImportCandidate = onSelectImageImportCandidate,
             )
             TemplateSection(
                 templates = state.templates,
@@ -139,7 +143,7 @@ fun EntryEditorScreen(
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            text = "无论当前是 gemini-3-flash-preview 建议还是本地图片分析建议，都不会自动入账。请手动核对金额、分类、商户、备注后再保存。",
+                            text = "无论当前是 gemini-3.1-pro-preview 建议还是本地图片分析建议，都不会自动入账。请手动核对金额、分类、商户、备注后再保存。",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -166,6 +170,7 @@ fun EntryEditorScreen(
 private fun ImageImportSection(
     state: EntryEditorUiState,
     onImportFromImage: () -> Unit,
+    onSelectImageImportCandidate: (Int) -> Unit,
 ) {
     Card {
         Column(
@@ -174,7 +179,7 @@ private fun ImageImportSection(
         ) {
             Text("图片导入记账", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "当前已接入真实选图入口。关闭云端分析并开启 OCR 后，可直接走端内 ML Kit OCR + 本地 Qwen 生成建议；开启云端分析时走经 `api.wenapi.shop` 反代的 gemini-3-flash-preview 链路。",
+                text = "当前已接入真实选图入口。关闭云端分析并开启 OCR 后，可直接走端内 ML Kit OCR + 本地 Qwen 生成建议；开启云端分析时走经 `api.wenapi.shop` 反代的 gemini-3.1-pro-preview 链路。",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Button(
@@ -197,12 +202,94 @@ private fun ImageImportSection(
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
+            if (state.filteredOutCandidateCount > 0) {
+                Card {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = "本地过滤摘要",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = buildFilteredSummary(
+                                filteredOutCount = state.filteredOutCandidateCount,
+                                duplicateFilteredCount = state.duplicateFilteredCount,
+                                inactiveFilteredCount = state.inactiveFilteredCount,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+            if (state.imageImportCandidates.isNotEmpty()) {
+                CandidateSelectorSection(
+                    candidates = state.imageImportCandidates,
+                    selectedIndex = state.selectedImageImportCandidateIndex,
+                    onSelectCandidate = onSelectImageImportCandidate,
+                )
+            }
             state.imageImportTracePath?.let { tracePath ->
                 Text(
                     text = "分析路径：$tracePath",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CandidateSelectorSection(
+    candidates: List<ImageImportCandidate>,
+    selectedIndex: Int?,
+    onSelectCandidate: (Int) -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("候选结果", style = MaterialTheme.typography.titleSmall)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                candidates.forEachIndexed { index, candidate ->
+                    FilterChip(
+                        selected = selectedIndex == index,
+                        onClick = { onSelectCandidate(index) },
+                        label = {
+                            Text(buildCandidateChipLabel(index = index, candidate = candidate))
+                        },
+                    )
+                }
+            }
+            val selectedCandidate = selectedIndex?.let(candidates::getOrNull)
+            if (selectedCandidate != null) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "当前候选：${buildCandidateDetail(selectedCandidate)}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (selectedCandidate.stateReason.isNotBlank()) {
+                        AssistChip(
+                            onClick = {},
+                            label = { Text("状态：${selectedCandidate.stateReason}") },
+                        )
+                    }
+                    if (selectedCandidate.evidence.isNotBlank()) {
+                        Text(
+                            text = "证据：${selectedCandidate.evidence}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }
@@ -237,4 +324,48 @@ private fun TemplateSection(
             }
         }
     }
+}
+
+/** 将过滤统计拼成简洁可读的一句话。 */
+private fun buildFilteredSummary(
+    filteredOutCount: Int,
+    duplicateFilteredCount: Int,
+    inactiveFilteredCount: Int,
+): String {
+    val parts = buildList {
+        add("共剔除 $filteredOutCount 条候选")
+        if (duplicateFilteredCount > 0) {
+            add("重复 $duplicateFilteredCount 条")
+        }
+        if (inactiveFilteredCount > 0) {
+            add("已退还/已撤销 $inactiveFilteredCount 条")
+        }
+    }
+    return parts.joinToString(separator = "，")
+}
+
+/** 生成候选筛选 chip 文案。 */
+private fun buildCandidateChipLabel(
+    index: Int,
+    candidate: ImageImportCandidate,
+): String {
+    val amountLabel = candidate.amount?.let { "¥${"%.2f".format(it)}" } ?: "金额待确认"
+    val merchantLabel = candidate.merchant.ifBlank { "未知对象" }
+    return "${index + 1}. $merchantLabel $amountLabel"
+}
+
+/** 生成候选详细说明。 */
+private fun buildCandidateDetail(candidate: ImageImportCandidate): String {
+    val directionLabel = when (candidate.direction) {
+        MoneyDirection.INCOME -> "收入"
+        MoneyDirection.EXPENSE -> "支出"
+        MoneyDirection.UNKNOWN -> "方向待确认"
+    }
+    val confidenceLabel = "置信度 ${"%.2f".format(candidate.confidence.score)}"
+    return listOfNotNull(
+        candidate.merchant.ifBlank { null },
+        candidate.category.takeIf { it.isNotBlank() },
+        directionLabel,
+        confidenceLabel,
+    ).joinToString(separator = " · ")
 }
