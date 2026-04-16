@@ -87,6 +87,29 @@ sealed class AutobookDestination(val route: String) {
         }
     }
 
+    /**
+     * 用途说明：
+     * - 极速记账页支持携带默认收支方向。
+     * - 当前阶段先把路由骨架接入，后续再把 FAB 和更多新建入口切换到这里。
+     *
+     * 参数说明：
+     * - direction：极速记账页进入时的默认收支方向。
+     */
+    data object QuickEntry : AutobookDestination("entry/quick?direction={direction}") {
+        const val BASE_ROUTE: String = "entry/quick"
+
+        fun createRoute(direction: MoneyDirection? = null): String {
+            val queryParameters = buildList {
+                direction?.let { add("direction=${it.name}") }
+            }
+            return if (queryParameters.isEmpty()) {
+                BASE_ROUTE
+            } else {
+                "$BASE_ROUTE?${queryParameters.joinToString("&")}"
+            }
+        }
+    }
+
     data object EntryEdit : AutobookDestination("entry/edit/{ledgerId}") {
         /**
          * 用途说明：

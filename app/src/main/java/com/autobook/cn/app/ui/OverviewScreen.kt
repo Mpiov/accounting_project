@@ -239,13 +239,13 @@ private fun OverviewHeroCard(
                 SummaryMetricCard(
                     label = "收入",
                     value = state.incomeSummary,
-                    valueColor = Color(0xFFD1495B),
+                    valueColor = overviewIncomeAmountColor,
                     modifier = Modifier.weight(1f),
                 )
                 SummaryMetricCard(
                     label = "支出",
                     value = state.expenseSummary,
-                    valueColor = Color(0xFF2E8B57),
+                    valueColor = overviewExpenseAmountColor,
                     modifier = Modifier.weight(1f),
                 )
                 SummaryMetricCard(
@@ -632,9 +632,10 @@ private fun OverviewTimelineItem(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = if (entry.direction == MoneyDirection.INCOME) {
-                        MaterialTheme.colorScheme.primary
+                        // 最近记录和总览卡共用同一组收支语义色，避免首页不同模块出现颜色口径不一致。
+                        overviewIncomeAmountColor
                     } else {
-                        MaterialTheme.colorScheme.tertiary
+                        overviewExpenseAmountColor
                     },
                 )
             }
@@ -752,6 +753,12 @@ private fun summaryMetricFontSize(value: String) = when {
     value.length >= 11 -> 12.sp
     else -> 14.sp
 }
+
+/** 总览页收入金额色，使用偏暖的柔和红色，避免纯红过于刺眼。 */
+private val overviewIncomeAmountColor = Color(0xFFD1495B)
+
+/** 总览页支出金额色，使用偏柔和的绿色，和收入色保持同一视觉强度。 */
+private val overviewExpenseAmountColor = Color(0xFF2E8B57)
 
 /**
  * 用途说明：

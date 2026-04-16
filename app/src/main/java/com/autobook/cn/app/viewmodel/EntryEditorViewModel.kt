@@ -86,9 +86,7 @@ class EntryEditorViewModel @Inject constructor(
     private val ledgerId: Long? = savedStateHandle.get<String>("ledgerId")?.toLongOrNull()
     private val pendingId: Long? = savedStateHandle.get<String>("pendingId")?.toLongOrNull()
     /** 快速动作面板可传入默认方向，减少用户进入表单后的二次切换。 */
-    private val presetDirection: MoneyDirection? = savedStateHandle.get<String>("direction")
-        ?.takeIf { it.isNotBlank() }
-        ?.let { rawDirection -> MoneyDirection.entries.firstOrNull { it.name == rawDirection } }
+    private val presetDirection: MoneyDirection? = savedStateHandle.readMoneyDirectionArgument("direction")
     /** 快速动作面板可直接携带模板标识，进入页面时先预填常用字段。 */
     private val presetTemplateId: String? = savedStateHandle.get<String>("templateId")?.takeIf { it.isNotBlank() }
     private var editingLedger: LedgerEntry? = null
@@ -250,43 +248,51 @@ class EntryEditorViewModel @Inject constructor(
     fun save() {
         viewModelScope.launch {
             val state = _uiState.value
-            val amount = state.amount.toDoubleOrNull()
-            if (amount == null || amount <= 0.0) {
-                updateState { copy(errorMessage = "请输入有效金额") }
-                return@launch
-            }
-            if (state.merchant.isBlank()) {
-                updateState { copy(errorMessage = "请输入商户或备注对象") }
-                return@launch
-            }
-            if (state.direction == MoneyDirection.UNKNOWN) {
-                // 自动解析无法确定方向时，要求用户在编辑页里显式确认收入或支出。
-                updateState { copy(errorMessage = "请选择收支方向") }
-                return@launch
-            }
-
             when (state.mode) {
                 EntryEditorMode.CREATE -> {
-                    ledgerRepository.add(
-                        LedgerEntry(
-                            amount = amount,
+                    when (val result = buildManualLedgerEntry(
+                        draft = ManualLedgerEntryDraft(
+                            amountInput = state.amount,
                             direction = state.direction,
-                            merchant = state.merchant.trim(),
+                            merchant = state.merchant,
+                            category = state.category,
+                            note = state.note,
+                            orderId = state.orderId,
+                            entryTimestamp = state.entryTimestamp,
                             channel = if (state.importedImageRef != null) "图片导入" else "手动记账",
-                            timestamp = state.entryTimestamp ?: System.currentTimeMillis(),
-                            category = state.category.trim().ifBlank { "待分类" },
-                            orderId = state.orderId.trim().ifBlank { null },
-                            note = state.note.trim().ifBlank { null },
                             traceSource = if (state.importedImageRef != null) "image-import" else "manual",
                             tracePath = state.imageImportTracePath?.name?.lowercase() ?: "manual-entry",
                             traceModelVersion = if (state.importedImageRef != null) "image-import-v1" else "manual-v1",
-                            editedManually = true,
                         ),
-                    )
+                        merchantPolicy = ManualEntryMerchantPolicy.REQUIRE_EXPLICIT_MERCHANT,
+                    )) {
+                        is ManualLedgerEntryBuildFailure -> {
+                            updateState { copy(errorMessage = result.message) }
+                            return@launch
+                        }
+
+                        is ManualLedgerEntryBuildSuccess -> {
+                            ledgerRepository.add(result.entry)
+                        }
+                    }
                 }
 
                 EntryEditorMode.EDIT_LEDGER -> {
                     val current = editingLedger ?: return@launch
+                    val amount = state.amount.toDoubleOrNull()
+                    if (amount == null || amount <= 0.0) {
+                        updateState { copy(errorMessage = "请输入有效金额") }
+                        return@launch
+                    }
+                    if (state.merchant.isBlank()) {
+                        updateState { copy(errorMessage = "请输入商户或备注对象") }
+                        return@launch
+                    }
+                    if (state.direction == MoneyDirection.UNKNOWN) {
+                        // 自动解析无法确定方向时，要求用户在编辑页里显式确认收入或支出。
+                        updateState { copy(errorMessage = "请选择收支方向") }
+                        return@launch
+                    }
                     ledgerRepository.update(
                         current.copy(
                             amount = amount,
@@ -304,6 +310,20 @@ class EntryEditorViewModel @Inject constructor(
                 EntryEditorMode.RESOLVE_PENDING -> {
                     // 待确认项保存后写入账本，并从待确认队列中移除。
                     val pending = resolvingPending ?: return@launch
+                    val amount = state.amount.toDoubleOrNull()
+                    if (amount == null || amount <= 0.0) {
+                        updateState { copy(errorMessage = "请输入有效金额") }
+                        return@launch
+                    }
+                    if (state.merchant.isBlank()) {
+                        updateState { copy(errorMessage = "请输入商户或备注对象") }
+                        return@launch
+                    }
+                    if (state.direction == MoneyDirection.UNKNOWN) {
+                        // 自动解析无法确定方向时，要求用户在编辑页里显式确认收入或支出。
+                        updateState { copy(errorMessage = "请选择收支方向") }
+                        return@launch
+                    }
                     ledgerRepository.add(
                         LedgerEntry(
                             amount = amount,

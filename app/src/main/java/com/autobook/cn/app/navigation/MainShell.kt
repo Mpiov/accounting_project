@@ -22,9 +22,6 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -44,7 +41,6 @@ import com.autobook.cn.app.ui.ChartDashboardScreen
 import com.autobook.cn.app.ui.LedgerBoardScreen
 import com.autobook.cn.app.ui.OverviewScreen
 import com.autobook.cn.app.ui.PendingWorkspaceScreen
-import com.autobook.cn.app.ui.QuickActionSheet
 import com.autobook.cn.app.ui.SettingsWorkspaceScreen
 import com.autobook.cn.app.viewmodel.ChartViewModel
 import com.autobook.cn.app.viewmodel.LedgerBoardMode
@@ -52,7 +48,6 @@ import com.autobook.cn.app.viewmodel.LedgerBoardViewModel
 import com.autobook.cn.app.viewmodel.LedgerViewModel
 import com.autobook.cn.app.viewmodel.PendingViewModel
 import com.autobook.cn.app.viewmodel.SettingsViewModel
-import com.autobook.cn.core.model.MoneyDirection
 
 /**
  * 用途说明：
@@ -75,7 +70,6 @@ fun MainShell(
     val navBackStackEntry by shellNavController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val currentTab = MainShellTab.match(currentDestination) ?: MainShellTab.Overview
-    var showQuickActionSheet by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -126,7 +120,10 @@ fun MainShell(
         floatingActionButton = {
             if (currentTab != MainShellTab.Settings) {
                 FloatingActionButton(
-                    onClick = { showQuickActionSheet = true },
+                    onClick = {
+                        // 主入口直接进入极速记账页，减少“先弹面板再选方向”的额外一步。
+                        rootNavController.navigate(AutobookDestination.QuickEntry.createRoute())
+                    },
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Add,
@@ -160,7 +157,7 @@ fun MainShell(
                     onOpenEntry = { ledgerId ->
                         rootNavController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
                     },
-                    onCreateEntry = { rootNavController.navigate(AutobookDestination.EntryCreate.createRoute()) },
+                    onCreateEntry = { rootNavController.navigate(AutobookDestination.QuickEntry.createRoute()) },
                 )
             }
             composable(AutobookDestination.MainLedger.route) {
@@ -198,7 +195,7 @@ fun MainShell(
                     },
                     onIgnore = viewModel::ignorePending,
                     onOpenLedger = { shellNavController.navigateToMainTab(MainShellTab.Ledger) },
-                    onCreateEntry = { showQuickActionSheet = true },
+                    onCreateEntry = { rootNavController.navigate(AutobookDestination.QuickEntry.createRoute()) },
                 )
             }
             composable(AutobookDestination.MainSettings.route) {
@@ -219,23 +216,6 @@ fun MainShell(
         }
     }
 
-    if (showQuickActionSheet) {
-        QuickActionSheet(
-            onDismiss = { showQuickActionSheet = false },
-            onExpenseClick = {
-                showQuickActionSheet = false
-                rootNavController.navigate(
-                    AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.EXPENSE),
-                )
-            },
-            onIncomeClick = {
-                showQuickActionSheet = false
-                rootNavController.navigate(
-                    AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.INCOME),
-                )
-            },
-        )
-    }
 }
 
 /**

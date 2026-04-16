@@ -21,11 +21,13 @@ import com.autobook.cn.app.ui.AutobookPaperBackground
 import com.autobook.cn.app.ui.BudgetSettingsScreen
 import com.autobook.cn.app.ui.EntryEditorScreen
 import com.autobook.cn.app.ui.LedgerWorkspaceScreen
+import com.autobook.cn.app.ui.QuickEntryScreen
 import com.autobook.cn.app.ui.RecordsTimelineScreen
 import com.autobook.cn.app.viewmodel.BudgetSettingsViewModel
 import com.autobook.cn.app.viewmodel.EntryEditorViewModel
 import com.autobook.cn.app.viewmodel.LedgerMonthDetailViewModel
 import com.autobook.cn.app.viewmodel.OnboardingViewModel
+import com.autobook.cn.app.viewmodel.QuickEntryViewModel
 import com.autobook.cn.app.viewmodel.RecordsBrowserViewModel
 import com.autobook.cn.core.common.SettingsIntents
 import com.autobook.cn.feature.onboarding.OnboardingScreen
@@ -154,6 +156,23 @@ fun AutobookApp() {
                 )
             }
             composable(
+                route = AutobookDestination.QuickEntry.route,
+                arguments = listOf(
+                    navArgument("direction") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
+                ),
+            ) {
+                val viewModel: QuickEntryViewModel = hiltViewModel()
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                QuickEntryRoute(
+                    state = state,
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(
                 route = AutobookDestination.EntryCreate.route,
                 arguments = listOf(
                     navArgument("direction") {
@@ -200,6 +219,40 @@ fun AutobookApp() {
             }
         }
     }
+}
+
+@Composable
+private fun QuickEntryRoute(
+    state: com.autobook.cn.app.viewmodel.QuickEntryUiState,
+    viewModel: QuickEntryViewModel,
+    onBack: () -> Unit,
+) {
+    LaunchedEffect(state.finished) {
+        // 极速记账和完整编辑页共用一次性完成态返回模式，避免保存后重复返回。
+        if (state.finished) {
+            viewModel.consumeFinished()
+            onBack()
+        }
+    }
+
+    QuickEntryScreen(
+        state = state,
+        onBack = onBack,
+        onDirectionChange = viewModel::updateDirection,
+        onCategorySelect = viewModel::selectCategory,
+        onAppendDigit = viewModel::appendDigit,
+        onAppendDoubleZero = {
+            // “00” 属于键盘层的组合输入，复用单个数字追加逻辑即可，避免 ViewModel 再维护一套重复规则。
+            viewModel.appendDigit(0)
+            viewModel.appendDigit(0)
+        },
+        onAppendDecimalPoint = viewModel::appendDecimalPoint,
+        onDeleteLastAmountCharacter = viewModel::deleteLastAmountCharacter,
+        onClearAmountInput = viewModel::clearAmountInput,
+        onSetToday = { viewModel.updateEntryTimestamp(System.currentTimeMillis()) },
+        onNoteChange = viewModel::updateNote,
+        onSave = viewModel::save,
+    )
 }
 
 @Composable
