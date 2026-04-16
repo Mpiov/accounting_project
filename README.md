@@ -1,6 +1,6 @@
 # Autobook Android MVP
 
-Autobook is an Android-first accounting app for notification-driven bookkeeping in China. This repository currently contains the Android client, a local-first parsing pipeline, manual bookkeeping fallback flows, and cloud/OCR integration placeholders.
+Autobook is an Android-first accounting app for notification-driven bookkeeping in China. This repository currently contains the Android client, a local-first parsing pipeline, manual bookkeeping fallback flows, and cloud image-analysis integration placeholders.
 
 ## Stack
 
@@ -45,13 +45,13 @@ Autobook is an Android-first accounting app for notification-driven bookkeeping 
 - Notification auto-bookkeeping now uses text parsing plus local semantic enhancement, without OCR in the notification path.
 - High-confidence parsed transactions are written to the ledger, medium-confidence or possible-duplicate candidates are routed to the pending queue, and low-confidence candidates are filtered out.
 - Ledger now supports basic search, day/month/all filters, manual add/edit/delete, and a settings page for source selection and retention controls.
-- Image import bookkeeping supports real image picking plus suggestion prefill through either cloud large-model proxy calls or local ML Kit OCR + on-device Qwen.
-- When cloud analysis is enabled, image import can call the configured cloud model proxy from the app during development; when cloud analysis is disabled and OCR is enabled, image import falls back to local OCR + on-device Qwen.
+- Image import bookkeeping supports real image picking plus suggestion prefill through cloud large-model proxy calls, followed by local rule-based post-processing.
+- When cloud analysis is enabled, image import can call the configured cloud model proxy from the app during development; when cloud analysis is disabled, the app falls back to a manual confirmation draft.
 - All image-analysis results are still suggestion-only and must be manually confirmed before saving.
 
 ## Follow-up Integration
 
 - Move the current direct cloud-model image-import call behind a backend proxy before larger-scale release.
-- Replace the current development cloud-model path with a release-grade backend proxy and continue improving local image OCR / on-device reasoning accuracy.
+- Replace the current development cloud-model path with a release-grade backend proxy and continue improving local rule-based validation and candidate filtering.
 - Wire MediaProjection session management only for future user-triggered image workflows if still needed.
 - Add import/export UI, richer analytics, and formal privacy materials for release readiness.

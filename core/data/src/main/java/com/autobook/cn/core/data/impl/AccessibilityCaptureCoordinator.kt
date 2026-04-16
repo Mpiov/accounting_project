@@ -102,7 +102,7 @@ class AccessibilityCaptureCoordinator @Inject constructor(
         } catch (error: Throwable) {
             Log.e(LOG_TAG, "capture crashed for session=$sessionId", error)
             OperationResult.RetryableFailure(
-                message = "Failed to persist screenshot for OCR fallback",
+                message = "Failed to persist screenshot for image analysis",
                 cause = error,
             )
         }

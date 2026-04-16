@@ -2,15 +2,11 @@ package com.autobook.cn.core.data
 
 import android.content.Context
 import com.autobook.cn.core.data.impl.AccessibilityCaptureCoordinator
-import com.autobook.cn.core.data.impl.ImageImportMlKitOcrEngine
-import com.autobook.cn.core.data.impl.ImageImportOnDeviceLocalReasoner
+import com.autobook.cn.core.data.impl.HeuristicLocalLlmAnalyzer
 import com.autobook.cn.core.data.impl.LedgerRepositoryImpl
-import com.autobook.cn.core.data.impl.LocalModelRepositoryImpl
 import com.autobook.cn.core.data.impl.MockImageImportAnalyzer
-import com.autobook.cn.core.data.impl.MlKitOcrEngine
-import com.autobook.cn.core.data.impl.NotificationTraceRepositoryImpl
 import com.autobook.cn.core.data.impl.NotificationIngestorImpl
-import com.autobook.cn.core.data.impl.OnDeviceLocalLlmAnalyzer
+import com.autobook.cn.core.data.impl.NotificationTraceRepositoryImpl
 import com.autobook.cn.core.data.impl.PendingRepositoryImpl
 import com.autobook.cn.core.data.impl.SettingsRepositoryImpl
 import com.autobook.cn.core.data.parser.LocalTransactionExtractor
@@ -27,7 +23,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
-/** 为数据层抽象提供 Hilt 绑定。 */
+/**
+ * 用途说明：
+ * - 为数据层抽象提供 Hilt 绑定。
+ */
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class DataBindingsModule {
@@ -44,9 +43,6 @@ abstract class DataBindingsModule {
     abstract fun bindSettingsRepository(impl: SettingsRepositoryImpl): SettingsRepository
 
     @Binds
-    abstract fun bindLocalModelRepository(impl: LocalModelRepositoryImpl): LocalModelRepository
-
-    @Binds
     abstract fun bindNotificationIngestor(impl: NotificationIngestorImpl): NotificationIngestor
 
     @Binds
@@ -59,30 +55,23 @@ abstract class DataBindingsModule {
     abstract fun bindModelRouter(impl: ModelRouterImpl): ModelRouter
 
     @Binds
-    abstract fun bindOcrEngine(impl: MlKitOcrEngine): OcrEngine
-
-    @Binds
     abstract fun bindImageImportAnalyzer(impl: MockImageImportAnalyzer): ImageImportAnalyzer
 
-    @Binds
-    abstract fun bindImageImportLocalOcrEngine(impl: ImageImportMlKitOcrEngine): ImageImportLocalOcrEngine
-
-    @Binds
-    abstract fun bindImageImportLocalReasoner(impl: ImageImportOnDeviceLocalReasoner): ImageImportLocalReasoner
-
     /**
-     * 绑定本地 LLM 分析器。
-     *
      * 用途说明：
-     * - 当前版本默认先经过 on-device 适配层，再在适配层内部决定是否回退到启发式 baseline。
-     * - 后续如果接入真正的端侧模型，只需要替换端侧引擎的实现绑定即可。
+     * - 本地语义增强现阶段只保留启发式算法校验，不再接入端侧模型适配层。
+     *
+     * 参数说明：
+     * - impl：启发式语义校验实现。
      */
     @Binds
-    abstract fun bindLocalLlmAnalyzer(impl: OnDeviceLocalLlmAnalyzer): LocalLlmAnalyzer
-
+    abstract fun bindLocalLlmAnalyzer(impl: HeuristicLocalLlmAnalyzer): LocalLlmAnalyzer
 }
 
-/** 为暂时不需要接口绑定的具体类型提供实例。 */
+/**
+ * 用途说明：
+ * - 提供无需接口绑定的具体实例。
+ */
 @Module
 @InstallIn(SingletonComponent::class)
 object DataProvisionModule {

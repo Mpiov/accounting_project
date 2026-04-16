@@ -115,10 +115,10 @@ class TransactionPipelineTest {
                         channel = "Bank App",
                         timestamp = event.postedAt,
                         confidence = ParseConfidence(0.9f),
-                        confidenceReason = "Local LLM 语义复核通过",
+                        confidenceReason = "Local heuristic validation passed",
                         rawSource = "notification",
-                        parsePath = "local-parser+local-llm",
-                        modelVersion = "onnx-stub-bank-v1",
+                        parsePath = "local-parser+local-heuristic",
+                        modelVersion = "heuristic-stub-bank-v1",
                         llmSuggestedAutoPost = true,
                         sourceApp = NotificationSourceApp.BANK_SMS,
                     ),
@@ -195,10 +195,10 @@ class TransactionPipelineTest {
                         channel = "Bank App",
                         timestamp = event.postedAt,
                         confidence = ParseConfidence(0.84f),
-                        confidenceReason = "Local LLM guardrail review",
+                        confidenceReason = "Local heuristic guardrail review",
                         rawSource = "notification",
-                        parsePath = "local-parser+local-llm",
-                        modelVersion = "onnx-stub-bank-v1",
+                        parsePath = "local-parser+local-heuristic",
+                        modelVersion = "heuristic-stub-bank-v1",
                         llmSuggestedAutoPost = false,
                         sourceApp = NotificationSourceApp.BANK_SMS,
                     ),
@@ -255,7 +255,7 @@ class TransactionPipelineTest {
 
         val data = (outcome as OperationResult.Success).data
         assertEquals(ProcessDestination.PENDING, data.destination)
-        assertEquals("置信度不足：Local LLM guardrail review", data.message)
+        assertEquals("置信度不足：Local heuristic guardrail review", data.message)
         assertEquals(1, pendingCount)
     }
 }
@@ -273,9 +273,7 @@ private fun buildSettingsRepository(settings: AppSettings): SettingsRepository {
         override suspend fun setAutoAccountingEnabled(enabled: Boolean) = Unit
         override suspend fun setCloudAnalysisEnabled(enabled: Boolean) = Unit
         override suspend fun setLocalLlmConfidenceBoostEnabled(enabled: Boolean) = Unit
-        override suspend fun setSelectedLocalModelId(modelId: String) = Unit
         override suspend fun setCaptureEnabled(enabled: Boolean) = Unit
-        override suspend fun setOcrEnabled(enabled: Boolean) = Unit
         override suspend fun setNotificationRetentionDays(days: Int) = Unit
         override suspend fun setScreenshotRetentionDays(days: Int) = Unit
         override suspend fun setSourceEnabled(source: NotificationSourceApp, enabled: Boolean) = Unit

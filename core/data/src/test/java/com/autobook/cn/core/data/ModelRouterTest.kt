@@ -101,9 +101,9 @@ class ModelRouterTest {
                 return OperationResult.Success(
                     seedCandidate.copy(
                         confidence = ParseConfidence(0.9f),
-                        confidenceReason = "on-device structured output accepted",
-                        parsePath = "${seedCandidate.parsePath}+local-llm",
-                        modelVersion = "onnx-test-v1",
+                        confidenceReason = "heuristic structured validation accepted",
+                        parsePath = "${seedCandidate.parsePath}+local-heuristic",
+                        modelVersion = "heuristic-test-v1",
                         llmSuggestedAutoPost = true,
                         categoryHint = "转账",
                     ),
@@ -129,10 +129,10 @@ class ModelRouterTest {
         val candidate = (result as OperationResult.Success).data
         assertEquals(0.9f, candidate.confidence.score)
         assertEquals("转账", candidate.categoryHint)
-        assertEquals("local-parser+local-llm", candidate.parsePath)
-        assertEquals("onnx-test-v1", candidate.modelVersion)
+        assertEquals("local-parser+local-heuristic", candidate.parsePath)
+        assertEquals("heuristic-test-v1", candidate.modelVersion)
         assertEquals(true, candidate.llmSuggestedAutoPost)
-        assertTrue(candidate.confidenceReason.contains("validated by local LLM guardrail"))
+        assertTrue(candidate.confidenceReason.contains("validated by local heuristic guardrail"))
     }
 
     @Test
@@ -165,9 +165,9 @@ class ModelRouterTest {
                 return OperationResult.Success(
                     seedCandidate.copy(
                         confidence = ParseConfidence(0.9f),
-                        confidenceReason = "Local LLM 建议保守处理",
-                        parsePath = "${seedCandidate.parsePath}+local-llm",
-                        modelVersion = "onnx-test-v1",
+                        confidenceReason = "Local heuristic validation suggests conservative handling",
+                        parsePath = "${seedCandidate.parsePath}+local-heuristic",
+                        modelVersion = "heuristic-test-v1",
                         llmSuggestedAutoPost = false,
                         categoryHint = "转账",
                     ),
@@ -227,9 +227,9 @@ class ModelRouterTest {
                     seedCandidate.copy(
                         direction = MoneyDirection.INCOME,
                         confidence = ParseConfidence(0.92f),
-                        confidenceReason = "Local LLM 与规则层冲突",
-                        parsePath = "${seedCandidate.parsePath}+local-llm",
-                        modelVersion = "onnx-conflict-v1",
+                        confidenceReason = "Local heuristic validation conflicts with parser result",
+                        parsePath = "${seedCandidate.parsePath}+local-heuristic",
+                        modelVersion = "heuristic-conflict-v1",
                         llmSuggestedAutoPost = true,
                         categoryHint = "转账",
                     ),
@@ -272,9 +272,7 @@ private fun buildSettingsRepository(settings: AppSettings): SettingsRepository {
         override suspend fun setAutoAccountingEnabled(enabled: Boolean) = Unit
         override suspend fun setCloudAnalysisEnabled(enabled: Boolean) = Unit
         override suspend fun setLocalLlmConfidenceBoostEnabled(enabled: Boolean) = Unit
-        override suspend fun setSelectedLocalModelId(modelId: String) = Unit
         override suspend fun setCaptureEnabled(enabled: Boolean) = Unit
-        override suspend fun setOcrEnabled(enabled: Boolean) = Unit
         override suspend fun setNotificationRetentionDays(days: Int) = Unit
         override suspend fun setScreenshotRetentionDays(days: Int) = Unit
         override suspend fun setSourceEnabled(source: NotificationSourceApp, enabled: Boolean) = Unit
@@ -287,6 +285,6 @@ private fun noopLocalLlmAnalyzer(): LocalLlmAnalyzer {
         override suspend fun analyze(
             event: NotificationEvent,
             seedCandidate: TransactionCandidate,
-        ): OperationResult<TransactionCandidate> = OperationResult.RetryableFailure("local llm disabled")
+        ): OperationResult<TransactionCandidate> = OperationResult.RetryableFailure("local heuristic validation disabled")
     }
 }

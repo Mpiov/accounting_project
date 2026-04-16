@@ -190,7 +190,7 @@ fun EntryEditorScreen(
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            text = "无论当前是云端大模型建议还是本地图片分析建议，都不会自动入账。请手动核对金额、分类、商户、备注后再保存。",
+                            text = "无论当前是云端分析建议还是手动确认草稿，都不会自动入账。请手动核对金额、分类、商户、备注后再保存。",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -210,7 +210,7 @@ fun EntryEditorScreen(
 /**
  * 用途说明：
  * - 展示图片导入记账入口、导入提示、过滤摘要和多候选切换区域。
- * - 把云端大模型建议与端侧 OCR/本地模型建议统一收敛到同一块 UI，避免用户理解两套流程。
+ * - 把云端分析建议与手动确认草稿统一收敛到同一块 UI，避免用户理解两套流程。
  *
  * 参数说明：
  * - state：编辑页当前状态，包含图片导入链路产生的候选、提示和过滤统计。

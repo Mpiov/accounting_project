@@ -79,7 +79,7 @@ fun OnboardingScreen(
         )
         PermissionCard(
             title = "截图分析",
-            summary = "当前版本先预留能力入口，后续接入 MediaProjection 和 OCR。",
+            summary = "当前版本先预留能力入口，后续补齐更稳定的截图授权与规则校验流程。",
             enabled = false,
             icon = { Icon(Icons.Outlined.ScreenshotMonitor, contentDescription = null) },
             actionLabel = "后续接入",

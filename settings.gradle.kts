@@ -32,7 +32,6 @@ include(
     ":app",
     ":core:model",
     ":core:common",
-    ":core:llm",
     ":core:network",
     ":core:database",
     ":core:data",

@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
  *
  * 用途说明：
  * - 承接 `BroadcastReceiver` 转交过来的注入任务，在服务线程里执行完整的通知入账链路。
- * - 避免把本地 LLM 推理挂在广播生命周期内，导致系统把调试注入判定为 Broadcast ANR。
+ * - 避免把本地语义校验挂在广播生命周期内，导致系统把调试注入判定为 Broadcast ANR。
  */
 class DebugNotificationInjectService : Service() {
     /** 说明：调试注入本质是 I/O 与模型推理混合任务，这里统一放到后台协程里执行。 */
@@ -85,7 +85,6 @@ class DebugNotificationInjectService : Service() {
             ServiceDependenciesEntryPoint::class.java,
         )
         val settingsRepository = entryPoint.settingsRepository()
-        val localModelRepository = entryPoint.localModelRepository()
         val packageName = intent.stringExtraOrDefault(
             DebugNotificationInjectContract.EXTRA_PACKAGE_NAME,
             DebugNotificationInjectContract.DEFAULT_PACKAGE_NAME,
@@ -110,10 +109,6 @@ class DebugNotificationInjectService : Service() {
             DebugNotificationInjectContract.EXTRA_ENABLE_AUTO_ACCOUNTING,
             true,
         )
-        val modelId = intent.stringExtraOrDefault(
-            DebugNotificationInjectContract.EXTRA_MODEL_ID,
-            DebugNotificationInjectContract.DEFAULT_MODEL_ID,
-        )
         val event = NotificationEvent(
             packageName = packageName,
             title = title,
@@ -126,13 +121,11 @@ class DebugNotificationInjectService : Service() {
         settingsRepository.setAutoAccountingEnabled(enableAutoAccounting)
         settingsRepository.setLocalLlmConfidenceBoostEnabled(enableLocalLlm)
         settingsRepository.setSourceEnabled(NotificationSourceApp.BANK_SMS, true)
-        localModelRepository.selectModel(modelId)
-        localModelRepository.refresh()
 
         val notificationSummary = SafeLogFormatter.forNotification(event)
         recordTrace(
             context = applicationContext,
-            message = "injectStart summary=$notificationSummary enableLocalLlm=$enableLocalLlm modelId=$modelId",
+            message = "injectStart summary=$notificationSummary enableLocalLlm=$enableLocalLlm",
         )
         Log.d(DebugNotificationInjectContract.TAG, "Injecting debug notification $notificationSummary")
 

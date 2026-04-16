@@ -212,7 +212,7 @@ private fun EntryEditorRoute(
         contract = ActivityResultContracts.GetContent(),
     ) { uri ->
         uri?.let { selectedUri ->
-            // 当前直接把内容 Uri 字符串透传给图片导入分析器，由底层决定走云端开发链路还是端内 OCR + 本地 Qwen。
+            // 当前直接把内容 Uri 字符串透传给图片导入分析器，由底层决定走云端分析还是手动确认草稿。
             viewModel.importFromImage(selectedUri.toString())
         }
     }

@@ -4,7 +4,7 @@ package com.autobook.cn.feature.pending.model
  * 待确认前端共享模型定义。
  *
  * 用途说明：
- * - 把待确认列表页面仍在复用的展示模型从旧版 `PendingScreen` 中拆出来。
+ * - 把待确认工作台仍在复用的展示模型集中收口到独立模型文件。
  * - 新版待确认工作台和对应 ViewModel 统一依赖这里，后续删除旧页面会更安全。
  */
 

@@ -5,14 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.autobook.cn.core.common.CurrencyFormatter
 import com.autobook.cn.core.common.TimeFormatter
 import com.autobook.cn.core.data.LedgerRepository
-import com.autobook.cn.core.data.LocalModelRepository
 import com.autobook.cn.core.data.PendingRepository
 import com.autobook.cn.core.data.SettingsRepository
 import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.LedgerEntry
-import com.autobook.cn.core.model.LocalModelInstallStatus
-import com.autobook.cn.core.model.LocalModelSnapshot
-import com.autobook.cn.core.model.LocalModelSpec
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.NotificationSourceApp
 import com.autobook.cn.core.model.PendingEntry
@@ -27,9 +23,9 @@ import javax.inject.Inject
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -38,36 +34,22 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 设置页 ViewModel，负责设置项读写和账本导出预览。 */
+/**
+ * 用途说明：
+ * - 设置页聚合后的界面状态。
+ */
 data class SettingsUiState(
     val autoAccountingEnabled: Boolean = true,
     val cloudAnalysisEnabled: Boolean = true,
     val captureEnabled: Boolean = false,
-    val ocrEnabled: Boolean = false,
     val notificationRetentionDays: Int = 30,
     val screenshotRetentionDays: Int = 7,
     val enabledSources: Set<SettingsNotificationSource> = emptySet(),
-    /** 是否启用本地语义增强通路，当前使用启发式分析作为占位，后续可直接切换为端侧本地 LLM。 */
-    val localLlmConfidenceBoostEnabled: Boolean = false,
-    /** 当前模型清单，供设置页展示推荐模型与轻量备选模型。 */
-    val availableLocalModels: List<LocalModelSpec> = emptyList(),
-    /** 当前选中的本地模型标识。 */
-    val selectedLocalModelId: String = "",
-    /** 当前模型安装状态。 */
-    val localModelInstallStatus: LocalModelInstallStatus = LocalModelInstallStatus.NOT_DOWNLOADED,
-    /** 当前模型文件路径。 */
-    val selectedLocalModelPath: String? = null,
-    /** 当前模型下载进度。 */
-    val localModelDownloadProgressPercent: Int? = null,
-    /** 当前模型状态说明。 */
-    val localModelStatusMessage: String = "尚未下载本地模型",
     val totalEntries: Int = 0,
     val manualEntries: Int = 0,
     val autoEntries: Int = 0,
     val pendingEntries: Int = 0,
-    /** 当前月份标签，供预算卡和概览卡统一展示。 */
     val currentMonthLabel: String = "本月",
-    /** 当前月份预算输入框的默认值，不带货币符号，方便用户直接编辑。 */
     val currentMonthBudgetInput: String = "",
     val currentMonthBudgetLabel: String = "未设置",
     val currentMonthBudgetUsageSummary: String = "保存预算后，这里会自动展示本月剩余额度。",
@@ -81,10 +63,18 @@ data class SettingsUiState(
     val exportPreviewSummary: String = "",
 )
 
+/**
+ * 用途说明：
+ * - 设置页 ViewModel，负责设置读写与账本概览。
+ *
+ * 参数说明：
+ * - settingsRepository：设置仓储。
+ * - ledgerRepository：账本仓储。
+ * - pendingRepository：待确认仓储。
+ */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
-    private val localModelRepository: LocalModelRepository,
     private val ledgerRepository: LedgerRepository,
     private val pendingRepository: PendingRepository,
 ) : ViewModel() {
@@ -94,11 +84,8 @@ class SettingsViewModel @Inject constructor(
         .distinctUntilChanged()
 
     /**
-     * 设置页专用的账本衍生数据流。
-     *
      * 用途说明：
-     * - 把“全量账本统计 + 本月预算汇总 + 导出摘要”从最终 UI 组装流程里拆出来。
-     * - 这样本地模型下载进度、普通设置切换等无关事件，就不会反复触发全量账本扫描。
+     * - 集中计算设置页依赖的账本统计与预算概览。
      */
     private val derivedData: Flow<SettingsDerivedData> = combine(
         ledgerRepository.observeEntries(),
@@ -111,7 +98,7 @@ class SettingsViewModel @Inject constructor(
             monthlyBudgets = monthlyBudgetsValue,
         )
     }.mapLatest { input: SettingsDerivedInput ->
-        // 设置页概览会多次遍历全量账本，这里放到后台线程，避免打开页面或模型下载时卡住主线程。
+        // 把全量统计放到后台线程，避免设置页被大账本数据拖慢。
         withContext(Dispatchers.Default) {
             SettingsDerivedData(
                 overview = buildSettingsOverview(
@@ -124,29 +111,23 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** 把持久化设置、模型状态和轻量展示字段组合为设置页状态。 */
+    /**
+     * 用途说明：
+     * - 聚合设置快照、账本概览和导出预览。
+     */
     val uiState: StateFlow<SettingsUiState> = combine(
         settingsRepository.settings,
-        localModelRepository.snapshot,
         derivedData,
         exportPreview,
-    ) { settings: AppSettings, localModelSnapshot: LocalModelSnapshot, derived: SettingsDerivedData, preview: String ->
+    ) { settings: AppSettings, derived: SettingsDerivedData, preview: String ->
         val overview = derived.overview
         SettingsUiState(
             autoAccountingEnabled = settings.autoAccountingEnabled,
             cloudAnalysisEnabled = settings.cloudAnalysisEnabled,
             captureEnabled = settings.captureEnabled,
-            ocrEnabled = settings.ocrEnabled,
             notificationRetentionDays = settings.notificationRetentionDays,
             screenshotRetentionDays = settings.screenshotRetentionDays,
             enabledSources = settings.enabledSources.toSettingsNotificationSources(),
-            localLlmConfidenceBoostEnabled = settings.localLlmConfidenceBoostEnabled,
-            availableLocalModels = localModelSnapshot.availableModels,
-            selectedLocalModelId = localModelSnapshot.selectedModelId,
-            localModelInstallStatus = localModelSnapshot.installStatus,
-            selectedLocalModelPath = localModelSnapshot.selectedModelPath,
-            localModelDownloadProgressPercent = localModelSnapshot.downloadProgressPercent,
-            localModelStatusMessage = localModelSnapshot.statusMessage,
             totalEntries = overview.totalEntries,
             manualEntries = overview.manualEntries,
             autoEntries = overview.autoEntries,
@@ -164,12 +145,11 @@ class SettingsViewModel @Inject constructor(
             exportPreview = preview,
             exportPreviewSummary = if (preview.isBlank()) "" else derived.exportPreviewSummary,
         )
-    }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = SettingsUiState(),
-        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = SettingsUiState(),
+    )
 
     fun setAutoAccountingEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setAutoAccountingEnabled(enabled) }
@@ -183,30 +163,6 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.setCaptureEnabled(enabled) }
     }
 
-    fun setOcrEnabled(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.setOcrEnabled(enabled) }
-    }
-
-    /** 控制本地语义增强通路的开关，enabled 为 true 时允许启用占位语义强化，并保持与未来本地 LLM 适配器一致的接口。 */
-    fun setLocalLlmConfidenceBoostEnabled(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.setLocalLlmConfidenceBoostEnabled(enabled) }
-    }
-
-    /** 切换当前选中的本地模型。 */
-    fun setSelectedLocalModelId(modelId: String) {
-        viewModelScope.launch { localModelRepository.selectModel(modelId) }
-    }
-
-    /** 下载当前选中的本地模型。 */
-    fun downloadSelectedLocalModel() {
-        viewModelScope.launch { localModelRepository.downloadSelectedModel() }
-    }
-
-    /** 主动刷新本地模型状态，便于识别外部脚本或手动下载后的文件。 */
-    fun refreshLocalModelState() {
-        viewModelScope.launch { localModelRepository.refresh() }
-    }
-
     fun setNotificationRetentionDays(days: Int) {
         viewModelScope.launch { settingsRepository.setNotificationRetentionDays(days) }
     }
@@ -216,10 +172,11 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * 保存当前月份预算。
+     * 用途说明：
+     * - 保存当前月份预算。
      *
      * 参数说明：
-     * - amountInput：来自设置页输入框的文本；留空代表清除本月预算。
+     * - amountInput：输入框中的预算文本；留空表示清除预算。
      */
     fun saveCurrentMonthBudget(amountInput: String) {
         viewModelScope.launch {
@@ -235,11 +192,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * 设置页来源桶开关写回。
-     *
      * 用途说明：
-     * - 把设置页的三类来源桶翻译成底层真实来源集合后，再统一写回持久层。
-     * - 其中“其它来源”会同时联动 `BANK_SMS` 和 `UNKNOWN`，确保界面语义和底层过滤行为一致。
+     * - 设置来源开关。
+     *
+     * 参数说明：
+     * - source：设置页来源分组。
+     * - enabled：目标状态。
      */
     fun setSourceEnabled(
         source: SettingsNotificationSource,
@@ -253,19 +211,20 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 用途说明：
+     * - 按需生成 CSV 预览，避免每次进入设置页都拼装导出文本。
+     */
     fun loadExportPreview() {
         viewModelScope.launch {
-            // 按需生成，避免每次进入设置页都做 CSV 拼装。
             exportPreview.value = ledgerRepository.exportCsv()
         }
     }
 }
 
 /**
- * 设置页重计算所需的输入快照。
- *
  * 用途说明：
- * - 把账本列表、待确认数量和预算映射成纯数据结构，便于在后台线程里集中做统计。
+ * - 设置页统计所需输入快照。
  */
 private data class SettingsDerivedInput(
     val entries: List<LedgerEntry>,
@@ -274,10 +233,8 @@ private data class SettingsDerivedInput(
 )
 
 /**
- * 设置页从账本数据派生出的聚合结果。
- *
  * 用途说明：
- * - 把页面中最重的“概览统计”和“导出摘要”收口到同一份派生数据，减少重复扫描账本列表。
+ * - 设置页聚合统计结果。
  */
 private data class SettingsDerivedData(
     val overview: SettingsLedgerOverview,
@@ -301,6 +258,16 @@ internal data class SettingsLedgerOverview(
     val latestEntrySummary: String,
 )
 
+/**
+ * 用途说明：
+ * - 构建设置页账本概览。
+ *
+ * 参数说明：
+ * - entries：账本记录列表。
+ * - pendingCount：待确认数量。
+ * - monthlyBudgets：月预算映射。
+ * - today：当前日期，测试中可注入。
+ */
 internal fun buildSettingsOverview(
     entries: List<LedgerEntry>,
     pendingCount: Int,
@@ -354,6 +321,13 @@ internal fun buildSettingsOverview(
     )
 }
 
+/**
+ * 用途说明：
+ * - 构建导出预览摘要。
+ *
+ * 参数说明：
+ * - entries：账本记录列表。
+ */
 internal fun buildExportPreviewSummary(entries: List<LedgerEntry>): String {
     if (entries.isEmpty()) {
         return "当前账本为空，导出的 CSV 将只包含表头。"
@@ -361,17 +335,29 @@ internal fun buildExportPreviewSummary(entries: List<LedgerEntry>): String {
     val earliest = entries.minByOrNull { it.timestamp } ?: return ""
     val latest = entries.maxByOrNull { it.timestamp } ?: return ""
     val manualEntries = entries.count { it.editedManually || it.traceSource == "manual" }
-    return "共 ${entries.size} 条记录，覆盖 ${earliest.timestamp.toLocalDate().format(EXPORT_DATE_FORMATTER)} 至 " +
-        "${latest.timestamp.toLocalDate().format(EXPORT_DATE_FORMATTER)}，其中手动补记 $manualEntries 条。"
+    return "共 ${entries.size} 条记录，覆盖 ${earliest.timestamp.toLocalDate().format(EXPORT_DATE_FORMATTER)} 至 ${latest.timestamp.toLocalDate().format(EXPORT_DATE_FORMATTER)}，其中手动补记 $manualEntries 条。"
 }
 
+/**
+ * 用途说明：
+ * - 把时间戳转换为本地日期。
+ *
+ * 参数说明：
+ * - 接收者：毫秒时间戳。
+ */
 private fun Long.toLocalDate(): LocalDate {
     return Instant.ofEpochMilli(this)
         .atZone(ZoneId.systemDefault())
         .toLocalDate()
 }
 
-/** 预算输入框不显示货币符号，便于用户直接修改数字。 */
+/**
+ * 用途说明：
+ * - 预算输入框不显示货币符号，方便直接编辑数字。
+ *
+ * 参数说明：
+ * - amount：预算金额。
+ */
 private fun formatBudgetInput(amount: Double?): String {
     return when {
         amount == null -> ""

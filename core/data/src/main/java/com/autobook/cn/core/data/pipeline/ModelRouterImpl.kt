@@ -197,7 +197,7 @@ class ModelRouterImpl @Inject constructor(
             false -> "rejected"
             null -> "unknown"
         }
-        return "${promotedCandidate.confidenceReason}; validated by local LLM guardrail; autoPost=$autoPostLabel"
+        return "${promotedCandidate.confidenceReason}; validated by local heuristic guardrail; autoPost=$autoPostLabel"
     }
 }
 

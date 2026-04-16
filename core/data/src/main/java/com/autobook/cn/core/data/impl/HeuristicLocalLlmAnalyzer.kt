@@ -42,17 +42,17 @@ class HeuristicLocalLlmAnalyzer @Inject constructor() : LocalLlmAnalyzer {
             .replace(Regex("""\s+"""), " ")
             .trim()
         if (mergedText.isBlank()) {
-            return OperationResult.RetryableFailure("Local LLM analyzer received empty text")
+            return OperationResult.RetryableFailure("Local heuristic analyzer received empty text")
         }
 
         val bankSignals = detectBankSignals(mergedText = mergedText, seedCandidate = seedCandidate)
         if (bankSignals.isEmpty()) {
-            return OperationResult.RetryableFailure("Local LLM analyzer found no bank transfer signals")
+            return OperationResult.RetryableFailure("Local heuristic analyzer found no bank transfer signals")
         }
 
         val direction = detectDirection(mergedText = mergedText, seedCandidate = seedCandidate)
         if (direction == MoneyDirection.UNKNOWN) {
-            return OperationResult.RetryableFailure("Local LLM analyzer could not confirm direction")
+            return OperationResult.RetryableFailure("Local heuristic analyzer could not confirm direction")
         }
 
         val inferredMerchant = detectCounterparty(mergedText = mergedText)
@@ -80,8 +80,8 @@ class HeuristicLocalLlmAnalyzer @Inject constructor() : LocalLlmAnalyzer {
                     direction = direction,
                     inferredMerchant = inferredMerchant,
                 ),
-                parsePath = "${seedCandidate.parsePath}+local-llm",
-                modelVersion = "heuristic-local-llm-fallback-v1",
+                parsePath = "${seedCandidate.parsePath}+local-heuristic",
+                modelVersion = "heuristic-local-validation-v1",
                 llmSuggestedAutoPost = promotedScore >= HEURISTIC_AUTO_POST_THRESHOLD,
                 sourceApp = normalizeSourceApp(seedCandidate.sourceApp, mergedText),
             ),
@@ -199,7 +199,7 @@ class HeuristicLocalLlmAnalyzer @Inject constructor() : LocalLlmAnalyzer {
             MoneyDirection.EXPENSE -> "转出"
             MoneyDirection.UNKNOWN -> "未知"
         }
-        return "Heuristic local semantic fallback promoted candidate after bank semantic checks: " +
+        return "Heuristic local semantic validation promoted candidate after bank semantic checks: " +
             "direction=$directionLabel, merchant=$inferredMerchant, signals=${bankSignals.joinToString()}"
     }
 

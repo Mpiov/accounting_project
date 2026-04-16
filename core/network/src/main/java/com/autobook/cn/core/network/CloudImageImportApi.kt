@@ -477,7 +477,7 @@ class DirectCloudImageImportApi @Inject constructor(
  * 用途说明：
  * - 在不希望发真实网络请求时，仍能返回固定结果联调图片导入流程。
  */
-class FakeCloudImageImportApi : CloudImageImportApi {
+/* class FakeCloudImageImportApi : CloudImageImportApi {
     override suspend fun analyze(request: CloudImageImportRequest): CloudImageImportResponse {
         return CloudImageImportResponse(
             amount = 32.5,
@@ -507,7 +507,7 @@ class FakeCloudImageImportApi : CloudImageImportApi {
             ),
         )
     }
-}
+} */
 
 /** inline data 所需的最小图片载荷。 */
 private data class InlineImagePayload(

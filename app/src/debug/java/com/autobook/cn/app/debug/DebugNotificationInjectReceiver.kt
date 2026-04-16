@@ -9,7 +9,7 @@ import android.content.Intent
  *
  * 用途说明：
  * - 只负责接收 adb 广播，并把真正的注入任务快速转交给后台 Service。
- * - 避免把本地 LLM 推理直接放在广播生命周期内，导致调试链路被系统判定为 Broadcast ANR。
+ * - 避免把本地语义校验直接放在广播生命周期内，导致调试链路被系统判定为 Broadcast ANR。
  */
 class DebugNotificationInjectReceiver : BroadcastReceiver() {
     /**

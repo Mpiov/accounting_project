@@ -36,14 +36,13 @@ object DebugNotificationInjectContract {
     /** 调试参数：通知时间戳。 */
     const val EXTRA_POSTED_AT = "posted_at"
 
-    /** 调试参数：是否启用本地 LLM。 */
+    /** 调试参数：是否启用本地启发式语义校验。 */
     const val EXTRA_ENABLE_LOCAL_LLM = "enable_local_llm"
 
     /** 调试参数：是否启用自动记账。 */
     const val EXTRA_ENABLE_AUTO_ACCOUNTING = "enable_auto_accounting"
 
     /** 调试参数：要选中的模型 ID。 */
-    const val EXTRA_MODEL_ID = "model_id"
 
     /** 默认通知包名。 */
     const val DEFAULT_PACKAGE_NAME = "com.android.mms"
@@ -55,7 +54,6 @@ object DebugNotificationInjectContract {
     const val DEFAULT_TEXT = "您尾号1234的银行卡转出100.00元，收款人张三。"
 
     /** 默认模型 ID。 */
-    const val DEFAULT_MODEL_ID = "qwen3_1_7b_q8_0"
 
     /** trace 时间格式。 */
     val TRACE_TIME_FORMAT = SimpleDateFormat("HH:mm:ss", Locale.ROOT)

@@ -145,8 +145,8 @@ class EntryEditorViewModel @Inject constructor(
      * 触发一次图片导入记账建议填充。
      *
      * 用途说明：
-     * - 当前阶段已经接上真实选图入口，并会根据设置决定走云端开发链路或端内 OCR + 本地 Qwen。
-     * - `imageRef` 当前直接使用图片 Uri 字符串透传到底层 OCR / 分析器，避免在页面层重复做文件拷贝。
+     * - 当前阶段已经接上真实选图入口，并会根据设置决定走云端分析或退回手动确认草稿。
+     * - `imageRef` 当前直接使用图片 Uri 字符串透传到底层分析器，避免在页面层重复做文件拷贝。
      */
     fun importFromImage(imageRef: String) {
         viewModelScope.launch {

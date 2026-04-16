@@ -612,7 +612,6 @@ private fun buildCaptureCandidateNote(
 private fun ImageImportAnalysisPath.toStatusLabel(): String {
     return when (this) {
         ImageImportAnalysisPath.CLOUD_LLM_PROXY -> "云端大模型"
-        ImageImportAnalysisPath.OCR_PLUS_LOCAL_LLM -> "本地 OCR + 模型"
         ImageImportAnalysisPath.MANUAL_CONFIRMATION_REQUIRED -> "手动确认草稿"
     }
 }
