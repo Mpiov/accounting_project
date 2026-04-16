@@ -1,6 +1,6 @@
 [versions]
 agp = "9.1.0"
-kotlin = "2.0.20"
+kotlin = "2.2.20"
 mlkit-text-recognition = "16.0.0"
 retrofit = "2.11.0"
 okhttp = "4.12.0"
@@ -12,7 +12,8 @@ hilt = "2.59.2"
 hiltNavigation = "1.2.0"
 room = "2.7.0-alpha11"
 navigation = "2.8.0"
-ksp = "2.0.20-1.0.25"
+# 与 Kotlin 2.2.20 对齐，避免 AGP 9.1 下 KSP/Kotlin 版本错配导致类产物导出不完整。
+ksp = "2.2.20-2.0.4"
 ktlint = "12.1.1"
 datastore = "1.1.1"
 mlKitTextRecognition = "16.0.1"

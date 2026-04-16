@@ -18,12 +18,12 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
-/** 验证处理流水线会根据最终置信度把候选分流到待确认队列或正式账本。 */
+/** 验证处理流水线会根据最终置信度把候选分流到过滤、待确认或正式账本。 */
 class TransactionPipelineTest {
     @Test
-    fun `routes low confidence candidates to pending`() = runTest {
+    fun `filters low confidence candidates instead of sending them to pending`() = runTest {
         val modelRouter = object : ModelRouter {
-            /** 返回低于自动入账阈值的候选，验证其会被送入待确认队列。 */
+            /** 返回低置信度候选，验证其会被直接过滤，不再进入待确认队列。 */
             override suspend fun route(event: NotificationEvent): OperationResult<TransactionCandidate> =
                 OperationResult.Success(
                     TransactionCandidate(
@@ -32,8 +32,8 @@ class TransactionPipelineTest {
                         merchant = "Mock Merchant",
                         channel = "Notification",
                         timestamp = event.postedAt,
-                        confidence = ParseConfidence(0.7f),
-                        confidenceReason = "Confidence below auto-post threshold",
+                        confidence = ParseConfidence(0.4f),
+                        confidenceReason = "Low confidence candidate from local parser",
                         screenshotRef = "/tmp/pending.png",
                         rawSource = "notification",
                         parsePath = "local-parser",
@@ -49,6 +49,15 @@ class TransactionPipelineTest {
             override suspend fun delete(id: Long) = Unit
             override suspend fun getById(id: Long): LedgerEntry? = null
             override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? = null
+            override suspend fun findPotentialImageImportDuplicate(
+                timestamp: Long?,
+                amount: Double,
+                direction: MoneyDirection,
+            ): LedgerEntry? = null
+            override suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+                amount: Double,
+                direction: MoneyDirection,
+            ): LedgerEntry? = null
             override suspend fun exportCsv(): String = ""
         }
         val pendingRepository = object : PendingRepository {
@@ -82,9 +91,10 @@ class TransactionPipelineTest {
         )
 
         val data = (outcome as OperationResult.Success).data
-        assertEquals(ProcessDestination.PENDING, data.destination)
+        assertEquals(ProcessDestination.FILTERED, data.destination)
         assertEquals("/tmp/pending.png", data.screenshotRef)
-        assertEquals(1, pendingCount)
+        assertEquals("低置信度候选已过滤：Low confidence candidate from local parser", data.message)
+        assertEquals(0, pendingCount)
     }
 
     @Test
@@ -127,6 +137,15 @@ class TransactionPipelineTest {
             override suspend fun delete(id: Long) = Unit
             override suspend fun getById(id: Long): LedgerEntry? = null
             override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? = null
+            override suspend fun findPotentialImageImportDuplicate(
+                timestamp: Long?,
+                amount: Double,
+                direction: MoneyDirection,
+            ): LedgerEntry? = null
+            override suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+                amount: Double,
+                direction: MoneyDirection,
+            ): LedgerEntry? = null
             override suspend fun exportCsv(): String = ""
         }
         val pendingRepository = object : PendingRepository {
@@ -165,7 +184,7 @@ class TransactionPipelineTest {
      * 验证即使本地 LLM 已经补全候选，只要置信度仍低于自动入账阈值，流水线就会把它路由到待确认并回填原因。
      */
     @Test
-    fun `llm candidate below auto threshold stays pending`() = runTest {
+    fun `medium confidence candidate stays pending`() = runTest {
         val modelRouter = object : ModelRouter {
             override suspend fun route(event: NotificationEvent): OperationResult<TransactionCandidate> =
                 OperationResult.Success(
@@ -193,6 +212,15 @@ class TransactionPipelineTest {
             override suspend fun delete(id: Long) = Unit
             override suspend fun getById(id: Long): LedgerEntry? = null
             override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? = null
+            override suspend fun findPotentialImageImportDuplicate(
+                timestamp: Long?,
+                amount: Double,
+                direction: MoneyDirection,
+            ): LedgerEntry? = null
+            override suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+                amount: Double,
+                direction: MoneyDirection,
+            ): LedgerEntry? = null
             override suspend fun exportCsv(): String = ""
         }
         val pendingRepository = object : PendingRepository {

@@ -1,6 +1,8 @@
 package com.autobook.cn.core.data.impl
 
 import com.autobook.cn.core.data.LocalLlmAnalyzer
+import com.autobook.cn.core.model.HIGH_CONFIDENCE_THRESHOLD
+import com.autobook.cn.core.model.MEDIUM_CONFIDENCE_THRESHOLD
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.NotificationEvent
 import com.autobook.cn.core.model.NotificationSourceApp
@@ -165,7 +167,7 @@ class HeuristicLocalLlmAnalyzer @Inject constructor() : LocalLlmAnalyzer {
         direction: MoneyDirection,
         mergedText: String,
     ): Float {
-        var score = baseScore.coerceAtLeast(0.6f)
+        var score = baseScore.coerceAtLeast(MEDIUM_CONFIDENCE_THRESHOLD)
         score += (bankSignals * 0.04f)
         if (direction != MoneyDirection.UNKNOWN) {
             score += 0.05f
@@ -176,7 +178,7 @@ class HeuristicLocalLlmAnalyzer @Inject constructor() : LocalLlmAnalyzer {
         if (AMOUNT_SETTLEMENT_KEYWORDS.any(mergedText::contains)) {
             score += 0.02f
         }
-        return score.coerceIn(0.6f, 0.93f)
+        return score.coerceIn(MEDIUM_CONFIDENCE_THRESHOLD, 0.93f)
     }
 
     /**
@@ -295,4 +297,4 @@ private val COUNTERPARTY_PATTERNS = listOf(
 )
 
 /** 启发式 fallback 只有在分值足够高时才建议自动入账，避免兜底实现过于激进。 */
-private const val HEURISTIC_AUTO_POST_THRESHOLD = 0.85f
+private const val HEURISTIC_AUTO_POST_THRESHOLD = HIGH_CONFIDENCE_THRESHOLD

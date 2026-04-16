@@ -2,7 +2,7 @@ package com.autobook.cn.app.viewmodel
 
 import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.MoneyDirection
-import com.autobook.cn.feature.ledger.LedgerRangeFilter
+import com.autobook.cn.feature.ledger.model.LedgerRangeFilter
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId

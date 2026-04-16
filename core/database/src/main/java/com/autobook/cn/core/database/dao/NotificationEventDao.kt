@@ -7,24 +7,17 @@ import androidx.room.Query
 import com.autobook.cn.core.database.entity.NotificationEventEntity
 import kotlinx.coroutines.flow.Flow
 
-/** 原始通知及其处理状态的 Room 访问接口。 */
+/**
+ * 原始通知及其处理状态的 Room 访问接口。
+ *
+ * 用途说明：
+ * - 负责插入通知原文，并更新处理状态、错误信息与截图引用。
+ * - 通知级精确哈希去重已移除，因此这里不再提供按 `dedupeKey` 查询重复通知的接口。
+ */
 @Dao
 interface NotificationEventDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(event: NotificationEventEntity): Long
-
-    @Query(
-        """
-        SELECT * FROM notification_events
-        WHERE dedupeKey = :dedupeKey AND id != :excludeId
-        ORDER BY postedAt DESC
-        LIMIT 1
-        """,
-    )
-    suspend fun findLatestDuplicate(
-        dedupeKey: String,
-        excludeId: Long,
-    ): NotificationEventEntity?
 
     @Query(
         """

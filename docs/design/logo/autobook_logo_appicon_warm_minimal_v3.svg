@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Autobook Logo Concept Warm Minimal V3
+    用途：更极简的暖色版 Logo 概念稿，仅用于设计预览。
+    设计说明：
+    1. 背景改为纯色，去掉渐变、反光和切面装饰，整体更克制。
+    2. 保留账本卡片语义，让“记账 App”识别仍然成立。
+    3. 勾线改为黄色，作为唯一高亮元素，让视觉重心更集中。
+-->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- 纯色暖棕底板：直接贴近当前 App 的暖纸账本主题。 -->
+    <rect x="64" y="64" width="896" height="896" rx="232" fill="#A67C52"/>
+
+    <!-- 账本卡片主体：保持米白纸张感。 -->
+    <rect x="252" y="206" width="520" height="604" rx="122" fill="#FFFFFCF6"/>
+
+    <!-- 左侧装订带：保留“账本”识别。 -->
+    <rect x="322" y="276" width="40" height="462" rx="20" fill="#F4E1CD"/>
+
+    <!-- 账目横线：比卡片略深，弱化存在感，避免画面太满。 -->
+    <rect x="406" y="348" width="236" height="34" rx="17" fill="#EEDCC7"/>
+    <rect x="406" y="444" width="190" height="34" rx="17" fill="#EEDCC7"/>
+    <rect x="406" y="540" width="220" height="34" rx="17" fill="#EEDCC7"/>
+
+    <!-- 黄色勾线：作为唯一强调色，直接表达“自动确认 / 记账成功”。 -->
+    <path d="M416 664L506 752L688 532" stroke="#F4C542" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

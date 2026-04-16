@@ -27,9 +27,10 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:common"))
-    implementation(project(":core:llm"))
     implementation(project(":core:database"))
     implementation(project(":core:network"))
+    // 说明：真本地 llama.cpp 运行时只在 release 变体接入，避免日常 debug 构建反复触发耗时 native 编译。
+    releaseImplementation(project(":core:llm"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)

@@ -11,6 +11,7 @@ interface ServiceDependenciesEntryPoint {
     fun notificationIngestor(): NotificationIngestor
 
     fun captureCoordinator(): CaptureCoordinator
+    fun imageImportAnalyzer(): ImageImportAnalyzer
     fun settingsRepository(): SettingsRepository
     fun localModelRepository(): LocalModelRepository
     fun pendingRepository(): PendingRepository

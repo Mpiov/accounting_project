@@ -8,12 +8,14 @@ import com.autobook.cn.core.data.LedgerRepository
 import com.autobook.cn.core.data.LocalModelRepository
 import com.autobook.cn.core.data.PendingRepository
 import com.autobook.cn.core.data.SettingsRepository
+import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.LocalModelInstallStatus
 import com.autobook.cn.core.model.LocalModelSnapshot
 import com.autobook.cn.core.model.LocalModelSpec
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.NotificationSourceApp
+import com.autobook.cn.core.model.PendingEntry
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import java.time.LocalDate
@@ -22,22 +24,29 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.inject.Inject
+import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 设置页 ViewModel，负责设置项读写和账本导出预览。 */
 data class SettingsUiState(
     val autoAccountingEnabled: Boolean = true,
-    val cloudAnalysisEnabled: Boolean = false,
+    val cloudAnalysisEnabled: Boolean = true,
     val captureEnabled: Boolean = false,
     val ocrEnabled: Boolean = false,
     val notificationRetentionDays: Int = 30,
     val screenshotRetentionDays: Int = 7,
-    val enabledSources: Set<NotificationSourceApp> = emptySet(),
+    val enabledSources: Set<SettingsNotificationSource> = emptySet(),
     /** 是否启用本地语义增强通路，当前使用启发式分析作为占位，后续可直接切换为端侧本地 LLM。 */
     val localLlmConfidenceBoostEnabled: Boolean = false,
     /** 当前模型清单，供设置页展示推荐模型与轻量备选模型。 */
@@ -56,6 +65,15 @@ data class SettingsUiState(
     val manualEntries: Int = 0,
     val autoEntries: Int = 0,
     val pendingEntries: Int = 0,
+    /** 当前月份标签，供预算卡和概览卡统一展示。 */
+    val currentMonthLabel: String = "本月",
+    /** 当前月份预算输入框的默认值，不带货币符号，方便用户直接编辑。 */
+    val currentMonthBudgetInput: String = "",
+    val currentMonthBudgetLabel: String = "未设置",
+    val currentMonthBudgetUsageSummary: String = "保存预算后，这里会自动展示本月剩余额度。",
+    val currentMonthBudgetRemainingLabel: String = "去设置预算",
+    val currentMonthBudgetUsageRatio: Float = 0f,
+    val currentMonthBudgetExceeded: Boolean = false,
     val currentMonthIncome: String = "¥0.00",
     val currentMonthExpense: String = "¥0.00",
     val latestEntrySummary: String = "暂无记账记录",
@@ -71,42 +89,82 @@ class SettingsViewModel @Inject constructor(
     private val pendingRepository: PendingRepository,
 ) : ViewModel() {
     private val exportPreview = MutableStateFlow("")
+    private val monthlyBudgets: Flow<Map<String, Double>> = settingsRepository.settings
+        .map { settings: AppSettings -> settings.monthlyBudgets }
+        .distinctUntilChanged()
 
-    /** 把持久化设置与导出预览组合为设置页状态。 */
+    /**
+     * 设置页专用的账本衍生数据流。
+     *
+     * 用途说明：
+     * - 把“全量账本统计 + 本月预算汇总 + 导出摘要”从最终 UI 组装流程里拆出来。
+     * - 这样本地模型下载进度、普通设置切换等无关事件，就不会反复触发全量账本扫描。
+     */
+    private val derivedData: Flow<SettingsDerivedData> = combine(
+        ledgerRepository.observeEntries(),
+        pendingRepository.observeEntries(),
+        monthlyBudgets,
+    ) { entries: List<LedgerEntry>, pendingEntries: List<PendingEntry>, monthlyBudgetsValue: Map<String, Double> ->
+        SettingsDerivedInput(
+            entries = entries,
+            pendingCount = pendingEntries.size,
+            monthlyBudgets = monthlyBudgetsValue,
+        )
+    }.mapLatest { input: SettingsDerivedInput ->
+        // 设置页概览会多次遍历全量账本，这里放到后台线程，避免打开页面或模型下载时卡住主线程。
+        withContext(Dispatchers.Default) {
+            SettingsDerivedData(
+                overview = buildSettingsOverview(
+                    entries = input.entries,
+                    pendingCount = input.pendingCount,
+                    monthlyBudgets = input.monthlyBudgets,
+                ),
+                exportPreviewSummary = buildExportPreviewSummary(input.entries),
+            )
+        }
+    }
+
+    /** 把持久化设置、模型状态和轻量展示字段组合为设置页状态。 */
     val uiState: StateFlow<SettingsUiState> = combine(
         settingsRepository.settings,
         localModelRepository.snapshot,
-        ledgerRepository.observeEntries(),
-        pendingRepository.observeEntries(),
+        derivedData,
         exportPreview,
-    ) { settings, localModelSnapshot, entries, pendingEntries, preview ->
-        val overview = buildSettingsOverview(entries = entries, pendingCount = pendingEntries.size)
-            SettingsUiState(
-                autoAccountingEnabled = settings.autoAccountingEnabled,
-                cloudAnalysisEnabled = settings.cloudAnalysisEnabled,
-                captureEnabled = settings.captureEnabled,
-                ocrEnabled = settings.ocrEnabled,
-                notificationRetentionDays = settings.notificationRetentionDays,
-                screenshotRetentionDays = settings.screenshotRetentionDays,
-                enabledSources = settings.enabledSources,
-                localLlmConfidenceBoostEnabled = settings.localLlmConfidenceBoostEnabled,
-                availableLocalModels = localModelSnapshot.availableModels,
-                selectedLocalModelId = localModelSnapshot.selectedModelId,
-                localModelInstallStatus = localModelSnapshot.installStatus,
-                selectedLocalModelPath = localModelSnapshot.selectedModelPath,
-                localModelDownloadProgressPercent = localModelSnapshot.downloadProgressPercent,
-                localModelStatusMessage = localModelSnapshot.statusMessage,
-                totalEntries = overview.totalEntries,
-                manualEntries = overview.manualEntries,
-                autoEntries = overview.autoEntries,
-                pendingEntries = overview.pendingEntries,
-                currentMonthIncome = overview.currentMonthIncome,
-                currentMonthExpense = overview.currentMonthExpense,
-                latestEntrySummary = overview.latestEntrySummary,
-                exportPreview = preview,
-                exportPreviewSummary = if (preview.isBlank()) "" else buildExportPreviewSummary(entries),
-            )
-        }
+    ) { settings: AppSettings, localModelSnapshot: LocalModelSnapshot, derived: SettingsDerivedData, preview: String ->
+        val overview = derived.overview
+        SettingsUiState(
+            autoAccountingEnabled = settings.autoAccountingEnabled,
+            cloudAnalysisEnabled = settings.cloudAnalysisEnabled,
+            captureEnabled = settings.captureEnabled,
+            ocrEnabled = settings.ocrEnabled,
+            notificationRetentionDays = settings.notificationRetentionDays,
+            screenshotRetentionDays = settings.screenshotRetentionDays,
+            enabledSources = settings.enabledSources.toSettingsNotificationSources(),
+            localLlmConfidenceBoostEnabled = settings.localLlmConfidenceBoostEnabled,
+            availableLocalModels = localModelSnapshot.availableModels,
+            selectedLocalModelId = localModelSnapshot.selectedModelId,
+            localModelInstallStatus = localModelSnapshot.installStatus,
+            selectedLocalModelPath = localModelSnapshot.selectedModelPath,
+            localModelDownloadProgressPercent = localModelSnapshot.downloadProgressPercent,
+            localModelStatusMessage = localModelSnapshot.statusMessage,
+            totalEntries = overview.totalEntries,
+            manualEntries = overview.manualEntries,
+            autoEntries = overview.autoEntries,
+            pendingEntries = overview.pendingEntries,
+            currentMonthLabel = overview.currentMonthLabel,
+            currentMonthBudgetInput = overview.currentMonthBudgetInput,
+            currentMonthBudgetLabel = overview.currentMonthBudgetLabel,
+            currentMonthBudgetUsageSummary = overview.currentMonthBudgetUsageSummary,
+            currentMonthBudgetRemainingLabel = overview.currentMonthBudgetRemainingLabel,
+            currentMonthBudgetUsageRatio = overview.currentMonthBudgetUsageRatio,
+            currentMonthBudgetExceeded = overview.currentMonthBudgetExceeded,
+            currentMonthIncome = overview.currentMonthIncome,
+            currentMonthExpense = overview.currentMonthExpense,
+            latestEntrySummary = overview.latestEntrySummary,
+            exportPreview = preview,
+            exportPreviewSummary = if (preview.isBlank()) "" else derived.exportPreviewSummary,
+        )
+    }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
@@ -157,11 +215,42 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.setScreenshotRetentionDays(days) }
     }
 
+    /**
+     * 保存当前月份预算。
+     *
+     * 参数说明：
+     * - amountInput：来自设置页输入框的文本；留空代表清除本月预算。
+     */
+    fun saveCurrentMonthBudget(amountInput: String) {
+        viewModelScope.launch {
+            val normalizedInput = amountInput.trim()
+            val currentMonthKey = YearMonth.now().toString()
+            if (normalizedInput.isBlank()) {
+                settingsRepository.clearMonthlyBudget(currentMonthKey)
+                return@launch
+            }
+            val amount = normalizedInput.toDoubleOrNull() ?: return@launch
+            settingsRepository.setMonthlyBudget(currentMonthKey, amount)
+        }
+    }
+
+    /**
+     * 设置页来源桶开关写回。
+     *
+     * 用途说明：
+     * - 把设置页的三类来源桶翻译成底层真实来源集合后，再统一写回持久层。
+     * - 其中“其它来源”会同时联动 `BANK_SMS` 和 `UNKNOWN`，确保界面语义和底层过滤行为一致。
+     */
     fun setSourceEnabled(
-        source: NotificationSourceApp,
+        source: SettingsNotificationSource,
         enabled: Boolean,
     ) {
-        viewModelScope.launch { settingsRepository.setSourceEnabled(source, enabled) }
+        viewModelScope.launch {
+            settingsRepository.setSourcesEnabled(
+                sources = source.toNotificationSourceApps(),
+                enabled = enabled,
+            )
+        }
     }
 
     fun loadExportPreview() {
@@ -172,11 +261,41 @@ class SettingsViewModel @Inject constructor(
     }
 }
 
+/**
+ * 设置页重计算所需的输入快照。
+ *
+ * 用途说明：
+ * - 把账本列表、待确认数量和预算映射成纯数据结构，便于在后台线程里集中做统计。
+ */
+private data class SettingsDerivedInput(
+    val entries: List<LedgerEntry>,
+    val pendingCount: Int,
+    val monthlyBudgets: Map<String, Double>,
+)
+
+/**
+ * 设置页从账本数据派生出的聚合结果。
+ *
+ * 用途说明：
+ * - 把页面中最重的“概览统计”和“导出摘要”收口到同一份派生数据，减少重复扫描账本列表。
+ */
+private data class SettingsDerivedData(
+    val overview: SettingsLedgerOverview,
+    val exportPreviewSummary: String,
+)
+
 internal data class SettingsLedgerOverview(
     val totalEntries: Int,
     val manualEntries: Int,
     val autoEntries: Int,
     val pendingEntries: Int,
+    val currentMonthLabel: String,
+    val currentMonthBudgetInput: String,
+    val currentMonthBudgetLabel: String,
+    val currentMonthBudgetUsageSummary: String,
+    val currentMonthBudgetRemainingLabel: String,
+    val currentMonthBudgetUsageRatio: Float,
+    val currentMonthBudgetExceeded: Boolean,
     val currentMonthIncome: String,
     val currentMonthExpense: String,
     val latestEntrySummary: String,
@@ -185,6 +304,7 @@ internal data class SettingsLedgerOverview(
 internal fun buildSettingsOverview(
     entries: List<LedgerEntry>,
     pendingCount: Int,
+    monthlyBudgets: Map<String, Double> = emptyMap(),
     today: LocalDate = LocalDate.now(),
 ): SettingsLedgerOverview {
     val currentMonth = YearMonth.from(today)
@@ -196,12 +316,36 @@ internal fun buildSettingsOverview(
     val currentMonthExpense = currentMonthEntries
         .filter { it.direction == MoneyDirection.EXPENSE }
         .sumOf { it.amount }
+    val currentMonthBudget = monthlyBudgets[currentMonth.toString()]?.takeIf { it > 0.0 }
+    val budgetRemaining = currentMonthBudget?.minus(currentMonthExpense)
+    val budgetRatio = if (currentMonthBudget == null || currentMonthBudget <= 0.0) {
+        0f
+    } else {
+        (currentMonthExpense / currentMonthBudget).coerceIn(0.0, 1.0).toFloat()
+    }
     val latestEntry = entries.maxByOrNull { it.timestamp }
     return SettingsLedgerOverview(
         totalEntries = entries.size,
         manualEntries = manualEntries,
         autoEntries = entries.size - manualEntries,
         pendingEntries = pendingCount,
+        currentMonthLabel = currentMonth.format(MONTH_LABEL_FORMATTER),
+        currentMonthBudgetInput = formatBudgetInput(currentMonthBudget),
+        currentMonthBudgetLabel = currentMonthBudget?.let(CurrencyFormatter::format) ?: "未设置",
+        currentMonthBudgetUsageSummary = if (currentMonthBudget == null) {
+            "清空输入后保存可移除预算，设置后总览页会自动展示剩余额度。"
+        } else {
+            "已用 ${((currentMonthExpense / currentMonthBudget) * 100).roundToInt()}% · 支出 ${CurrencyFormatter.format(currentMonthExpense)} / 预算 ${CurrencyFormatter.format(currentMonthBudget)}"
+        },
+        currentMonthBudgetRemainingLabel = if (budgetRemaining == null) {
+            "去设置预算"
+        } else if (budgetRemaining >= 0.0) {
+            "剩余 ${CurrencyFormatter.format(budgetRemaining)}"
+        } else {
+            "超出 ${CurrencyFormatter.format(kotlin.math.abs(budgetRemaining))}"
+        },
+        currentMonthBudgetUsageRatio = budgetRatio,
+        currentMonthBudgetExceeded = budgetRemaining != null && budgetRemaining < 0.0,
         currentMonthIncome = CurrencyFormatter.format(currentMonthIncome),
         currentMonthExpense = CurrencyFormatter.format(currentMonthExpense),
         latestEntrySummary = latestEntry?.let { entry ->
@@ -227,4 +371,14 @@ private fun Long.toLocalDate(): LocalDate {
         .toLocalDate()
 }
 
+/** 预算输入框不显示货币符号，便于用户直接修改数字。 */
+private fun formatBudgetInput(amount: Double?): String {
+    return when {
+        amount == null -> ""
+        amount % 1.0 == 0.0 -> amount.toLong().toString()
+        else -> amount.toString()
+    }
+}
+
+private val MONTH_LABEL_FORMATTER = DateTimeFormatter.ofPattern("yyyy 年 M 月", Locale.CHINA)
 private val EXPORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.CHINA)

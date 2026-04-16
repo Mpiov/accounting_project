@@ -4,7 +4,9 @@ import com.autobook.cn.core.data.LocalLlmRequest
 import com.autobook.cn.core.data.LocalLlmResponse
 import com.autobook.cn.core.data.LocalModelRepository
 import com.autobook.cn.core.data.OnDeviceLlmEngine
+import com.autobook.cn.core.model.HIGH_CONFIDENCE_THRESHOLD
 import com.autobook.cn.core.model.LocalModelInstallStatus
+import com.autobook.cn.core.model.MEDIUM_CONFIDENCE_THRESHOLD
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.OperationResult
 import java.util.Locale
@@ -114,7 +116,7 @@ class StubOnDeviceLlmEngine @Inject constructor(
         request: LocalLlmRequest,
         direction: MoneyDirection,
     ): Float {
-        var score = request.seedConfidenceScore.coerceAtLeast(0.62f)
+        var score = request.seedConfidenceScore.coerceAtLeast(MEDIUM_CONFIDENCE_THRESHOLD)
         if (BANK_STUB_KEYWORDS.any(mergedText::contains)) {
             score += 0.06f
         }
@@ -130,7 +132,7 @@ class StubOnDeviceLlmEngine @Inject constructor(
         if (SETTLEMENT_STUB_KEYWORDS.any(mergedText::contains)) {
             score += 0.03f
         }
-        return score.coerceIn(0.6f, 0.92f)
+        return score.coerceIn(MEDIUM_CONFIDENCE_THRESHOLD, 0.92f)
     }
 
     /**
@@ -198,7 +200,7 @@ private val INCOME_STUB_KEYWORDS = listOf("转入", "收款", "收入", "到账"
 private val EXPENSE_STUB_KEYWORDS = listOf("转出", "付款", "支出", "扣款", "汇出")
 
 /** 占位端侧模型只有在分数足够高时才建议自动入账。 */
-private const val STUB_AUTO_POST_THRESHOLD = 0.85f
+private const val STUB_AUTO_POST_THRESHOLD = HIGH_CONFIDENCE_THRESHOLD
 
 /** 占位端侧模型抽取常见对手方名称时使用的模式。 */
 private val COUNTERPARTY_STUB_PATTERNS = listOf(

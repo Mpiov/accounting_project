@@ -5,11 +5,14 @@ import com.autobook.cn.core.data.ModelRouter
 import com.autobook.cn.core.data.SettingsRepository
 import com.autobook.cn.core.data.TransactionExtractor
 import com.autobook.cn.core.model.AppSettings
+import com.autobook.cn.core.model.HIGH_CONFIDENCE_THRESHOLD
+import com.autobook.cn.core.model.MEDIUM_CONFIDENCE_THRESHOLD
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.NotificationEvent
 import com.autobook.cn.core.model.NotificationSourceApp
 import com.autobook.cn.core.model.OperationResult
 import com.autobook.cn.core.model.ParseConfidence
+import com.autobook.cn.core.model.PENDING_CONFIDENCE_MAX_SCORE
 import com.autobook.cn.core.model.TransactionCandidate
 import com.autobook.cn.core.network.CloudAnalysisApi
 import com.autobook.cn.core.network.toCloudRequest
@@ -199,13 +202,13 @@ class ModelRouterImpl @Inject constructor(
 }
 
 /** 只有中置信度区间的候选才值得进入本地 LLM 第二裁决，避免高低两端都浪费成本。 */
-private const val LOCAL_LLM_MIN_CONFIDENCE = 0.6f
+private const val LOCAL_LLM_MIN_CONFIDENCE = MEDIUM_CONFIDENCE_THRESHOLD
 
 /** 允许把贴近自动入账阈值的边界候选也交给本地 LLM 复核，避免 0.85 附近的浮点边界值直接卡在 pending。 */
-private const val LOCAL_LLM_MAX_CONFIDENCE = 0.85f
+private const val LOCAL_LLM_MAX_CONFIDENCE = PENDING_CONFIDENCE_MAX_SCORE
 
 /** 本地 LLM 通过校验后，至少要把置信度提升到这个分数才允许进入自动记账判断。 */
-private const val LOCAL_LLM_PROMOTED_CONFIDENCE = 0.86f
+private const val LOCAL_LLM_PROMOTED_CONFIDENCE = HIGH_CONFIDENCE_THRESHOLD
 
 /** 即使本地 LLM 提示非常强，也限制最大提升分值，避免把链路变成黑箱“满分”。 */
 private const val MAX_PROMOTED_CONFIDENCE = 0.93f

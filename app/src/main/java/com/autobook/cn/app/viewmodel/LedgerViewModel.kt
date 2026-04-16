@@ -6,16 +6,17 @@ import com.autobook.cn.core.common.CurrencyFormatter
 import com.autobook.cn.core.common.TimeFormatter
 import com.autobook.cn.core.data.LedgerRepository
 import com.autobook.cn.core.data.PendingRepository
+import com.autobook.cn.core.data.SettingsRepository
 import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.MoneyDirection
-import com.autobook.cn.feature.ledger.LedgerBillCycleUiModel
-import com.autobook.cn.feature.ledger.LedgerCalendarDayUiModel
-import com.autobook.cn.feature.ledger.LedgerCategoryBreakdownUiModel
-import com.autobook.cn.feature.ledger.LedgerInsightUiModel
-import com.autobook.cn.feature.ledger.LedgerItemUiModel
-import com.autobook.cn.feature.ledger.LedgerRangeFilter
-import com.autobook.cn.feature.ledger.LedgerTrendPointUiModel
-import com.autobook.cn.feature.ledger.LedgerUiState
+import com.autobook.cn.feature.ledger.model.LedgerBillCycleUiModel
+import com.autobook.cn.feature.ledger.model.LedgerCalendarDayUiModel
+import com.autobook.cn.feature.ledger.model.LedgerCategoryBreakdownUiModel
+import com.autobook.cn.feature.ledger.model.LedgerInsightUiModel
+import com.autobook.cn.feature.ledger.model.LedgerItemUiModel
+import com.autobook.cn.feature.ledger.model.LedgerRangeFilter
+import com.autobook.cn.feature.ledger.model.LedgerTrendPointUiModel
+import com.autobook.cn.feature.ledger.model.LedgerUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.text.DecimalFormat
 import java.time.DayOfWeek
@@ -28,123 +29,58 @@ import java.util.Locale
 import javax.inject.Inject
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.withContext
 
 /** 账本首页 ViewModel，负责筛选、统计汇总和首页信息架构映射。 */
 @HiltViewModel
 class LedgerViewModel @Inject constructor(
     ledgerRepository: LedgerRepository,
     pendingRepository: PendingRepository,
+    settingsRepository: SettingsRepository,
 ) : ViewModel() {
     private val searchQuery = MutableStateFlow("")
     private val selectedRange = MutableStateFlow(LedgerRangeFilter.MONTH)
     private val selectedDate = MutableStateFlow(LocalDate.now())
     private val displayedMonth = MutableStateFlow(YearMonth.now())
     private val calendarSelection = combine(selectedDate, displayedMonth) { date, month -> date to month }
-
-    /** 把账本记录、待确认数量和筛选条件组合成首页状态。 */
-    val uiState: StateFlow<LedgerUiState> = combine(
+    private val sourceSnapshot = combine(
         ledgerRepository.observeEntries(),
         pendingRepository.observeEntries(),
+        settingsRepository.settings,
         searchQuery,
         selectedRange,
-        calendarSelection,
-    ) { entries, pending, query, range, selection ->
-        val (date, month) = selection
-        val today = LocalDate.now()
-        val anchorDate = if (range == LedgerRangeFilter.CALENDAR) date else today
-        val filtered = entries
-            .filterByRange(range = range, selectedDate = date, today = today)
-            .filterByQuery(query)
-            .sortedByDescending { it.timestamp }
-        val filteredSummary = filtered.summarize()
-        val weekEntries = entries.filterWithinWeek(anchorDate)
-        val monthEntries = entries.filterWithinMonth(YearMonth.from(anchorDate))
-        val yearEntries = entries.filterWithinYear(anchorDate.year)
-        val trend = buildTrend(entries = entries, range = range, anchorDate = anchorDate)
-        val categorySource = filtered.ifEmpty { monthEntries }
-        val topCategory = buildCategoryBreakdown(categorySource).firstOrNull()
-        val autoCount = filtered.count { !it.isManualEntry() }
-        val manualCount = filtered.count { it.isManualEntry() }
-
-        LedgerUiState(
-            periodTitle = buildPeriodTitle(range = range, selectedDate = date, today = today),
-            periodSubtitle = buildPeriodSubtitle(
-                range = range,
-                query = query,
-                filteredCount = filtered.size,
-                autoCount = autoCount,
-                manualCount = manualCount,
-            ),
-            incomeSummary = CurrencyFormatter.format(filteredSummary.income),
-            expenseSummary = CurrencyFormatter.format(filteredSummary.expense),
-            netSummary = formatSignedCurrency(filteredSummary.net),
-            netPositive = filteredSummary.net >= 0.0,
+    ) { entries, pending, settings, query, range ->
+        LedgerSourceSnapshot(
+            entries = entries,
             pendingCount = pending.size,
-            searchQuery = query,
-            selectedRange = range,
-            rangeSummary = buildRangeSummary(
-                range = range,
-                selectedDate = date,
-                calendarMonth = month,
-                today = today,
-            ),
-            calendarMonthLabel = month.format(MONTH_LABEL_FORMATTER),
-            selectedDateSummary = if (range == LedgerRangeFilter.CALENDAR) {
-                buildSelectedDateSummary(date = date, entries = filtered)
-            } else {
-                null
-            },
-            calendarDays = buildLedgerCalendarDays(
-                entries = entries,
-                displayedMonth = month,
-                selectedDate = date,
-                today = today,
-            ),
-            billCycles = buildBillCycles(
-                anchorDate = anchorDate,
-                weekEntries = weekEntries,
-                monthEntries = monthEntries,
-                yearEntries = yearEntries,
-            ),
-            insights = buildInsights(
-                allEntries = entries,
-                pendingCount = pending.size,
-                weekEntries = weekEntries,
-                monthEntries = monthEntries,
-            ),
-            trendTitle = trend.title,
-            trendSubtitle = trend.subtitle,
-            trendPoints = trend.points,
-            categoryBreakdown = buildCategoryBreakdown(categorySource),
-            highlightMessage = buildHighlightMessage(
-                pendingCount = pending.size,
-                filteredSummary = filteredSummary,
-                topCategory = topCategory,
-            ),
-            entriesSummary = buildEntriesSummary(
-                filteredCount = filtered.size,
-                autoCount = autoCount,
-                manualCount = manualCount,
-            ),
-            entries = filtered.map { entry ->
-                LedgerItemUiModel(
-                    id = entry.id,
-                    merchant = entry.merchant,
-                    amount = formatAmountByDirection(entry),
-                    subtitle = "${entry.channel} · ${TimeFormatter.format(entry.timestamp)}",
-                    category = entry.category,
-                    note = entry.note,
-                    isManual = entry.isManualEntry(),
-                    direction = entry.direction,
-                )
-            },
+            monthlyBudgets = settings.monthlyBudgets,
+            query = query,
+            range = range,
         )
-    }.stateIn(
+    }
+
+    /** 把账本记录、待确认数量和筛选条件组合成首页状态。 */
+    val uiState: StateFlow<LedgerUiState> = combine(sourceSnapshot, calendarSelection) { snapshot, selection ->
+        snapshot to selection
+    }
+        .mapLatest { (snapshot, selection) ->
+            // 首页会对全量账本做多轮筛选、排序、分组与统计，这里显式放到后台线程，避免首屏和切筛选时阻塞主线程。
+            withContext(Dispatchers.Default) {
+                buildLedgerUiState(
+                    snapshot = snapshot,
+                    selectedDate = selection.first,
+                    displayedMonth = selection.second,
+                )
+            }
+        }
+        .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = LedgerUiState(),
@@ -180,6 +116,129 @@ class LedgerViewModel @Inject constructor(
         selectedDate.value = month.atDay(selectedDate.value.dayOfMonth.coerceAtMost(month.lengthOfMonth()))
         selectedRange.value = LedgerRangeFilter.CALENDAR
     }
+}
+
+/**
+ * 构建总览页最终 UI 状态。
+ *
+ * 用途说明：
+ * - 把首页所有筛选、分组、统计和 UI 映射收口到一个纯计算函数中，便于统一切到后台线程执行。
+ *
+ * 参数说明：
+ * - snapshot：当前账本、待确认数量、预算和筛选条件快照。
+ * - selectedDate：当前选中的日历日期。
+ * - displayedMonth：当前正在展示的日历月份。
+ */
+private fun buildLedgerUiState(
+    snapshot: LedgerSourceSnapshot,
+    selectedDate: LocalDate,
+    displayedMonth: YearMonth,
+): LedgerUiState {
+    val entries = snapshot.entries
+    val pendingCount = snapshot.pendingCount
+    val query = snapshot.query
+    val range = snapshot.range
+    val today = LocalDate.now()
+    val anchorDate = if (range == LedgerRangeFilter.CALENDAR) selectedDate else today
+    val filtered = entries
+        .filterByRange(range = range, selectedDate = selectedDate, today = today)
+        .filterByQuery(query)
+        .sortedByDescending { it.timestamp }
+    val filteredSummary = filtered.summarize()
+    val weekEntries = entries.filterWithinWeek(anchorDate)
+    val monthEntries = entries.filterWithinMonth(YearMonth.from(anchorDate))
+    val yearEntries = entries.filterWithinYear(anchorDate.year)
+    val trend = buildTrend(entries = entries, range = range, anchorDate = anchorDate)
+    val categorySource = filtered.ifEmpty { monthEntries }
+    val categoryBreakdown = buildCategoryBreakdown(categorySource)
+    val topCategory = categoryBreakdown.firstOrNull()
+    val autoCount = filtered.count { !it.isManualEntry() }
+    val manualCount = filtered.count { it.isManualEntry() }
+    val budgetState = buildBudgetState(
+        month = YearMonth.from(anchorDate),
+        monthEntries = monthEntries,
+        monthlyBudgets = snapshot.monthlyBudgets,
+    )
+
+    return LedgerUiState(
+        periodTitle = buildPeriodTitle(range = range, selectedDate = selectedDate, today = today),
+        periodSubtitle = buildPeriodSubtitle(
+            range = range,
+            query = query,
+            filteredCount = filtered.size,
+            autoCount = autoCount,
+            manualCount = manualCount,
+        ),
+        incomeSummary = CurrencyFormatter.format(filteredSummary.income),
+        expenseSummary = CurrencyFormatter.format(filteredSummary.expense),
+        netSummary = formatSignedCurrency(filteredSummary.net),
+        netPositive = filteredSummary.net >= 0.0,
+        pendingCount = pendingCount,
+        searchQuery = query,
+        selectedRange = range,
+        rangeSummary = buildRangeSummary(
+            range = range,
+            selectedDate = selectedDate,
+            calendarMonth = displayedMonth,
+            today = today,
+        ),
+        calendarMonthLabel = displayedMonth.format(MONTH_LABEL_FORMATTER),
+        selectedDateSummary = if (range == LedgerRangeFilter.CALENDAR) {
+            buildSelectedDateSummary(date = selectedDate, entries = filtered)
+        } else {
+            null
+        },
+        calendarDays = buildLedgerCalendarDays(
+            entries = entries,
+            displayedMonth = displayedMonth,
+            selectedDate = selectedDate,
+            today = today,
+        ),
+        billCycles = buildBillCycles(
+            anchorDate = anchorDate,
+            weekEntries = weekEntries,
+            monthEntries = monthEntries,
+            yearEntries = yearEntries,
+        ),
+        insights = buildInsights(
+            allEntries = entries,
+            pendingCount = pendingCount,
+            weekEntries = weekEntries,
+            monthEntries = monthEntries,
+        ),
+        trendTitle = trend.title,
+        trendSubtitle = trend.subtitle,
+        trendPoints = trend.points,
+        categoryBreakdown = categoryBreakdown,
+        budgetAmountLabel = budgetState.amountLabel,
+        budgetSpentLabel = budgetState.spentLabel,
+        budgetRemainingLabel = budgetState.remainingLabel,
+        budgetUsageSummary = budgetState.summary,
+        budgetUsageRatio = budgetState.ratio,
+        budgetExceeded = budgetState.exceeded,
+        highlightMessage = buildHighlightMessage(
+            pendingCount = pendingCount,
+            filteredSummary = filteredSummary,
+            topCategory = topCategory,
+        ),
+        entriesSummary = buildEntriesSummary(
+            filteredCount = filtered.size,
+            autoCount = autoCount,
+            manualCount = manualCount,
+        ),
+        entries = filtered.map { entry ->
+            LedgerItemUiModel(
+                id = entry.id,
+                merchant = entry.merchant,
+                amount = formatAmountByDirection(entry),
+                subtitle = "${entry.channel} · ${TimeFormatter.format(entry.timestamp)}",
+                category = entry.category,
+                note = entry.note,
+                isManual = entry.isManualEntry(),
+                direction = entry.direction,
+            )
+        },
+    )
 }
 
 /** 按关键词过滤商户、分类和备注。 */
@@ -232,6 +291,7 @@ internal fun buildLedgerCalendarDays(
             isToday = date == today,
             incomeLabel = summary.income.takeIf { it > 0.0 }?.let { "+${formatCompactCurrency(it)}" },
             expenseLabel = summary.expense.takeIf { it > 0.0 }?.let { "-${formatCompactCurrency(it)}" },
+            // 日历格子当前只展示收入和支出，不再生成结余文本，避免单格信息过载。
         )
     }
 }
@@ -531,6 +591,48 @@ private fun buildEntriesSummary(
     }
 }
 
+/** 把预算金额与本月支出映射成总览和账本页可直接消费的展示状态。 */
+private fun buildBudgetState(
+    month: YearMonth,
+    monthEntries: List<LedgerEntry>,
+    monthlyBudgets: Map<String, Double>,
+): LedgerBudgetState {
+    val budgetAmount = monthlyBudgets[month.toString()]
+    val spentAmount = monthEntries
+        .filter { it.direction == MoneyDirection.EXPENSE }
+        .sumOf { it.amount }
+    if (budgetAmount == null || budgetAmount <= 0.0) {
+        return LedgerBudgetState(
+            amountLabel = null,
+            spentLabel = CurrencyFormatter.format(spentAmount),
+            remainingLabel = "未设置",
+            summary = "设置预算后会自动更新本月进度。",
+            ratio = 0f,
+            exceeded = false,
+        )
+    }
+
+    val remainingAmount = budgetAmount - spentAmount
+    val rawRatio = if (budgetAmount == 0.0) 0.0 else spentAmount / budgetAmount
+    val usagePercent = (rawRatio * 100).roundToInt()
+    return LedgerBudgetState(
+        amountLabel = CurrencyFormatter.format(budgetAmount),
+        spentLabel = CurrencyFormatter.format(spentAmount),
+        remainingLabel = if (remainingAmount >= 0.0) {
+            "剩余 ${CurrencyFormatter.format(remainingAmount)}"
+        } else {
+            "超出 ${CurrencyFormatter.format(remainingAmount.absoluteValue)}"
+        },
+        summary = if (remainingAmount >= 0.0) {
+            "本月预算已使用 $usagePercent%，继续保持这个节奏比较稳。"
+        } else {
+            "本月预算已超支，建议优先回看分类分布和高峰消费。"
+        },
+        ratio = rawRatio.coerceIn(0.0, 1.0).toFloat(),
+        exceeded = remainingAmount < 0.0,
+    )
+}
+
 private fun formatAmountByDirection(entry: LedgerEntry): String {
     val sign = if (entry.direction == MoneyDirection.INCOME) "+" else "-"
     return "$sign${CurrencyFormatter.format(entry.amount)}"
@@ -575,6 +677,23 @@ private data class LedgerTrend(
     val title: String,
     val subtitle: String,
     val points: List<LedgerTrendPointUiModel>,
+)
+
+private data class LedgerBudgetState(
+    val amountLabel: String?,
+    val spentLabel: String,
+    val remainingLabel: String,
+    val summary: String,
+    val ratio: Float,
+    val exceeded: Boolean,
+)
+
+private data class LedgerSourceSnapshot(
+    val entries: List<LedgerEntry>,
+    val pendingCount: Int,
+    val monthlyBudgets: Map<String, Double>,
+    val query: String,
+    val range: LedgerRangeFilter,
 )
 
 private val ONE_DECIMAL_FORMAT = DecimalFormat("0.#")

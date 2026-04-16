@@ -52,12 +52,13 @@ class FakeImageImportLocalReasoner @Inject constructor() : ImageImportLocalReaso
         return OperationResult.Success(
             ImageImportSuggestion(
                 amount = 18.0,
+                timestamp = 1_744_633_600_000L,
                 direction = MoneyDirection.EXPENSE,
                 merchant = "本地图片识别示例商户",
                 category = "购物",
                 note = "来自 OCR + 本地轻量模型 mock，建议人工确认后保存",
                 orderId = "IMG-LOCAL-MOCK-001",
-                tracePath = ImageImportAnalysisPath.OCR_PLUS_LOCAL_LLM_MOCK,
+                tracePath = ImageImportAnalysisPath.OCR_PLUS_LOCAL_LLM,
                 message = "已按本地 OCR + 轻量模型 mock 生成建议，请核对后保存。",
                 requiresManualConfirmation = true,
             ),

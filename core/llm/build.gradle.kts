@@ -37,6 +37,7 @@ android {
     externalNativeBuild {
         cmake {
             path("src/main/cpp/CMakeLists.txt")
+            // 说明：release 需要编译完整本地 LLM 能力，这里对齐 local.properties 指向的 E 盘 CMake 版本。
             version = "3.31.11"
         }
     }

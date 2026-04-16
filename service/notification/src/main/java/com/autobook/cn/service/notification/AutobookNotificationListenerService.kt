@@ -39,7 +39,7 @@ class AutobookNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val extras = sbn.notification.extras
-        val payload = NotificationPayloadExtractor.extract(
+        val payloads = NotificationPayloadExtractor.extractAll(
             title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
             bigTitle = extras?.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString(),
             text = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
@@ -50,67 +50,71 @@ class AutobookNotificationListenerService : NotificationListenerService() {
                 .orEmpty(),
             tickerText = sbn.notification.tickerText?.toString(),
         )
-        // 通知样式会因厂商、Android 版本、折叠/展开状态而变化，这里先做一层标准化。
-        val event = NotificationEvent(
-            packageName = sbn.packageName,
-            title = payload.title,
-            text = payload.text,
-            postedAt = sbn.postTime,
-        )
-        // 先打印一条轻量摘要，确认系统通知是否已经真正进入应用侧监听服务。
-        Log.d(
-            "AutobookNotifService",
-            "Notification posted package=${sbn.packageName} title=${payload.title.orEmpty()} text=${payload.text.orEmpty()}",
-        )
-        NotificationListenerTraceRecorder.record(
-            applicationContext,
-            "onNotificationPosted package=${sbn.packageName} title=${payload.title.orEmpty()} text=${payload.text.orEmpty()}",
-        )
+        // `textLines` 聚合通知在最新方案下可能拆成两条独立 payload，这里需要逐条入库和处理。
+        payloads.forEachIndexed { index, payload ->
+            // 通知样式会因厂商、Android 版本、折叠/展开状态而变化，这里先做一层标准化。
+            val event = NotificationEvent(
+                packageName = sbn.packageName,
+                title = payload.title,
+                text = payload.text,
+                postedAt = sbn.postTime,
+            )
+            val payloadIndexLabel = if (payloads.size > 1) "[${index + 1}/${payloads.size}] " else ""
+            // 先打印一条轻量摘要，确认系统通知是否已经真正进入应用侧监听服务。
+            Log.d(
+                "AutobookNotifService",
+                "${payloadIndexLabel}Notification posted package=${sbn.packageName} title=${payload.title.orEmpty()} text=${payload.text.orEmpty()}",
+            )
+            NotificationListenerTraceRecorder.record(
+                applicationContext,
+                "${payloadIndexLabel}onNotificationPosted package=${sbn.packageName} title=${payload.title.orEmpty()} text=${payload.text.orEmpty()}",
+            )
 
-        serviceScope.launch {
-            val entryPoint =
-                EntryPointAccessors.fromApplication(
-                    applicationContext,
-                    ServiceDependenciesEntryPoint::class.java,
-                )
-            val result = entryPoint.notificationIngestor().ingest(event)
-            // 所有日志都走脱敏摘要，避免原始通知内容直接进入 logcat。
-            when (result) {
-                is com.autobook.cn.core.model.OperationResult.Success -> {
-                    NotificationListenerTraceRecorder.record(
+            serviceScope.launch {
+                val entryPoint =
+                    EntryPointAccessors.fromApplication(
                         applicationContext,
-                        "processSuccess outcome=${SafeLogFormatter.forOutcome(result.data)}",
+                        ServiceDependenciesEntryPoint::class.java,
                     )
-                    Log.d(
-                        "AutobookNotifService",
-                        "Notification processed ${SafeLogFormatter.forOutcome(result.data)}",
-                    )
-                }
+                val result = entryPoint.notificationIngestor().ingest(event)
+                // 所有日志都走脱敏摘要，避免原始通知内容直接进入 logcat。
+                when (result) {
+                    is com.autobook.cn.core.model.OperationResult.Success -> {
+                        NotificationListenerTraceRecorder.record(
+                            applicationContext,
+                            "${payloadIndexLabel}processSuccess outcome=${SafeLogFormatter.forOutcome(result.data)}",
+                        )
+                        Log.d(
+                            "AutobookNotifService",
+                            "${payloadIndexLabel}Notification processed ${SafeLogFormatter.forOutcome(result.data)}",
+                        )
+                    }
 
-                is com.autobook.cn.core.model.OperationResult.RetryableFailure -> {
-                    val sanitizedMessage = SafeLogFormatter.forFailure(result.message)
-                    val notificationSummary = SafeLogFormatter.forNotification(event)
-                    NotificationListenerTraceRecorder.record(
-                        applicationContext,
-                        "processRetryableFailure message=$sanitizedMessage summary=$notificationSummary",
-                    )
-                    Log.w(
-                        "AutobookNotifService",
-                        "Retryable failure $sanitizedMessage for $notificationSummary",
-                    )
-                }
+                    is com.autobook.cn.core.model.OperationResult.RetryableFailure -> {
+                        val sanitizedMessage = SafeLogFormatter.forFailure(result.message)
+                        val notificationSummary = SafeLogFormatter.forNotification(event)
+                        NotificationListenerTraceRecorder.record(
+                            applicationContext,
+                            "${payloadIndexLabel}processRetryableFailure message=$sanitizedMessage summary=$notificationSummary",
+                        )
+                        Log.w(
+                            "AutobookNotifService",
+                            "${payloadIndexLabel}Retryable failure $sanitizedMessage for $notificationSummary",
+                        )
+                    }
 
-                is com.autobook.cn.core.model.OperationResult.TerminalFailure -> {
-                    val sanitizedMessage = SafeLogFormatter.forFailure(result.message)
-                    val notificationSummary = SafeLogFormatter.forNotification(event)
-                    NotificationListenerTraceRecorder.record(
-                        applicationContext,
-                        "processTerminalFailure message=$sanitizedMessage summary=$notificationSummary",
-                    )
-                    Log.e(
-                        "AutobookNotifService",
-                        "Terminal failure $sanitizedMessage for $notificationSummary",
-                    )
+                    is com.autobook.cn.core.model.OperationResult.TerminalFailure -> {
+                        val sanitizedMessage = SafeLogFormatter.forFailure(result.message)
+                        val notificationSummary = SafeLogFormatter.forNotification(event)
+                        NotificationListenerTraceRecorder.record(
+                            applicationContext,
+                            "${payloadIndexLabel}processTerminalFailure message=$sanitizedMessage summary=$notificationSummary",
+                        )
+                        Log.e(
+                            "AutobookNotifService",
+                            "${payloadIndexLabel}Terminal failure $sanitizedMessage for $notificationSummary",
+                        )
+                    }
                 }
             }
         }

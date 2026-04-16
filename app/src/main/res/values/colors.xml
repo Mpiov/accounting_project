@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        启动图标暖棕背景色。
+        说明：
+        1. 颜色直接对齐当前 App 暖纸账本主题里的主暖棕色。
+        2. 这里单独抽成颜色资源，方便后续继续微调 launcher icon 而不改 XML 结构。
+    -->
+    <color name="ic_launcher_background">#A67C52</color>
+</resources>

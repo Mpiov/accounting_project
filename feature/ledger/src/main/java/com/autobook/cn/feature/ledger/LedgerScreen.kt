@@ -155,6 +155,13 @@ data class LedgerUiState(
     val trendSubtitle: String = "把最近消费波动放到一个地方看清楚",
     val trendPoints: List<LedgerTrendPointUiModel> = emptyList(),
     val categoryBreakdown: List<LedgerCategoryBreakdownUiModel> = emptyList(),
+    /** 预算金额为空时代表当前月份还未设置预算。 */
+    val budgetAmountLabel: String? = null,
+    val budgetSpentLabel: String = "¥0.00",
+    val budgetRemainingLabel: String = "去设置预算",
+    val budgetUsageSummary: String = "设置本月预算后，这里会自动追踪剩余额度。",
+    val budgetUsageRatio: Float = 0f,
+    val budgetExceeded: Boolean = false,
     val highlightMessage: String = "待确认、趋势和分类分布都会在这里汇总",
     val entriesSummary: String = "当前筛选下暂无流水",
     val entries: List<LedgerItemUiModel> = emptyList(),
@@ -710,16 +717,19 @@ private fun CalendarDayCell(
                     Text(
                         text = income,
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF0B6E4F),
+                        // 日历格里的收入按当前产品口径改成红色，和账本结余卡保持同一语义。
+                        color = Color(0xFFD1495B),
                     )
                 }
                 day.expenseLabel?.let { expense ->
                     Text(
                         text = expense,
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFFC65D21),
+                        // 日历格里的支出按当前产品口径改成绿色，避免和收入颜色混淆。
+                        color = Color(0xFF2E8B57),
                     )
                 }
+                // 日历单元格只保留收入/支出两行，避免在有限高度里再塞一行结余造成拥挤。
                 if (!day.hasEntries && day.incomeLabel == null && day.expenseLabel == null) {
                     Spacer(modifier = Modifier.height(20.dp))
                 }

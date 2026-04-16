@@ -24,6 +24,64 @@ internal data class NotificationPayload(
  * - tickerText：部分通知仅暴露在 ticker 中的兜底文本。
  */
 internal object NotificationPayloadExtractor {
+    /**
+     * 提取并标准化当前通知的所有候选 payload。
+     *
+     * 用途说明：
+     * - 按最新规则，`textLines` 代表同一应用下聚合在一条通知里的多条候选消息时，
+     *   不再把所有行直接拼成一段正文，而是只保留首行和尾行，视作两条独立通知。
+     * - 中间行会被主动过滤；后续如果首尾里出现重复，交给数据库去重层处理。
+     * - 如果没有 `textLines`，则继续回退到“单条最佳正文”策略。
+     *
+     * 参数说明：
+     * - title：通知常规标题，对应 `android.title`。
+     * - bigTitle：通知展开态标题，对应 `android.title.big`。
+     * - text：通知常规正文，对应 `android.text`。
+     * - bigText：通知展开态正文，对应 `android.bigText`。
+     * - textLines：收件箱样式通知的多行正文，对应 `android.textLines`。
+     * - tickerText：部分通知仅暴露在 ticker 中的兜底文本。
+     */
+    fun extractAll(
+        title: String?,
+        bigTitle: String?,
+        text: String?,
+        bigText: String?,
+        textLines: List<String>,
+        tickerText: String?,
+    ): List<NotificationPayload> {
+        val normalizedTitle = firstNonBlank(title, bigTitle)
+        val linePayloads = buildLinePayloads(
+            normalizedTitle = normalizedTitle,
+            textLines = textLines,
+        )
+        if (linePayloads.isNotEmpty()) {
+            // 纯空 payload 继续进入链路只会制造“空通知处理失败”的噪音记录，因此这里直接丢弃。
+            return linePayloads.filter(NotificationPayload::hasMeaningfulContent)
+        }
+
+        val normalizedText = selectBestBodyCandidate(
+            candidates = listOf(
+                bigText,
+                text,
+                tickerText,
+            ),
+            title = normalizedTitle,
+        )
+        return listOf(
+            NotificationPayload(
+                title = normalizedTitle,
+                text = normalizedText,
+            ),
+        ).filter(NotificationPayload::hasMeaningfulContent)
+    }
+
+    /**
+     * 提取当前通知最主要的一条 payload。
+     *
+     * 用途说明：
+     * - 保留这个旧接口，便于单元测试和潜在旧调用点继续工作。
+     * - 新的通知监听主链路已经改为调用 `extractAll()`。
+     */
     fun extract(
         title: String?,
         bigTitle: String?,
@@ -32,20 +90,18 @@ internal object NotificationPayloadExtractor {
         textLines: List<String>,
         tickerText: String?,
     ): NotificationPayload {
-        val normalizedTitle = firstNonBlank(title, bigTitle)
-        val normalizedText = selectBestBodyCandidate(
-            candidates = listOf(
-                bigText,
-                textLines.joinToString(separator = " ").takeIf { it.isNotBlank() },
-                text,
-                tickerText,
-            ),
-            title = normalizedTitle,
-        )
-        return NotificationPayload(
-            title = normalizedTitle,
-            text = normalizedText,
-        )
+        return extractAll(
+            title = title,
+            bigTitle = bigTitle,
+            text = text,
+            bigText = bigText,
+            textLines = textLines,
+            tickerText = tickerText,
+        ).firstOrNull()
+            ?: NotificationPayload(
+                title = null,
+                text = null,
+            )
     }
 
     /**
@@ -101,6 +157,53 @@ internal object NotificationPayloadExtractor {
      * - value：待清洗的原始文本。
      */
     private fun normalize(value: String?): String? = value?.trim()?.takeIf { it.isNotEmpty() }
+
+    /**
+     * 基于 `textLines` 构造首行/尾行两条独立 payload。
+     *
+     * 用途说明：
+     * - 按最新方案，同一条聚合通知里只保留第一行和最后一行，把它们分别送进后续解析链路。
+     * - 中间行全部过滤，不再尝试整段拼接。
+     * - 如果首行和尾行清洗后相同，则自动折叠成一条，避免同一回调内部立即制造重复。
+     *
+     * 参数说明：
+     * - normalizedTitle：已经归一化后的标题。
+     * - textLines：原始多行正文集合。
+     */
+    private fun buildLinePayloads(
+        normalizedTitle: String?,
+        textLines: List<String>,
+    ): List<NotificationPayload> {
+        val cleanedLines = textLines
+            .mapNotNull(::normalize)
+            .distinct()
+            .filterNot { line -> line == normalizedTitle }
+        if (cleanedLines.isEmpty()) {
+            return emptyList()
+        }
+
+        val boundaryLines = listOfNotNull(
+            cleanedLines.firstOrNull(),
+            cleanedLines.lastOrNull(),
+        ).distinct()
+        return boundaryLines.map { line ->
+            NotificationPayload(
+                title = normalizedTitle,
+                text = line,
+            )
+        }
+    }
+}
+
+/**
+ * 判断当前 payload 是否至少携带了标题或正文。
+ *
+ * 用途说明：
+ * - 某些厂商会额外分发一条标题和正文都为空的壳通知。
+ * - 这类 payload 对交易识别没有帮助，反而会污染日志、数据库和排障结论。
+ */
+private fun NotificationPayload.hasMeaningfulContent(): Boolean {
+    return !title.isNullOrBlank() || !text.isNullOrBlank()
 }
 
 /** 金额命中通常意味着这段文字更像交易正文，而不是单纯渠道名。 */

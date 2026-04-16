@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    启动图标前景矢量。
+    说明：
+    1. 该图形对应用户确认的极简暖色 Logo 方案。
+    2. 外层纯色背景交给 adaptive icon 的 background 层处理，这里只保留前景主体。
+    3. 图形语义为“账本卡片 + 黄色勾选”，突出记账与确认成功的产品含义。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 账本卡片主体：按当前确认方案整体下移 3dp，贴合期望的桌面视觉位置。 -->
+    <path
+        android:fillColor="#FFFFFCF6"
+        android:pathData="M38.04,24.73H69.96A12.87,12.87 0,0 1,82.83 37.6V69.52A12.87,12.87 0,0 1,69.96 82.39H38.04A12.87,12.87 0,0 1,25.17 69.52V37.6A12.87,12.87 0,0 1,38.04 24.73Z" />
+
+    <!-- 左侧装订带：用最少元素保留“账本”识别。 -->
+    <path
+        android:fillColor="#F4E1CD"
+        android:pathData="M36.43,32.11H40.65A2.11,2.11 0,0 1,42.76 34.22V78.06A2.11,2.11 0,0 1,40.65 80.17H36.43A2.11,2.11 0,0 1,34.32 78.06V34.22A2.11,2.11 0,0 1,36.43 32.11Z" />
+
+    <!-- 账目横线：弱化处理，避免画面变杂。 -->
+    <path
+        android:fillColor="#EEDCC7"
+        android:pathData="M44.93,39.7H59.82A1.79,1.79 0,0 1,61.61 41.49A1.79,1.79 0,0 1,59.82 43.28H44.93A1.79,1.79 0,0 1,43.14 41.49A1.79,1.79 0,0 1,44.93 39.7Z" />
+    <path
+        android:fillColor="#EEDCC7"
+        android:pathData="M44.93,49.83H55.14A1.79,1.79 0,0 1,56.93 51.62A1.79,1.79 0,0 1,55.14 53.41H44.93A1.79,1.79 0,0 1,43.14 51.62A1.79,1.79 0,0 1,44.93 49.83Z" />
+    <path
+        android:fillColor="#EEDCC7"
+        android:pathData="M44.93,59.95H58.14A1.79,1.79 0,0 1,59.93 61.74A1.79,1.79 0,0 1,58.14 63.53H44.93A1.79,1.79 0,0 1,43.14 61.74A1.79,1.79 0,0 1,44.93 59.95Z" />
+
+    <!-- 黄色勾线：同步下移 3dp，保持和账本卡片的相对关系不变。 -->
+    <path
+        android:strokeColor="#F4C542"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="6.75"
+        android:pathData="M43.88,73.03L53.37,82.31L72.56,59.11"
+        android:fillColor="#00000000" />
+</vector>

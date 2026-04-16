@@ -27,8 +27,16 @@ data class PendingItemUiModel(
     val amount: String,
     val subtitle: String,
     val reason: String,
+    /** 关联通知的原始标题与正文，供待确认页按需展开查看。 */
+    val rawNotificationText: String? = null,
     val categoryHint: String,
     val orderId: String?,
+    /** 是否允许直接确认入账；当方向仍未知时，需要先进入编辑页补齐方向。 */
+    val canDirectConfirm: Boolean = true,
+    /** 主按钮文案；未知方向时会改成“先补方向”，降低用户误判成本。 */
+    val primaryActionLabel: String = "确认入账",
+    /** 额外提示文案；用于解释为什么当前项不能直接确认。 */
+    val directionHint: String? = null,
 )
 
 /** 待确认页的界面状态。 */
@@ -95,16 +103,28 @@ fun PendingScreen(
                                 Text("建议分类：${item.categoryHint}", style = MaterialTheme.typography.labelLarge)
                                 item.orderId?.let { Text("订单号：$it", style = MaterialTheme.typography.labelLarge) }
                                 Text("原因：${item.reason}", style = MaterialTheme.typography.bodyMedium)
+                                item.directionHint?.let { hint ->
+                                    Text("提示：$hint", style = MaterialTheme.typography.bodyMedium)
+                                }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Button(onClick = { onConfirm(item.id) }, modifier = Modifier.weight(1f)) {
-                                    Text("确认入账")
+                                Button(
+                                    onClick = {
+                                        if (item.canDirectConfirm) {
+                                            onConfirm(item.id)
+                                        } else {
+                                            onEdit(item.id)
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text(item.primaryActionLabel)
                                 }
                                 TextButton(
                                     onClick = { onEdit(item.id) },
                                     modifier = Modifier.weight(1f),
                                 ) {
-                                    Text("编辑后入账")
+                                    Text(if (item.canDirectConfirm) "编辑后入账" else "继续编辑")
                                 }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -65,7 +65,7 @@ interface ImageImportLocalOcrEngine {
  *
  * 用途说明：
  * - 接收 OCR 文本后生成一份结构化记账建议。
- * - 后续可替换为真正的端侧轻量模型实现，而不改上层图片导入流程。
+ * - 当前已可由端侧 Qwen 生成建议；后续仍可继续替换更强的本地推理方案，而不改上层图片导入流程。
  *
  * 参数说明：
  * - imageRef：图片引用，用于后续回溯或多模态扩展。
@@ -187,6 +187,40 @@ interface LedgerRepository {
     suspend fun delete(id: Long)
     suspend fun getById(id: Long): LedgerEntry?
     suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry?
+    /**
+     * 针对图片/截图导入场景执行更宽松的历史判重。
+     *
+     * 用途说明：
+     * - 截图里出现的往往是历史交易列表，不能再依赖“当前时间 ±5 秒”的实时窗口。
+     * - 当前图片/截图链路只在“分钟级时间一致 + 同金额 + 同方向”同时成立时才视为历史重复。
+     * - 这里是强判重接口，命中后可直接把候选视为重复并过滤。
+     *
+     * 参数说明：
+     * - timestamp：候选交易时间；为空时不执行强判重。
+     * - amount：候选金额。
+     * - direction：候选方向。
+     */
+    suspend fun findPotentialImageImportDuplicate(
+        timestamp: Long?,
+        amount: Double,
+        direction: MoneyDirection,
+    ): LedgerEntry?
+    /**
+     * 针对“图片候选缺少时间，但账本里存在同金额同方向记录”的模糊重复风险做探测。
+     *
+     * 用途说明：
+     * - 当图片/截图候选没有识别出时间时，不应直接当成重复过滤。
+     * - 但如果本地已经存在同金额同方向的记录，且当前候选本身又是中高置信度，
+     *   则可以把它降级为待确认，避免高置信度候选直接自动入账。
+     *
+     * 参数说明：
+     * - amount：候选金额。
+     * - direction：候选方向。
+     */
+    suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+        amount: Double,
+        direction: MoneyDirection,
+    ): LedgerEntry?
     suspend fun exportCsv(): String
 }
 
@@ -201,6 +235,17 @@ interface PendingRepository {
 
     suspend fun ignore(id: Long)
     suspend fun markFalsePositive(id: Long)
+}
+
+/**
+ * 通知原文查询接口。
+ *
+ * 用途说明：
+ * - 为待确认页、调试页等“需要回看原始通知内容”的界面提供轻量查询入口。
+ * - 与通知入账主链路解耦，避免上层直接依赖数据库 DAO。
+ */
+interface NotificationTraceRepository {
+    fun observeRawTextById(): Flow<Map<Long, String>>
 }
 
 /** 驱动权限、能力开关与留存策略的设置存储接口。 */
@@ -218,6 +263,43 @@ interface SettingsRepository {
     suspend fun setOcrEnabled(enabled: Boolean)
     suspend fun setNotificationRetentionDays(days: Int)
     suspend fun setScreenshotRetentionDays(days: Int)
+    /**
+     * 写入指定月份的预算金额。
+     *
+     * 参数说明：
+     * - monthKey：`yyyy-MM` 格式的月份键。
+     * - amount：预算金额，单位为元。
+     */
+    suspend fun setMonthlyBudget(monthKey: String, amount: Double) = Unit
+
+    /**
+     * 清除指定月份的预算金额。
+     *
+     * 参数说明：
+     * - monthKey：`yyyy-MM` 格式的月份键。
+     */
+    suspend fun clearMonthlyBudget(monthKey: String) = Unit
+
+    /**
+     * 批量切换一组通知来源开关。
+     *
+     * 用途说明：
+     * - 让设置页这类“一个 UI 桶映射多个底层来源”的场景可以一次性原子写回，避免连续 `edit` 产生中间态。
+     * - 默认实现仍然逐个复用单来源写回，具体仓库实现可按需覆盖成单次事务。
+     *
+     * 参数说明：
+     * - sources：本次要统一切换的底层通知来源集合。
+     * - enabled：目标开关状态；`true` 表示加入启用集合，`false` 表示从启用集合移除。
+     */
+    suspend fun setSourcesEnabled(
+        sources: Set<NotificationSourceApp>,
+        enabled: Boolean,
+    ) {
+        sources.forEach { source ->
+            setSourceEnabled(source, enabled)
+        }
+    }
+
     suspend fun setSourceEnabled(source: NotificationSourceApp, enabled: Boolean)
 }
 

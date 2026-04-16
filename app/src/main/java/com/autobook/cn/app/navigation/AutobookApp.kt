@@ -5,6 +5,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -14,17 +17,18 @@ import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.autobook.cn.app.ui.AutobookPaperBackground
+import com.autobook.cn.app.ui.BudgetSettingsScreen
 import com.autobook.cn.app.ui.EntryEditorScreen
-import com.autobook.cn.app.ui.SettingsScreen
+import com.autobook.cn.app.ui.LedgerWorkspaceScreen
+import com.autobook.cn.app.ui.RecordsTimelineScreen
+import com.autobook.cn.app.viewmodel.BudgetSettingsViewModel
 import com.autobook.cn.app.viewmodel.EntryEditorViewModel
-import com.autobook.cn.app.viewmodel.LedgerViewModel
+import com.autobook.cn.app.viewmodel.LedgerMonthDetailViewModel
 import com.autobook.cn.app.viewmodel.OnboardingViewModel
-import com.autobook.cn.app.viewmodel.PendingViewModel
-import com.autobook.cn.app.viewmodel.SettingsViewModel
+import com.autobook.cn.app.viewmodel.RecordsBrowserViewModel
 import com.autobook.cn.core.common.SettingsIntents
-import com.autobook.cn.feature.ledger.LedgerScreen
 import com.autobook.cn.feature.onboarding.OnboardingScreen
-import com.autobook.cn.feature.pending.PendingScreen
 
 /** 应用主导航图，负责把各个页面和对应 ViewModel 串起来。 */
 @Composable
@@ -32,124 +36,168 @@ fun AutobookApp() {
     val navController = rememberNavController()
     val context = LocalContext.current
 
-    NavHost(
-        navController = navController,
-        startDestination = AutobookDestination.Onboarding.route,
-    ) {
-        composable(AutobookDestination.Onboarding.route) {
-            val viewModel: OnboardingViewModel = hiltViewModel()
-            val state by viewModel.uiState.collectAsStateWithLifecycle()
+    AutobookPaperBackground {
+        NavHost(
+            navController = navController,
+            startDestination = AutobookDestination.Onboarding.route,
+            enterTransition = { AutobookNavTransitions.enter() },
+            exitTransition = { AutobookNavTransitions.exit() },
+            popEnterTransition = { AutobookNavTransitions.popEnter() },
+            popExitTransition = { AutobookNavTransitions.popExit() },
+        ) {
+            composable(AutobookDestination.Onboarding.route) {
+                val viewModel: OnboardingViewModel = hiltViewModel()
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-            LifecycleResumeEffect(Unit) {
-                // 每次回到前台都刷新权限状态，避免用户从系统设置页返回后界面不更新。
-                viewModel.refreshPermissionStatus()
-                onPauseOrDispose { }
-            }
+                LifecycleResumeEffect(Unit) {
+                    // 每次回到前台都刷新权限状态，避免用户从系统设置页返回后界面不更新。
+                    viewModel.refreshPermissionStatus()
+                    onPauseOrDispose { }
+                }
 
-            LaunchedEffect(state.onboardingCompleted) {
-                if (state.onboardingCompleted) {
-                    navController.navigate(AutobookDestination.Ledger.route) {
-                        popUpTo(AutobookDestination.Onboarding.route) { inclusive = true }
+                LaunchedEffect(state.onboardingCompleted) {
+                    if (state.onboardingCompleted) {
+                        navController.navigate(AutobookDestination.MainShell.route) {
+                            popUpTo(AutobookDestination.Onboarding.route) { inclusive = true }
+                        }
                     }
                 }
+
+                OnboardingScreen(
+                    state = state,
+                    onOpenNotificationSettings = { context.startActivity(SettingsIntents.notificationAccess()) },
+                    onOpenAccessibilitySettings = { context.startActivity(SettingsIntents.accessibilityAccess()) },
+                    onToggleAutoAccounting = viewModel::setAutoAccountingEnabled,
+                    onToggleCloudAnalysis = viewModel::setCloudAnalysisEnabled,
+                    onContinue = viewModel::completeOnboarding,
+                )
             }
+            composable(AutobookDestination.MainShell.route) {
+                MainShell(rootNavController = navController)
+            }
+            composable(AutobookDestination.BudgetSettings.route) {
+                val viewModel: BudgetSettingsViewModel = hiltViewModel()
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-            OnboardingScreen(
-                state = state,
-                onOpenNotificationSettings = { context.startActivity(SettingsIntents.notificationAccess()) },
-                onOpenAccessibilitySettings = { context.startActivity(SettingsIntents.accessibilityAccess()) },
-                onToggleAutoAccounting = viewModel::setAutoAccountingEnabled,
-                onToggleCloudAnalysis = viewModel::setCloudAnalysisEnabled,
-                onContinue = viewModel::completeOnboarding,
-            )
-        }
-        composable(AutobookDestination.Ledger.route) {
-            val viewModel: LedgerViewModel = hiltViewModel()
-            val state by viewModel.uiState.collectAsStateWithLifecycle()
+                BudgetSettingsScreen(
+                    state = state,
+                    onBack = { navController.popBackStack() },
+                    onSaveBudget = viewModel::saveBudget,
+                )
+            }
+            composable(
+                route = AutobookDestination.LedgerMonthDetail.route,
+                arguments = listOf(
+                    navArgument("yearMonth") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
+                ),
+            ) {
+                val viewModel: LedgerMonthDetailViewModel = hiltViewModel()
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-            LedgerScreen(
-                state = state,
-                onSearchChange = viewModel::setSearchQuery,
-                onRangeChange = viewModel::setRange,
-                onPendingClick = { navController.navigate(AutobookDestination.Pending.route) },
-                onSettingsClick = { navController.navigate(AutobookDestination.Settings.route) },
-                onAddClick = { navController.navigate(AutobookDestination.EntryCreate.route) },
-                onEntryClick = { entryId ->
-                    navController.navigate(AutobookDestination.EntryEdit.createRoute(entryId))
-                },
-                onPreviousMonthClick = viewModel::showPreviousMonth,
-                onNextMonthClick = viewModel::showNextMonth,
-                onCalendarDateClick = viewModel::selectCalendarDate,
-            )
-        }
-        composable(AutobookDestination.Pending.route) {
-            val viewModel: PendingViewModel = hiltViewModel()
-            val state by viewModel.uiState.collectAsStateWithLifecycle()
+                LedgerWorkspaceScreen(
+                    state = state,
+                    onBack = { navController.popBackStack() },
+                    onSearchChange = viewModel::updateSearchQuery,
+                    onPreviousMonthClick = viewModel::showPreviousMonth,
+                    onNextMonthClick = viewModel::showNextMonth,
+                    onCalendarDateClick = viewModel::selectCalendarDate,
+                    onEntryClick = { ledgerId ->
+                        navController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
+                    },
+                )
+            }
+            composable(AutobookDestination.RecordsAll.route) {
+                val viewModel: RecordsBrowserViewModel = hiltViewModel()
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-            PendingScreen(
-                state = state,
-                onBack = { navController.popBackStack() },
-                onConfirm = viewModel::confirmPending,
-                onEdit = { pendingId ->
-                    navController.navigate(AutobookDestination.PendingResolve.createRoute(pendingId))
-                },
-                onIgnore = viewModel::ignorePending,
-                onFalsePositive = viewModel::markFalsePositive,
-            )
-        }
-        composable(AutobookDestination.Settings.route) {
-            val viewModel: SettingsViewModel = hiltViewModel()
-            val state by viewModel.uiState.collectAsStateWithLifecycle()
+                RecordsTimelineScreen(
+                    title = state.title,
+                    summary = state.summary,
+                    items = state.items,
+                    onSelectEntry = { ledgerId ->
+                        navController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
+                    },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(
+                route = AutobookDestination.SearchResults.route,
+                arguments = listOf(
+                    navArgument("query") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
+                ),
+            ) {
+                val viewModel: RecordsBrowserViewModel = hiltViewModel()
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                var selectedEntryId by remember(state.items) {
+                    mutableLongStateOf(state.items.firstOrNull()?.id ?: 0L)
+                }
 
-            SettingsScreen(
-                state = state,
-                onBack = { navController.popBackStack() },
-                onAutoAccountingChanged = viewModel::setAutoAccountingEnabled,
-                onCloudAnalysisChanged = viewModel::setCloudAnalysisEnabled,
-                onCaptureEnabledChanged = viewModel::setCaptureEnabled,
-                onOcrEnabledChanged = viewModel::setOcrEnabled,
-                onLocalLlmConfidenceBoostChanged = viewModel::setLocalLlmConfidenceBoostEnabled,
-                onSelectedLocalModelChanged = viewModel::setSelectedLocalModelId,
-                onDownloadSelectedLocalModel = viewModel::downloadSelectedLocalModel,
-                onRefreshLocalModelState = viewModel::refreshLocalModelState,
-                onNotificationRetentionChanged = viewModel::setNotificationRetentionDays,
-                onScreenshotRetentionChanged = viewModel::setScreenshotRetentionDays,
-                onSourceEnabledChanged = viewModel::setSourceEnabled,
-                onLoadExportPreview = viewModel::loadExportPreview,
-            )
-        }
-        composable(AutobookDestination.EntryCreate.route) {
-            val viewModel: EntryEditorViewModel = hiltViewModel()
-            val state by viewModel.uiState.collectAsStateWithLifecycle()
-            EntryEditorRoute(
-                state = state,
-                viewModel = viewModel,
-                onBack = { navController.popBackStack() },
-            )
-        }
-        composable(
-            route = AutobookDestination.EntryEdit.route,
-            arguments = listOf(navArgument("ledgerId") { type = NavType.StringType }),
-        ) {
-            val viewModel: EntryEditorViewModel = hiltViewModel()
-            val state by viewModel.uiState.collectAsStateWithLifecycle()
-            EntryEditorRoute(
-                state = state,
-                viewModel = viewModel,
-                onBack = { navController.popBackStack() },
-            )
-        }
-        composable(
-            route = AutobookDestination.PendingResolve.route,
-            arguments = listOf(navArgument("pendingId") { type = NavType.StringType }),
-        ) {
-            val viewModel: EntryEditorViewModel = hiltViewModel()
-            val state by viewModel.uiState.collectAsStateWithLifecycle()
-            EntryEditorRoute(
-                state = state,
-                viewModel = viewModel,
-                onBack = { navController.popBackStack() },
-            )
+                LaunchedEffect(state.items) {
+                    if (selectedEntryId == 0L) {
+                        selectedEntryId = state.items.firstOrNull()?.id ?: 0L
+                    }
+                }
+
+                RecordsTimelineScreen(
+                    title = state.title,
+                    summary = state.summary,
+                    items = state.items,
+                    selectedEntryId = selectedEntryId.takeIf { it != 0L },
+                    onSelectEntry = { ledgerId -> selectedEntryId = ledgerId },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(
+                route = AutobookDestination.EntryCreate.route,
+                arguments = listOf(
+                    navArgument("direction") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
+                    navArgument("templateId") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
+                ),
+            ) {
+                val viewModel: EntryEditorViewModel = hiltViewModel()
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                EntryEditorRoute(
+                    state = state,
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(
+                route = AutobookDestination.EntryEdit.route,
+                arguments = listOf(navArgument("ledgerId") { type = NavType.StringType }),
+            ) {
+                val viewModel: EntryEditorViewModel = hiltViewModel()
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                EntryEditorRoute(
+                    state = state,
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(
+                route = AutobookDestination.PendingResolve.route,
+                arguments = listOf(navArgument("pendingId") { type = NavType.StringType }),
+            ) {
+                val viewModel: EntryEditorViewModel = hiltViewModel()
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                EntryEditorRoute(
+                    state = state,
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
     }
 }
@@ -164,7 +212,7 @@ private fun EntryEditorRoute(
         contract = ActivityResultContracts.GetContent(),
     ) { uri ->
         uri?.let { selectedUri ->
-            // 当前先直接把内容 Uri 字符串作为图片引用传给 mock 分析器，后续可替换为真实上传或本地缓存路径。
+            // 当前直接把内容 Uri 字符串透传给图片导入分析器，由底层决定走云端开发链路还是端内 OCR + 本地 Qwen。
             viewModel.importFromImage(selectedUri.toString())
         }
     }
@@ -188,6 +236,7 @@ private fun EntryEditorRoute(
         onDirectionChange = viewModel::updateDirection,
         onApplyTemplate = viewModel::applyTemplate,
         onImportFromImage = { imagePickerLauncher.launch("image/*") },
+        onSelectImageImportCandidate = viewModel::selectImageImportCandidate,
         onSave = viewModel::save,
         onDelete = viewModel::delete,
     )

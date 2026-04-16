@@ -7,6 +7,7 @@ import android.util.Log
 import com.autobook.cn.core.data.ImageImportAnalyzer
 import com.autobook.cn.core.data.LedgerRepository
 import com.autobook.cn.core.data.PendingRepository
+import com.autobook.cn.core.model.ImageImportCandidate
 import com.autobook.cn.core.model.ImageImportAnalysisPath
 import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.MoneyDirection
@@ -28,8 +29,10 @@ enum class EntryEditorMode {
 /** 编辑页 UI 状态，覆盖三种模式的公共表单字段。 */
 data class EntryEditorUiState(
     val mode: EntryEditorMode = EntryEditorMode.CREATE,
-    val title: String = "新建手动记账",
+    val title: String = "快速记账",
     val amount: String = "",
+    /** 当前表单对应的交易时间；图片导入识别出时间时会优先写入这里。 */
+    val entryTimestamp: Long? = null,
     val merchant: String = "",
     val category: String = "待分类",
     val note: String = "",
@@ -40,6 +43,16 @@ data class EntryEditorUiState(
     val imageImportMessage: String? = null,
     val imageImportTracePath: ImageImportAnalysisPath? = null,
     val importedImageRef: String? = null,
+    /** 图片分析后保留下来的候选列表，默认按后处理层给出的优先级排序。 */
+    val imageImportCandidates: List<ImageImportCandidate> = emptyList(),
+    /** 当前编辑页正在展示的候选索引；没有候选时为空。 */
+    val selectedImageImportCandidateIndex: Int? = null,
+    /** 本次图片分析中被本地过滤掉的候选总数。 */
+    val filteredOutCandidateCount: Int = 0,
+    /** 因本地账本判重被过滤的候选数。 */
+    val duplicateFilteredCount: Int = 0,
+    /** 因已退还/已撤销状态被过滤的候选数。 */
+    val inactiveFilteredCount: Int = 0,
     /** 图片导入分析结果默认只作为建议，是否仍需用户手动确认后保存。 */
     val imageImportRequiresManualConfirmation: Boolean = false,
     val finished: Boolean = false,
@@ -72,6 +85,12 @@ class EntryEditorViewModel @Inject constructor(
 ) : ViewModel() {
     private val ledgerId: Long? = savedStateHandle.get<String>("ledgerId")?.toLongOrNull()
     private val pendingId: Long? = savedStateHandle.get<String>("pendingId")?.toLongOrNull()
+    /** 快速动作面板可传入默认方向，减少用户进入表单后的二次切换。 */
+    private val presetDirection: MoneyDirection? = savedStateHandle.get<String>("direction")
+        ?.takeIf { it.isNotBlank() }
+        ?.let { rawDirection -> MoneyDirection.entries.firstOrNull { it.name == rawDirection } }
+    /** 快速动作面板可直接携带模板标识，进入页面时先预填常用字段。 */
+    private val presetTemplateId: String? = savedStateHandle.get<String>("templateId")?.takeIf { it.isNotBlank() }
     private var editingLedger: LedgerEntry? = null
     private var resolvingPending: PendingEntry? = null
 
@@ -86,9 +105,10 @@ class EntryEditorViewModel @Inject constructor(
             title = when {
                 pendingId != null -> "编辑后入账"
                 ledgerId != null -> "编辑记账"
-                else -> "新建手动记账"
+                else -> "快速记账"
             },
             canDelete = ledgerId != null,
+            direction = presetDirection ?: MoneyDirection.EXPENSE,
         ),
     )
     val uiState: StateFlow<EntryEditorUiState> = _uiState.asStateFlow()
@@ -108,11 +128,25 @@ class EntryEditorViewModel @Inject constructor(
     fun applyTemplate(templateId: String) = updateState { applyEntryTemplate(templateId) }
 
     /**
-     * 触发一次图片导入记账的 mock 建议填充。
+     * 切换当前正在查看的图片分析候选。
      *
      * 用途说明：
-     * - 当前阶段已经接上真实选图入口，但分析器仍然是 mock。
-     * - `imageRef` 当前直接使用图片 Uri 字符串占位，后续可替换为真实上传后的资源标识或本地文件引用。
+     * - 当一张截图识别出多条候选后，允许用户在编辑页里切换当前要采纳的候选。
+     * - 切换时会把表单字段回填为对应候选的内容，便于用户继续微调。
+     *
+     * 参数说明：
+     * - index：希望切换到的候选索引。
+     */
+    fun selectImageImportCandidate(index: Int) {
+        updateState { applyImageImportCandidate(index) }
+    }
+
+    /**
+     * 触发一次图片导入记账建议填充。
+     *
+     * 用途说明：
+     * - 当前阶段已经接上真实选图入口，并会根据设置决定走云端开发链路或端内 OCR + 本地 Qwen。
+     * - `imageRef` 当前直接使用图片 Uri 字符串透传到底层 OCR / 分析器，避免在页面层重复做文件拷贝。
      */
     fun importFromImage(imageRef: String) {
         viewModelScope.launch {
@@ -131,8 +165,10 @@ class EntryEditorViewModel @Inject constructor(
                     is com.autobook.cn.core.model.OperationResult.Success -> {
                         val suggestion = result.data
                         updateState {
-                            copy(
+                            val selectedIndex = suggestion.candidates.indices.firstOrNull()
+                            val baseState = copy(
                                 amount = suggestion.amount?.toString() ?: amount,
+                                entryTimestamp = suggestion.timestamp ?: entryTimestamp,
                                 direction = suggestion.direction,
                                 merchant = suggestion.merchant.ifBlank { merchant },
                                 category = suggestion.category.ifBlank { category },
@@ -141,9 +177,19 @@ class EntryEditorViewModel @Inject constructor(
                                 imageImportMessage = suggestion.message,
                                 imageImportTracePath = suggestion.tracePath,
                                 importedImageRef = imageRef,
+                                imageImportCandidates = suggestion.candidates,
+                                selectedImageImportCandidateIndex = selectedIndex,
+                                filteredOutCandidateCount = suggestion.filteredOutCandidateCount,
+                                duplicateFilteredCount = suggestion.duplicateFilteredCount,
+                                inactiveFilteredCount = suggestion.inactiveFilteredCount,
                                 imageImportRequiresManualConfirmation = suggestion.requiresManualConfirmation,
                                 errorMessage = null,
                             )
+                            if (selectedIndex != null) {
+                                baseState.applyImageImportCandidate(selectedIndex)
+                            } else {
+                                baseState
+                            }
                         }
                     }
 
@@ -153,6 +199,11 @@ class EntryEditorViewModel @Inject constructor(
                                 imageImportMessage = result.message,
                                 imageImportTracePath = null,
                                 importedImageRef = imageRef,
+                                imageImportCandidates = emptyList(),
+                                selectedImageImportCandidateIndex = null,
+                                filteredOutCandidateCount = 0,
+                                duplicateFilteredCount = 0,
+                                inactiveFilteredCount = 0,
                                 imageImportRequiresManualConfirmation = true,
                                 errorMessage = null,
                             )
@@ -165,6 +216,11 @@ class EntryEditorViewModel @Inject constructor(
                                 imageImportMessage = result.message,
                                 imageImportTracePath = null,
                                 importedImageRef = imageRef,
+                                imageImportCandidates = emptyList(),
+                                selectedImageImportCandidateIndex = null,
+                                filteredOutCandidateCount = 0,
+                                duplicateFilteredCount = 0,
+                                inactiveFilteredCount = 0,
                                 imageImportRequiresManualConfirmation = true,
                                 errorMessage = null,
                             )
@@ -178,6 +234,11 @@ class EntryEditorViewModel @Inject constructor(
                         imageImportMessage = "图片分析失败：${throwable.message ?: throwable.javaClass.simpleName}",
                         imageImportTracePath = null,
                         importedImageRef = imageRef,
+                        imageImportCandidates = emptyList(),
+                        selectedImageImportCandidateIndex = null,
+                        filteredOutCandidateCount = 0,
+                        duplicateFilteredCount = 0,
+                        inactiveFilteredCount = 0,
                         imageImportRequiresManualConfirmation = true,
                         errorMessage = null,
                     )
@@ -212,7 +273,7 @@ class EntryEditorViewModel @Inject constructor(
                             direction = state.direction,
                             merchant = state.merchant.trim(),
                             channel = if (state.importedImageRef != null) "图片导入" else "手动记账",
-                            timestamp = System.currentTimeMillis(),
+                            timestamp = state.entryTimestamp ?: System.currentTimeMillis(),
                             category = state.category.trim().ifBlank { "待分类" },
                             orderId = state.orderId.trim().ifBlank { null },
                             note = state.note.trim().ifBlank { null },
@@ -229,6 +290,7 @@ class EntryEditorViewModel @Inject constructor(
                     ledgerRepository.update(
                         current.copy(
                             amount = amount,
+                            timestamp = state.entryTimestamp ?: current.timestamp,
                             direction = state.direction,
                             merchant = state.merchant.trim(),
                             category = state.category.trim().ifBlank { "待分类" },
@@ -248,7 +310,7 @@ class EntryEditorViewModel @Inject constructor(
                             direction = state.direction,
                             merchant = state.merchant.trim(),
                             channel = pending.channel,
-                            timestamp = pending.timestamp,
+                            timestamp = state.entryTimestamp ?: pending.timestamp,
                             category = state.category.trim().ifBlank { pending.categoryHint },
                             orderId = state.orderId.trim().ifBlank { pending.orderId },
                             note = state.note.trim().ifBlank { null },
@@ -293,6 +355,7 @@ class EntryEditorViewModel @Inject constructor(
                 editingLedger?.let { entry ->
                     _uiState.value = _uiState.value.copy(
                         amount = entry.amount.toString(),
+                        entryTimestamp = entry.timestamp,
                         merchant = entry.merchant,
                         category = entry.category,
                         note = entry.note.orEmpty(),
@@ -307,12 +370,19 @@ class EntryEditorViewModel @Inject constructor(
                 resolvingPending?.let { entry ->
                     _uiState.value = _uiState.value.copy(
                         amount = entry.amount.toString(),
+                        entryTimestamp = entry.timestamp,
                         merchant = entry.merchant,
                         category = entry.categoryHint,
                         note = "",
                         orderId = entry.orderId.orEmpty(),
                         direction = entry.direction,
                     )
+                }
+            }
+            else -> {
+                // 新建模式下优先应用快捷动作传入的默认值，减少重复录入。
+                presetTemplateId?.let { templateId ->
+                    _uiState.value = _uiState.value.applyEntryTemplate(templateId)
                 }
             }
         }
@@ -390,6 +460,27 @@ private val ENTRY_TEMPLATE_MODELS = ENTRY_TEMPLATES.map { template ->
     EntryTemplateUiModel(
         id = template.id,
         label = template.label,
+    )
+}
+
+/**
+ * 把指定图片候选应用到当前表单。
+ *
+ * 参数说明：
+ * - index：待应用候选的索引。
+ */
+internal fun EntryEditorUiState.applyImageImportCandidate(index: Int): EntryEditorUiState {
+    val candidate = imageImportCandidates.getOrNull(index) ?: return this
+    return copy(
+        amount = candidate.amount?.toString() ?: amount,
+        entryTimestamp = candidate.timestamp ?: entryTimestamp,
+        direction = candidate.direction,
+        merchant = candidate.merchant.ifBlank { merchant },
+        category = candidate.category.ifBlank { category },
+        note = candidate.note.ifBlank { note },
+        orderId = candidate.orderId ?: orderId,
+        selectedImageImportCandidateIndex = index,
+        errorMessage = null,
     )
 }
 

@@ -8,7 +8,13 @@ import androidx.room.Update
 import com.autobook.cn.core.database.entity.LedgerEntryEntity
 import kotlinx.coroutines.flow.Flow
 
-/** 已入账记录的 Room 访问接口。 */
+/**
+ * 已入账记录的 Room 访问接口。
+ *
+ * 用途说明：
+ * - 提供账本记录的增删改查。
+ * - 也负责通知自动记账链路的账本级判重查询。
+ */
 @Dao
 interface LedgerEntryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -29,13 +35,19 @@ interface LedgerEntryDao {
     @Query(
         """
         SELECT * FROM ledger_entries
-        -- 优先命中订单号完全一致的记录；缺少订单号时再退回“同方向 + 同金额 + 同商户 + 极短时间窗”模糊匹配。
-        WHERE (:orderId IS NOT NULL AND orderId = :orderId)
-           OR (
+        -- 通知自动记账链路使用“同方向 + 同金额 + 极短时间窗”做第一层账本级判重；
+        -- 不再要求商户完全一致，避免支付宝通知与银行卡动账提醒因为商户提取不同而漏判。
+        -- orderId 如存在，仍然作为更强的辅助信号参与判定。
+        WHERE (
                 amount = :amount
                 AND direction = :direction
-                AND merchant = :merchant
                 AND timestamp BETWEEN :windowStart AND :windowEnd
+           )
+           OR (
+                :orderId IS NOT NULL
+                AND orderId = :orderId
+                AND amount = :amount
+                AND direction = :direction
            )
         ORDER BY timestamp DESC
         LIMIT 1
@@ -45,8 +57,39 @@ interface LedgerEntryDao {
         orderId: String?,
         amount: Double,
         direction: String,
-        merchant: String,
         windowStart: Long,
         windowEnd: Long,
+    ): LedgerEntryEntity?
+
+    @Query(
+        """
+        SELECT * FROM ledger_entries
+        WHERE :windowStart IS NOT NULL
+          AND timestamp BETWEEN :windowStart AND :windowEnd
+          AND amount = :amount
+          AND direction = :direction
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun findPotentialImageImportDuplicate(
+        windowStart: Long?,
+        windowEnd: Long?,
+        amount: Double,
+        direction: String,
+    ): LedgerEntryEntity?
+
+    @Query(
+        """
+        SELECT * FROM ledger_entries
+        WHERE amount = :amount
+          AND direction = :direction
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun findPotentialImageImportDuplicateWithoutTimestamp(
+        amount: Double,
+        direction: String,
     ): LedgerEntryEntity?
 }

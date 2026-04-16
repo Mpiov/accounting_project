@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    应用启动图标。
+    说明：
+    1. 采用 adaptive icon 结构，背景为纯色暖棕，前景为极简账本 Logo。
+    2. 当前项目最低系统版本为 Android 10，因此可以直接使用该现代图标方案。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

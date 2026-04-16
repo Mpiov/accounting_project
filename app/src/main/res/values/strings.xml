@@ -1,3 +1,4 @@
 <resources>
-    <string name="app_name">Autobook</string>
+    <!-- 应用在桌面、任务列表和系统设置中展示的正式中文名称。 -->
+    <string name="app_name">轻松计</string>
 </resources>

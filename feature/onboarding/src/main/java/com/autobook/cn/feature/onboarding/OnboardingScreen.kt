@@ -30,7 +30,7 @@ data class OnboardingUiState(
     val notificationAccess: Boolean = false,
     val accessibilityAccess: Boolean = false,
     val autoAccountingEnabled: Boolean = true,
-    val cloudAnalysisEnabled: Boolean = false,
+    val cloudAnalysisEnabled: Boolean = true,
     val onboardingCompleted: Boolean = false,
 )
 
@@ -54,7 +54,7 @@ fun OnboardingScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = "Autobook",
+            text = "轻松计",
             style = MaterialTheme.typography.headlineMedium,
         )
         Text(
@@ -94,7 +94,7 @@ fun OnboardingScreen(
         )
         ToggleCard(
             title = "云端分析",
-            summary = "默认关闭，仅在后续接入后端时作为补充回退路径。",
+            summary = "默认开启，在本地解析不足时作为补充回退路径。",
             checked = state.cloudAnalysisEnabled,
             icon = { Icon(Icons.Outlined.Cloud, contentDescription = null) },
             onCheckedChange = onToggleCloudAnalysis,

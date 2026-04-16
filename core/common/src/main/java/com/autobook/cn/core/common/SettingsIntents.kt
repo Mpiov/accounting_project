@@ -10,6 +10,12 @@ object SettingsIntents {
     fun notificationAccess(): Intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
 
     fun accessibilityAccess(): Intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+
+    fun appNotifications(context: Context): Intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        putExtra("app_package", context.packageName)
+        putExtra("app_uid", context.applicationInfo.uid)
+    }
 }
 
 /** 检查关键 Android 服务当前是否已开启的辅助方法。 */

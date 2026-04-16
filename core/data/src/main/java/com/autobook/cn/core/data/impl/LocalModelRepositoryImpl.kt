@@ -14,10 +14,12 @@ import java.net.URL
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 /**
@@ -42,14 +44,23 @@ class LocalModelRepositoryImpl @Inject constructor(
      * 输出当前本地模型快照。
      *
      * 参数说明：
-     * - settings：当前设置快照。
+     * - selectedModelId：当前选中的模型标识。
      * - state：下载进度和错误状态。
      */
     override val snapshot: Flow<LocalModelSnapshot> = combine(
-        settingsRepository.settings,
+        settingsRepository.settings
+            .map { settings -> settings.selectedLocalModelId }
+            .distinctUntilChanged(),
         downloadState,
-    ) { settings, state ->
-        val selectedSpec = LOCAL_MODEL_CATALOG.firstOrNull { it.id == settings.selectedLocalModelId }
+    ) { selectedModelId, state ->
+        /**
+         * 这里只订阅“选中的模型 ID”，避免设置页里修改其它开关时也触发模型卡整块重新计算。
+         *
+         * 用途说明：
+         * - 之前 `snapshot` 直接依赖完整 `AppSettings`，任何设置变更都会让本地模型状态重新发射。
+         * - 设置页又会同时订阅 `settings` 和 `snapshot`，导致一次普通开关变更可能触发两轮 UI 状态重算。
+         */
+        val selectedSpec = LOCAL_MODEL_CATALOG.firstOrNull { it.id == selectedModelId }
             ?: LOCAL_MODEL_CATALOG.first { it.id == DEFAULT_LOCAL_MODEL_ID }
         val targetFile = resolveModelFile(selectedSpec)
         val installStatus = when {

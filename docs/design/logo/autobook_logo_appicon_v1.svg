@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Autobook Logo Concept V1
+    用途：记账 App 的首版极简 Logo 概念稿，当前仅用于设计预览，不接入正式资源。
+    设计说明：
+    1. 外层使用圆角方形，贴近 Android App Icon 的基础轮廓。
+    2. 中间白色卡片代表“账本 / 记录页”，强调产品的记账属性。
+    3. 左侧装订线与正文横线表示“结构化账目”。
+    4. 橙色勾线代表“自动确认 / 自动记账”，让含义更直接。
+-->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <!-- 柔和青绿色渐变，兼顾金融感与科技感。 -->
+        <linearGradient id="autobookBackgroundGradient" x1="184" y1="132" x2="846" y2="892" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#0D5C63"/>
+            <stop offset="1" stop-color="#19B39D"/>
+        </linearGradient>
+        <!-- 给卡片增加很轻的阴影，避免纯白块显得生硬。 -->
+        <filter id="autobookCardShadow" x="178" y="165" width="668" height="710" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+            <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+            <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+            <feOffset dy="18"/>
+            <feGaussianBlur stdDeviation="20"/>
+            <feColorMatrix type="matrix" values="0 0 0 0 0.028 0 0 0 0 0.176 0 0 0 0 0.196 0 0 0 0.18 0"/>
+            <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+            <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+        </filter>
+    </defs>
+
+    <!-- App Icon 底板。 -->
+    <rect x="64" y="64" width="896" height="896" rx="232" fill="url(#autobookBackgroundGradient)"/>
+
+    <!-- 账本卡片主体。 -->
+    <g filter="url(#autobookCardShadow)">
+        <rect x="252" y="204" width="520" height="612" rx="126" fill="#FBFEFC"/>
+    </g>
+
+    <!-- 左侧装订线：表示账本，也让版式更像“记录页”。 -->
+    <rect x="320" y="274" width="38" height="472" rx="19" fill="#D7F0EA"/>
+
+    <!-- 横向账目线：强调“多条流水被整齐记录”。 -->
+    <rect x="404" y="350" width="230" height="36" rx="18" fill="#DCEFEA"/>
+    <rect x="404" y="448" width="184" height="36" rx="18" fill="#DCEFEA"/>
+    <rect x="404" y="546" width="214" height="36" rx="18" fill="#DCEFEA"/>
+
+    <!-- 自动记账勾线：使用高对比暖色，让“自动确认成功”一眼可见。 -->
+    <path d="M414 666L506 756L684 536" stroke="#FF8A3D" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
