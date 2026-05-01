@@ -26,5 +26,4 @@ dependencies {
     implementation(project(":core:data"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.hilt.android)
-    implementation(libs.mlkit.text.recognition.chinese)
 }

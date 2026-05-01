@@ -16,7 +16,7 @@
         </receiver>
 
         <!--
-            仅在 debug 构建下启用后台注入 Service，用于承接本地 LLM 推理等重任务，
+            仅在 debug 构建下启用后台注入 Service，用于承接通知入库和本地规则解析等任务，
             避免在 BroadcastReceiver 生命周期内直接执行导致系统判定为广播 ANR。
         -->
         <service

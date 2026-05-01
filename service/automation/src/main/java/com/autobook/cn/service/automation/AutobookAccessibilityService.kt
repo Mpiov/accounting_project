@@ -20,7 +20,7 @@ import kotlin.coroutines.resume
  * 无障碍自动化服务。
  *
  * 用途说明：
- * - 提供打开通知栏、执行系统截图、收起系统面板等 OCR 回退所需能力。
+ * - 提供打开通知栏、执行系统截图、收起系统面板等主动截图所需能力。
  * - 服务连接成功后会把能力注册进运行时注册表，供数据层的截图协调器调用。
  *
  * 参数说明：
@@ -82,7 +82,7 @@ class AutobookAccessibilityService : AccessibilityService() {
      *
      * 说明：
      * - AccessibilityService 返回的是 HardwareBuffer，必须复制成普通 ARGB_8888 位图后再交给上层保存。
-     * - 这样既能避免硬件缓冲区生命周期问题，也便于后续 PNG 落盘与 OCR 识别。
+     * - 这样既能避免硬件缓冲区生命周期问题，也便于后续 PNG 落盘与图片分析。
      */
     private suspend fun captureCurrentDisplay(): OperationResult<Bitmap> {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
@@ -108,7 +108,7 @@ class AutobookAccessibilityService : AccessibilityService() {
                                 return
                             }
 
-                            // 复制为普通软件位图，避免 OCR 读取硬件位图时出现兼容性问题。
+                            // 复制为普通软件位图，避免后续图片保存或分析读取硬件位图时出现兼容性问题。
                             val copiedBitmap = wrappedBitmap.copy(Bitmap.Config.ARGB_8888, false)
                             wrappedBitmap.recycle()
                             if (copiedBitmap == null) {

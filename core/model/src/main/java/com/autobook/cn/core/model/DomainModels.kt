@@ -102,7 +102,6 @@ data class ParseConfidence(
  * - rawSource：原始来源标签。
  * - parsePath：解析链路标签。
  * - modelVersion：当前解析实现版本号。
- * - llmSuggestedAutoPost：本地语义校验是否建议自动入账，可为空。
  * - sourceApp：来源应用类型。
  */
 data class TransactionCandidate(
@@ -120,7 +119,6 @@ data class TransactionCandidate(
     val rawSource: String,
     val parsePath: String,
     val modelVersion: String = "local-mock-v1",
-    val llmSuggestedAutoPost: Boolean? = null,
     val sourceApp: NotificationSourceApp = NotificationSourceApp.UNKNOWN,
 )
 
@@ -176,7 +174,6 @@ data class AppSettings(
     val onboardingCompleted: Boolean = false,
     val autoAccountingEnabled: Boolean = true,
     val cloudAnalysisEnabled: Boolean = true,
-    val localLlmConfidenceBoostEnabled: Boolean = false,
     val captureEnabled: Boolean = false,
     val notificationRetentionDays: Int = 30,
     val screenshotRetentionDays: Int = 7,

@@ -98,10 +98,10 @@ class TransactionPipelineTest {
     }
 
     @Test
-    fun `llm promoted medium candidate auto ledger`() = runTest {
+    fun `high confidence local candidate auto ledger`() = runTest {
         val modelRouter = object : ModelRouter {
             /**
-             * 模拟一条已经被本地 LLM 提升过的银行转账候选，验证流水线会直接自动入账。
+             * 模拟一条高置信度本地规则候选，验证流水线会直接自动入账。
              *
              * 参数说明：
              * - event：当前待处理通知事件，仅用于携带时间戳。
@@ -111,15 +111,13 @@ class TransactionPipelineTest {
                     TransactionCandidate(
                         amount = 100.0,
                         direction = MoneyDirection.EXPENSE,
-                        merchant = "LLM 升级商户",
+                        merchant = "本地规则商户",
                         channel = "Bank App",
                         timestamp = event.postedAt,
                         confidence = ParseConfidence(0.9f),
-                        confidenceReason = "Local heuristic validation passed",
+                        confidenceReason = "Local parser validation passed",
                         rawSource = "notification",
-                        parsePath = "local-parser+local-heuristic",
-                        modelVersion = "heuristic-stub-bank-v1",
-                        llmSuggestedAutoPost = true,
+                        parsePath = "local-parser",
                         sourceApp = NotificationSourceApp.BANK_SMS,
                     ),
                 )
@@ -168,7 +166,7 @@ class TransactionPipelineTest {
             notificationId = 42L,
             event = NotificationEvent(
                 packageName = "com.bank.app",
-                title = "LLM 复核提醒",
+                title = "本地规则提醒",
                 text = "已为您转出 100 元",
                 postedAt = 2L,
             ),
@@ -181,7 +179,7 @@ class TransactionPipelineTest {
     }
 
     /**
-     * 验证即使本地 LLM 已经补全候选，只要置信度仍低于自动入账阈值，流水线就会把它路由到待确认并回填原因。
+     * 验证本地规则候选只要置信度低于自动入账阈值，流水线就会把它路由到待确认并回填原因。
      */
     @Test
     fun `medium confidence candidate stays pending`() = runTest {
@@ -191,15 +189,13 @@ class TransactionPipelineTest {
                     TransactionCandidate(
                         amount = 55.0,
                         direction = MoneyDirection.EXPENSE,
-                        merchant = "LLM Pending Bank",
+                        merchant = "Local Pending Bank",
                         channel = "Bank App",
                         timestamp = event.postedAt,
                         confidence = ParseConfidence(0.84f),
-                        confidenceReason = "Local heuristic guardrail review",
+                        confidenceReason = "Local parser medium confidence review",
                         rawSource = "notification",
-                        parsePath = "local-parser+local-heuristic",
-                        modelVersion = "heuristic-stub-bank-v1",
-                        llmSuggestedAutoPost = false,
+                        parsePath = "local-parser",
                         sourceApp = NotificationSourceApp.BANK_SMS,
                     ),
                 )
@@ -247,7 +243,7 @@ class TransactionPipelineTest {
             notificationId = 100L,
             event = NotificationEvent(
                 packageName = "com.bank.app",
-                title = "LLM Guardrail Notice",
+                title = "Local Parser Notice",
                 text = "Transfer 55.00",
                 postedAt = 5L,
             ),
@@ -255,7 +251,7 @@ class TransactionPipelineTest {
 
         val data = (outcome as OperationResult.Success).data
         assertEquals(ProcessDestination.PENDING, data.destination)
-        assertEquals("置信度不足：Local heuristic guardrail review", data.message)
+        assertEquals("置信度不足：Local parser medium confidence review", data.message)
         assertEquals(1, pendingCount)
     }
 }
@@ -272,7 +268,6 @@ private fun buildSettingsRepository(settings: AppSettings): SettingsRepository {
         override suspend fun setOnboardingCompleted(completed: Boolean) = Unit
         override suspend fun setAutoAccountingEnabled(enabled: Boolean) = Unit
         override suspend fun setCloudAnalysisEnabled(enabled: Boolean) = Unit
-        override suspend fun setLocalLlmConfidenceBoostEnabled(enabled: Boolean) = Unit
         override suspend fun setCaptureEnabled(enabled: Boolean) = Unit
         override suspend fun setNotificationRetentionDays(days: Int) = Unit
         override suspend fun setScreenshotRetentionDays(days: Int) = Unit

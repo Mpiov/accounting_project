@@ -1,7 +1,10 @@
 # Gradle 相关缓存
 .gradle/
+.gradle-home/
+.kotlin/
 build/
 app/build/
+app/release/
 
 # 本地配置文件
 local.properties
@@ -14,7 +17,17 @@ local.properties
 # Mac 系统的垃圾文件
 .DS_Store
 
-.gradle-home/
+# 本地日志
+*.log
+build_log.txt
 
-# Native/CMake 生成产物
-core/llm/.cxx/
+# 本地脚本、下载与临时目录
+.pydeps/
+.vendor/
+pydeps/
+temp/
+models/
+third_party/
+
+# 已移除的本地推理实验目录
+core/llm/

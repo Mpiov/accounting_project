@@ -71,23 +71,6 @@ interface ImageImportAnalyzer {
 
 /**
  * 用途说明：
- * - 本地语义校验抽象。
- * - 当前实现仅保留启发式规则校验，不再接入端侧 LLM 推理。
- */
-interface LocalLlmAnalyzer {
-    /**
-     * 参数说明：
-     * - event：原始通知事件。
-     * - seedCandidate：规则层先给出的基础候选。
-     */
-    suspend fun analyze(
-        event: NotificationEvent,
-        seedCandidate: TransactionCandidate,
-    ): OperationResult<TransactionCandidate>
-}
-
-/**
- * 用途说明：
  * - 从原始通知文本中提取结构化交易候选。
  */
 interface TransactionExtractor {
@@ -248,12 +231,6 @@ interface SettingsRepository {
      * - enabled：云端分析开关目标状态。
      */
     suspend fun setCloudAnalysisEnabled(enabled: Boolean)
-
-    /**
-     * 参数说明：
-     * - enabled：本地启发式语义校验目标状态。
-     */
-    suspend fun setLocalLlmConfidenceBoostEnabled(enabled: Boolean)
 
     /**
      * 参数说明：

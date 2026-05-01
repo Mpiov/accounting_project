@@ -48,7 +48,7 @@ class PageCaptureBookkeepingService : Service() {
      * 服务级协程作用域。
      *
      * 用途说明：
-     * - 截图、OCR、模型分析和仓库写入都属于后台 I/O 工作，统一放到该作用域执行。
+     * - 截图、图片分析和仓库写入都属于后台 I/O 工作，统一放到该作用域执行。
      */
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 

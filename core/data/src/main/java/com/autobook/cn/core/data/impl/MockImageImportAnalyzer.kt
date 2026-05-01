@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.first
  * 用途说明：
  * - 图片导入分析器。
  * - 当前仅保留“云端分析 + 本地规则后处理”主路径。
- * - 当用户关闭云端分析时，直接返回手动确认草稿，不再执行本地 OCR 或端侧模型推理。
+ * - 当用户关闭云端分析时，直接返回手动确认草稿，不再执行本地识别。
  *
  * 参数说明：
  * - settingsRepository：读取云端分析开关。
@@ -48,7 +48,7 @@ class MockImageImportAnalyzer @Inject constructor(
                     direction = MoneyDirection.UNKNOWN,
                     merchant = "",
                     category = "待分类",
-                    note = "已关闭云端分析，本地不再执行 OCR 或模型识别，请手动确认。",
+                    note = "已关闭云端分析，本地不再执行图片识别，请手动确认。",
                     orderId = null,
                     confidence = ParseConfidence(0f),
                     tracePath = ImageImportAnalysisPath.MANUAL_CONFIRMATION_REQUIRED,

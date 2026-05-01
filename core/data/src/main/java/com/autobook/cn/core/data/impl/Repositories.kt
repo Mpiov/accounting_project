@@ -235,7 +235,6 @@ class SettingsRepositoryImpl @Inject constructor(
         val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
         val autoAccountingEnabled = booleanPreferencesKey("auto_accounting_enabled")
         val cloudAnalysisEnabled = booleanPreferencesKey("cloud_analysis_enabled")
-        val localLlmConfidenceBoostEnabled = booleanPreferencesKey("local_llm_confidence_boost_enabled")
         val captureEnabled = booleanPreferencesKey("capture_enabled")
         val notificationRetentionDays = intPreferencesKey("notification_retention_days")
         val screenshotRetentionDays = intPreferencesKey("screenshot_retention_days")
@@ -248,7 +247,6 @@ class SettingsRepositoryImpl @Inject constructor(
             onboardingCompleted = preferences[Keys.onboardingCompleted] ?: false,
             autoAccountingEnabled = preferences[Keys.autoAccountingEnabled] ?: true,
             cloudAnalysisEnabled = preferences[Keys.cloudAnalysisEnabled] ?: true,
-            localLlmConfidenceBoostEnabled = preferences[Keys.localLlmConfidenceBoostEnabled] ?: false,
             captureEnabled = preferences[Keys.captureEnabled] ?: false,
             notificationRetentionDays = preferences[Keys.notificationRetentionDays] ?: 30,
             screenshotRetentionDays = preferences[Keys.screenshotRetentionDays] ?: 7,
@@ -267,10 +265,6 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setCloudAnalysisEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { it[Keys.cloudAnalysisEnabled] = enabled }
-    }
-
-    override suspend fun setLocalLlmConfidenceBoostEnabled(enabled: Boolean) {
-        context.settingsDataStore.edit { it[Keys.localLlmConfidenceBoostEnabled] = enabled }
     }
 
     override suspend fun setCaptureEnabled(enabled: Boolean) {

@@ -14,23 +14,19 @@ import com.autobook.cn.core.model.OperationResult
  * - 本接口方法均无显式参数；调用方只关心当前运行时是否就绪以及具体执行结果。
  */
 interface AutomationRuntime {
-    /**
-     * 打开通知栏，给后续 OCR 截图补全通知文本创造稳定画面。
-     */
+    /** 打开通知栏，给用户主动截图入口创造稳定画面。 */
     fun openNotificationShade(): Boolean
 
     /**
      * 对当前屏幕执行一次截图。
      *
      * 返回值说明：
-     * - 成功时返回 Bitmap，交给上层保存和 OCR。
+     * - 成功时返回 Bitmap，交给上层保存并进入图片分析链路。
      * - 失败时返回可重试或不可重试的错误，便于上层决定是否继续回退。
      */
     suspend fun captureScreenshot(): OperationResult<Bitmap>
 
-    /**
-     * 收起通知栏或当前系统浮层，避免 OCR 回退完成后界面长期停留在系统面板。
-     */
+    /** 收起通知栏或当前系统浮层，避免截图完成后界面长期停留在系统面板。 */
     fun collapseSystemUi(): Boolean
 }
 
@@ -39,7 +35,7 @@ interface AutomationRuntime {
  *
  * 用途说明：
  * - 无障碍服务连接成功时把自己注册进来，销毁时注销。
- * - 数据层在执行截图回退时从这里读取当前活跃的运行时实例。
+ * - 数据层在执行主动截图时从这里读取当前活跃的运行时实例。
  */
 object AutomationRuntimeRegistry {
     @Volatile

@@ -2,7 +2,6 @@ package com.autobook.cn.core.data
 
 import android.content.Context
 import com.autobook.cn.core.data.impl.AccessibilityCaptureCoordinator
-import com.autobook.cn.core.data.impl.HeuristicLocalLlmAnalyzer
 import com.autobook.cn.core.data.impl.LedgerRepositoryImpl
 import com.autobook.cn.core.data.impl.MockImageImportAnalyzer
 import com.autobook.cn.core.data.impl.NotificationIngestorImpl
@@ -11,10 +10,8 @@ import com.autobook.cn.core.data.impl.PendingRepositoryImpl
 import com.autobook.cn.core.data.impl.SettingsRepositoryImpl
 import com.autobook.cn.core.data.parser.LocalTransactionExtractor
 import com.autobook.cn.core.data.pipeline.ModelRouterImpl
-import com.autobook.cn.core.network.CloudAnalysisApi
 import com.autobook.cn.core.network.CloudImageImportApi
 import com.autobook.cn.core.network.DirectCloudImageImportApi
-import com.autobook.cn.core.network.FakeCloudAnalysisApi
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -56,16 +53,6 @@ abstract class DataBindingsModule {
 
     @Binds
     abstract fun bindImageImportAnalyzer(impl: MockImageImportAnalyzer): ImageImportAnalyzer
-
-    /**
-     * 用途说明：
-     * - 本地语义增强现阶段只保留启发式算法校验，不再接入端侧模型适配层。
-     *
-     * 参数说明：
-     * - impl：启发式语义校验实现。
-     */
-    @Binds
-    abstract fun bindLocalLlmAnalyzer(impl: HeuristicLocalLlmAnalyzer): LocalLlmAnalyzer
 }
 
 /**
@@ -75,10 +62,6 @@ abstract class DataBindingsModule {
 @Module
 @InstallIn(SingletonComponent::class)
 object DataProvisionModule {
-    @Provides
-    @Singleton
-    fun provideCloudAnalysisApi(): CloudAnalysisApi = FakeCloudAnalysisApi()
-
     @Provides
     @Singleton
     fun provideCloudImageImportApi(
