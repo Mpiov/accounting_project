@@ -63,6 +63,8 @@ class TransactionPipelineTest {
         }
         val pendingRepository = object : PendingRepository {
             override fun observeEntries(): Flow<List<PendingEntry>> = emptyFlow()
+            // 流水线测试只验证分流结果，数量徽标流保持空即可。
+            override fun observeActiveCount(): Flow<Int> = emptyFlow()
             override suspend fun add(entry: PendingEntry): Long {
                 pendingCount += 1
                 return pendingCount.toLong()
@@ -156,6 +158,8 @@ class TransactionPipelineTest {
         }
         val pendingRepository = object : PendingRepository {
             override fun observeEntries(): Flow<List<PendingEntry>> = emptyFlow()
+            // 流水线测试只验证分流结果，数量徽标流保持空即可。
+            override fun observeActiveCount(): Flow<Int> = emptyFlow()
             override suspend fun add(entry: PendingEntry): Long = 0L
             override suspend fun update(entry: PendingEntry) = Unit
             override suspend fun getById(id: Long): PendingEntry? = null
@@ -236,6 +240,8 @@ class TransactionPipelineTest {
         }
         val pendingRepository = object : PendingRepository {
             override fun observeEntries(): Flow<List<PendingEntry>> = emptyFlow()
+            // 流水线测试只验证分流结果，数量徽标流保持空即可。
+            override fun observeActiveCount(): Flow<Int> = emptyFlow()
             override suspend fun add(entry: PendingEntry): Long {
                 pendingCount += 1
                 return pendingCount.toLong()

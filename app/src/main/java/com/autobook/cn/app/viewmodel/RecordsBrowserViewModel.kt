@@ -1,6 +1,5 @@
 package com.autobook.cn.app.viewmodel
 
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autobook.cn.core.common.CurrencyFormatter
@@ -19,18 +18,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /**
- * 详细记录页与搜索结果页共用的浏览状态。
+ * 详细记录页的浏览状态。
  *
  * 参数说明：
- * - title：页面标题。
- * - summary：顶部摘要。
- * - query：搜索关键词；为空代表展示全部记录。
  * - items：时间线记录列表。
  */
 data class RecordsBrowserUiState(
-    val title: String = "详细记录",
-    val summary: String = "按时间顺序查看全部账单",
-    val query: String = "",
     val items: List<RecordTimelineItemUiModel> = emptyList(),
 )
 
@@ -62,48 +55,30 @@ data class RecordTimelineItemUiModel(
  * 记录浏览 ViewModel。
  *
  * 用途说明：
- * - 承接“详细记录页”和“搜索结果页”的统一数据源。
- * - 搜索结果页通过路由参数传入 query，其余逻辑与完整时间线保持一致。
+ * - 承接“详细记录页”的时间线数据源。
+ * - 已删除无入口的搜索结果路由，因此这里只输出完整账单时间线。
+ *
+ * 参数说明：
+ * - ledgerRepository：账本仓储，用于观察全部账单记录。
  */
 @HiltViewModel
 class RecordsBrowserViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
     ledgerRepository: LedgerRepository,
 ) : ViewModel() {
-    private val query: String = savedStateHandle.get<String>("query").orEmpty().trim()
-
     /** 输出可直接渲染的时间线状态。 */
     val uiState: StateFlow<RecordsBrowserUiState> = ledgerRepository.observeEntries()
         .map { entries ->
-            val filteredEntries = entries
-                .filterByTimelineQuery(query)
-                .sortedByDescending { it.timestamp }
+            // 详细记录页没有二次筛选，只按时间倒序展示完整账单。
+            val timelineEntries = entries.sortedByDescending { it.timestamp }
             RecordsBrowserUiState(
-                title = if (query.isBlank()) "详细记录" else "搜索结果",
-                summary = if (query.isBlank()) {
-                    "按时间顺序查看全部账单"
-                } else {
-                    "“$query” 共匹配 ${filteredEntries.size} 条记录"
-                },
-                query = query,
-                items = filteredEntries.map { entry -> entry.toTimelineItem() },
+                items = timelineEntries.map { entry -> entry.toTimelineItem() },
             )
         }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = RecordsBrowserUiState(query = query),
+            initialValue = RecordsBrowserUiState(),
         )
-}
-
-/** 搜索结果页使用独立扩展名，避免与账本页的筛选扩展函数重名。 */
-private fun List<LedgerEntry>.filterByTimelineQuery(query: String): List<LedgerEntry> {
-    if (query.isBlank()) return this
-    return filter { entry ->
-        entry.merchant.contains(query, ignoreCase = true) ||
-            entry.category.contains(query, ignoreCase = true) ||
-            entry.note?.contains(query, ignoreCase = true) == true
-    }
 }
 
 /** 将领域记录映射成时间线展示模型。 */

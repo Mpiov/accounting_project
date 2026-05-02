@@ -50,6 +50,7 @@ import com.autobook.cn.app.viewmodel.ChartViewModel
 import com.autobook.cn.app.viewmodel.LedgerBoardMode
 import com.autobook.cn.app.viewmodel.LedgerBoardViewModel
 import com.autobook.cn.app.viewmodel.LedgerViewModel
+import com.autobook.cn.app.viewmodel.PendingBadgeViewModel
 import com.autobook.cn.app.viewmodel.PendingViewModel
 import com.autobook.cn.app.viewmodel.SettingsViewModel
 import com.autobook.cn.core.model.MoneyDirection
@@ -68,9 +69,9 @@ fun MainShell(
     rootNavController: NavHostController,
     modifier: Modifier = Modifier,
 ) {
-    // 订阅待确认状态，只用于底部导航数量提醒，不改变页面跳转策略。
-    val pendingViewModel: PendingViewModel = hiltViewModel()
-    val pendingState by pendingViewModel.uiState.collectAsStateWithLifecycle()
+    // 主壳层只订阅待确认数量，避免每个一级页面都常驻完整待确认列表和通知原文。
+    val pendingBadgeViewModel: PendingBadgeViewModel = hiltViewModel()
+    val pendingCount by pendingBadgeViewModel.pendingCount.collectAsStateWithLifecycle()
     val shellNavController = rememberNavController()
     val navBackStackEntry by shellNavController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
@@ -107,7 +108,7 @@ fun MainShell(
                             icon = {
                                 MainShellNavigationIcon(
                                     tab = tab,
-                                    pendingCount = pendingState.items.size,
+                                    pendingCount = pendingCount,
                                 )
                             },
                             label = { Text(tab.label) },
@@ -223,7 +224,6 @@ fun MainShell(
                     onNotificationRetentionChanged = viewModel::setNotificationRetentionDays,
                     onScreenshotRetentionChanged = viewModel::setScreenshotRetentionDays,
                     onSourceEnabledChanged = viewModel::setSourceEnabled,
-                    onSaveCurrentMonthBudget = viewModel::saveCurrentMonthBudget,
                 )
             }
         }

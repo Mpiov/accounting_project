@@ -44,22 +44,6 @@ sealed class AutobookDestination(val route: String) {
         fun createRoute(yearMonth: YearMonth): String = "$BASE_ROUTE?yearMonth=$yearMonth"
     }
 
-    data object SearchResults : AutobookDestination("records/search?query={query}") {
-        const val BASE_ROUTE: String = "records/search"
-
-        /**
-         * 用途说明：
-         * - 生成搜索结果页路由。
-         *
-         * 参数说明：
-         * - query：用户确认搜索后的关键词。
-         */
-        fun createRoute(query: String): String {
-            val encodedQuery = android.net.Uri.encode(query)
-            return "$BASE_ROUTE?query=$encodedQuery"
-        }
-    }
-
     /**
      * 用途说明：
      * - 新建记账页支持携带默认收支方向与模板参数。

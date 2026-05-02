@@ -176,13 +176,6 @@ private fun buildLedgerMonthDetailUiState(
         } else {
             snapshot.displayedMonth.format(detailMonthTitleFormatter)
         },
-        periodSubtitle = buildDetailSubtitle(
-            month = snapshot.displayedMonth,
-            date = snapshot.selectedDate,
-            range = snapshot.selectedRange,
-            query = snapshot.query,
-            entryCount = filteredEntries.size,
-        ),
         searchQuery = snapshot.query,
         selectedRange = snapshot.selectedRange,
         rangeSummary = if (snapshot.selectedRange == LedgerRangeFilter.CALENDAR) {
@@ -191,11 +184,6 @@ private fun buildLedgerMonthDetailUiState(
             "点击日历中的日期，可切到当天流水"
         },
         calendarMonthLabel = snapshot.displayedMonth.format(detailCalendarFormatter),
-        selectedDateSummary = if (snapshot.selectedRange == LedgerRangeFilter.CALENDAR) {
-            "${snapshot.selectedDate.format(detailDateFormatter)} · 当天 ${filteredEntries.size} 笔"
-        } else {
-            "${snapshot.displayedMonth.format(detailMonthSummaryFormatter)} · 共 ${filteredEntries.size} 笔"
-        },
         calendarDays = buildLedgerCalendarDays(
             entries = monthEntries,
             displayedMonth = snapshot.displayedMonth,
@@ -228,34 +216,6 @@ private fun buildInitialSelectedDate(
 
 /**
  * 用途说明：
- * - 构建月份详情页顶部副标题。
- *
- * 参数说明：
- * - month：当前展示月份。
- * - date：当前选中日期。
- * - range：当前范围模式。
- * - query：当前搜索词。
- * - entryCount：当前匹配记录数。
- */
-private fun buildDetailSubtitle(
-    month: YearMonth,
-    date: LocalDate,
-    range: LedgerRangeFilter,
-    query: String,
-    entryCount: Int,
-): String {
-    if (query.isNotBlank()) {
-        return "在${month.format(detailMonthSummaryFormatter)}中搜索“$query”，共找到 $entryCount 笔"
-    }
-    return if (range == LedgerRangeFilter.CALENDAR) {
-        "${date.format(detailDateFormatter)} 的流水明细，再次点按当天可返回整月"
-    } else {
-        "按日历回看 ${month.format(detailMonthSummaryFormatter)} 的整月流水"
-    }
-}
-
-/**
- * 用途说明：
  * - 过滤指定月份账单。
  *
  * 参数说明：
@@ -276,8 +236,6 @@ private fun LedgerEntry.toLedgerItemUiModel(): LedgerItemUiModel {
         amount = buildSignedAmountLabel(),
         subtitle = "${channel} · ${TimeFormatter.format(timestamp)}",
         category = category,
-        note = note,
-        isManual = editedManually || traceSource == "manual",
         direction = direction,
     )
 }

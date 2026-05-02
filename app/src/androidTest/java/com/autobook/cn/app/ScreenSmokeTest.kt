@@ -10,6 +10,7 @@ import com.autobook.cn.app.ui.OverviewScreen
 import com.autobook.cn.app.ui.PendingWorkspaceScreen
 import com.autobook.cn.app.ui.SettingsWorkspaceScreen
 import com.autobook.cn.app.viewmodel.EntryEditorUiState
+import com.autobook.cn.app.viewmodel.OverviewUiState
 import com.autobook.cn.app.viewmodel.SettingsUiState
 import com.autobook.cn.feature.ledger.model.LedgerCalendarDayUiModel
 import com.autobook.cn.feature.ledger.model.LedgerRangeFilter
@@ -47,7 +48,7 @@ class ScreenSmokeTest {
     fun overviewScreenRenders() {
         composeRule.setContent {
             OverviewScreen(
-                state = LedgerUiState(pendingCount = 3),
+                state = OverviewUiState(pendingCount = 3),
                 onRangeChange = {},
                 onOpenPending = {},
                 onOpenAllRecords = {},
@@ -68,7 +69,6 @@ class ScreenSmokeTest {
                 state = LedgerUiState(
                     selectedRange = LedgerRangeFilter.CALENDAR,
                     calendarMonthLabel = "2026年4月",
-                    selectedDateSummary = "4月13日 星期一 · 0 条记录",
                     calendarDays = List(42) { index ->
                         LedgerCalendarDayUiModel(
                             date = LocalDate.of(2026, 4, 1).plusDays(index.toLong()),
@@ -130,12 +130,11 @@ class ScreenSmokeTest {
                 onNotificationRetentionChanged = {},
                 onScreenshotRetentionChanged = {},
                 onSourceEnabledChanged = { _, _ -> },
-                onSaveCurrentMonthBudget = {},
             )
         }
 
         composeRule.onNodeWithText("记账能力").assertIsDisplayed()
-        composeRule.onNodeWithText("账本导出").assertIsDisplayed()
+        composeRule.onNodeWithText("会员与云端学习").assertIsDisplayed()
     }
 
     @Test

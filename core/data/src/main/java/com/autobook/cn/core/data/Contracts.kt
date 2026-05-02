@@ -182,6 +182,13 @@ interface PendingRepository {
     fun observeEntries(): Flow<List<PendingEntry>>
 
     /**
+     * 用途说明：
+     * - 观察当前仍需用户处理的待确认数量。
+     * - 底部导航徽标只需要数量，使用该轻量流可以避免加载完整待确认列表。
+     */
+    fun observeActiveCount(): Flow<Int>
+
+    /**
      * 参数说明：
      * - entry：待新增的待确认记录。
      */

@@ -5,9 +5,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -114,42 +111,10 @@ fun AutobookApp() {
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
 
                 RecordsTimelineScreen(
-                    title = state.title,
-                    summary = state.summary,
                     items = state.items,
                     onSelectEntry = { ledgerId ->
                         navController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
                     },
-                    onBack = { navController.popBackStack() },
-                )
-            }
-            composable(
-                route = AutobookDestination.SearchResults.route,
-                arguments = listOf(
-                    navArgument("query") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                    },
-                ),
-            ) {
-                val viewModel: RecordsBrowserViewModel = hiltViewModel()
-                val state by viewModel.uiState.collectAsStateWithLifecycle()
-                var selectedEntryId by remember(state.items) {
-                    mutableLongStateOf(state.items.firstOrNull()?.id ?: 0L)
-                }
-
-                LaunchedEffect(state.items) {
-                    if (selectedEntryId == 0L) {
-                        selectedEntryId = state.items.firstOrNull()?.id ?: 0L
-                    }
-                }
-
-                RecordsTimelineScreen(
-                    title = state.title,
-                    summary = state.summary,
-                    items = state.items,
-                    selectedEntryId = selectedEntryId.takeIf { it != 0L },
-                    onSelectEntry = { ledgerId -> selectedEntryId = ledgerId },
                     onBack = { navController.popBackStack() },
                 )
             }

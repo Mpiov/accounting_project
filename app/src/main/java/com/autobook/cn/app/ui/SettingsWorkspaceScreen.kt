@@ -29,9 +29,11 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,6 +54,9 @@ import com.autobook.cn.app.viewmodel.SettingsNotificationSource
 import com.autobook.cn.app.viewmodel.SettingsUiState
 import com.autobook.cn.core.common.PermissionStatusChecker
 import com.autobook.cn.core.common.SettingsIntents
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 主壳层下的设置页。
@@ -78,7 +83,6 @@ import com.autobook.cn.core.common.SettingsIntents
  * - onNotificationRetentionChanged：通知保留天数回调。
  * - onScreenshotRetentionChanged：截图保留天数回调。
  * - onSourceEnabledChanged：设置页来源桶启停回调。
- * - onSaveCurrentMonthBudget：保留当前签名，后续可继续承接预算保存。
  * - modifier：外层修饰符。
  */
 @Composable
@@ -100,25 +104,15 @@ fun SettingsWorkspaceScreen(
     onNotificationRetentionChanged: (Int) -> Unit,
     onScreenshotRetentionChanged: (Int) -> Unit,
     onSourceEnabledChanged: (SettingsNotificationSource, Boolean) -> Unit,
-    onSaveCurrentMonthBudget: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var hasNotificationAccess by remember(context) {
-        mutableStateOf(PermissionStatusChecker.hasNotificationAccess(context))
-    }
-    var hasAppNotificationsEnabled by remember(context) {
-        mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled())
-    }
-    var hasAccessibilityAccess by remember(context) {
-        mutableStateOf(
-            PermissionStatusChecker.hasAccessibilityAccess(
-                context = context,
-                serviceClassName = ACCESSIBILITY_SERVICE_CLASS_NAME,
-            ),
-        )
-    }
+    val permissionRefreshScope = rememberCoroutineScope()
+    var permissionSnapshot by remember(context) { mutableStateOf(SettingsPermissionSnapshot()) }
+    val hasNotificationAccess = permissionSnapshot.hasNotificationAccess
+    val hasAppNotificationsEnabled = permissionSnapshot.hasAppNotificationsEnabled
+    val hasAccessibilityAccess = permissionSnapshot.hasAccessibilityAccess
     /**
      * 应用通知设置页打开中的本地保护状态。
      *
@@ -170,16 +164,17 @@ fun SettingsWorkspaceScreen(
         }
     }
 
+    LaunchedEffect(context) {
+        permissionSnapshot = readSettingsPermissionSnapshot(context)
+    }
+
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                // 从系统设置页返回后刷新权限状态，并释放应用通知入口的防抖标记。
-                hasNotificationAccess = PermissionStatusChecker.hasNotificationAccess(context)
-                hasAppNotificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
-                hasAccessibilityAccess = PermissionStatusChecker.hasAccessibilityAccess(
-                    context = context,
-                    serviceClassName = ACCESSIBILITY_SERVICE_CLASS_NAME,
-                )
+                // 从系统设置页返回后异步刷新权限状态，避免系统设置读取阻塞设置页恢复动画。
+                permissionRefreshScope.launch {
+                    permissionSnapshot = readSettingsPermissionSnapshot(context)
+                }
                 appNotificationSettingsLaunching = false
             }
         }
@@ -900,6 +895,46 @@ private fun shouldRequestNotificationPermission(context: Context): Boolean {
         context,
         Manifest.permission.POST_NOTIFICATIONS,
     ) != PackageManager.PERMISSION_GRANTED
+}
+
+/**
+ * 设置页权限快照。
+ *
+ * 用途说明：
+ * - 把三个系统权限状态聚合成一个不可变对象，便于异步刷新后一次性更新界面。
+ *
+ * 参数说明：
+ * - hasNotificationAccess：通知监听服务权限是否已开启。
+ * - hasAppNotificationsEnabled：应用通知总开关是否已开启。
+ * - hasAccessibilityAccess：无障碍自动化服务权限是否已开启。
+ */
+private data class SettingsPermissionSnapshot(
+    val hasNotificationAccess: Boolean = false,
+    val hasAppNotificationsEnabled: Boolean = false,
+    val hasAccessibilityAccess: Boolean = false,
+)
+
+/**
+ * 异步读取设置页需要展示的系统权限状态。
+ *
+ * 用途说明：
+ * - `Settings.Secure` 和通知管理器读取会访问系统服务，不再放在 Compose 首次组合阶段同步执行。
+ * - 进入设置页时先渲染页面骨架，再把权限状态刷新回来，降低低端机或系统服务繁忙时的卡顿感。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于访问系统设置和通知管理器。
+ */
+private suspend fun readSettingsPermissionSnapshot(context: Context): SettingsPermissionSnapshot {
+    return withContext(Dispatchers.IO) {
+        SettingsPermissionSnapshot(
+            hasNotificationAccess = PermissionStatusChecker.hasNotificationAccess(context),
+            hasAppNotificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled(),
+            hasAccessibilityAccess = PermissionStatusChecker.hasAccessibilityAccess(
+                context = context,
+                serviceClassName = ACCESSIBILITY_SERVICE_CLASS_NAME,
+            ),
+        )
+    }
 }
 
 /**

@@ -38,10 +38,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.autobook.cn.app.viewmodel.OverviewUiState
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.feature.ledger.model.LedgerItemUiModel
 import com.autobook.cn.feature.ledger.model.LedgerRangeFilter
-import com.autobook.cn.feature.ledger.model.LedgerUiState
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -62,7 +62,7 @@ import java.util.Locale
  */
 @Composable
 fun OverviewScreen(
-    state: LedgerUiState,
+    state: OverviewUiState,
     onRangeChange: (LedgerRangeFilter) -> Unit,
     onOpenPending: () -> Unit,
     onOpenAllRecords: () -> Unit,
@@ -109,14 +109,14 @@ fun OverviewScreen(
                 onActionClick = onOpenAllRecords,
             )
         }
-        if (state.entries.isEmpty()) {
+        if (state.recentEntries.isEmpty()) {
             item(key = "empty") {
                 EmptyOverviewCard(onCreateEntry = onCreateEntry)
             }
         } else {
             item(key = "recent_timeline") {
                 RecentRecordsTimeline(
-                    entries = state.entries.take(4),
+                    entries = state.recentEntries.take(4),
                     onOpenEntry = onOpenEntry,
                 )
             }
@@ -203,7 +203,7 @@ private fun PendingReminderCard(
  */
 @Composable
 private fun OverviewHeroCard(
-    state: LedgerUiState,
+    state: OverviewUiState,
     modifier: Modifier = Modifier,
 ) {
     val backgroundBrush = Brush.linearGradient(
@@ -309,7 +309,7 @@ private fun OverviewRangeSwitcher(
  */
 @Composable
 private fun BudgetOverviewCard(
-    state: LedgerUiState,
+    state: OverviewUiState,
     onOpenSettings: () -> Unit,
 ) {
     val monthLabel = YearMonth.now().format(DateTimeFormatter.ofPattern("MM月", Locale.CHINA))
@@ -774,5 +774,4 @@ private fun LedgerRangeFilter.overviewLabel(): String = when (this) {
     LedgerRangeFilter.WEEK -> "本周"
     LedgerRangeFilter.TODAY -> "本日"
     LedgerRangeFilter.CALENDAR -> "日历"
-    LedgerRangeFilter.ALL -> "全部"
 }

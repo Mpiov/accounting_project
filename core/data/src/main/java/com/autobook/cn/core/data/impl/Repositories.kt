@@ -224,6 +224,8 @@ class PendingRepositoryImpl @Inject constructor(
         entries.map { it.toDomain() }
     }
 
+    override fun observeActiveCount(): Flow<Int> = pendingEntryDao.observeActiveCount()
+
     override suspend fun add(entry: PendingEntry): Long = pendingEntryDao.insert(entry.toEntity())
 
     override suspend fun update(entry: PendingEntry) {

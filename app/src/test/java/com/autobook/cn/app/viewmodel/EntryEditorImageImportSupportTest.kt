@@ -233,6 +233,8 @@ private class RecordingLedgerRepository : LedgerRepository {
 private fun fakePendingRepository(): PendingRepository {
     return object : PendingRepository {
         override fun observeEntries(): Flow<List<PendingEntry>> = emptyFlow()
+        // 测试替身不需要驱动底部徽标，返回空流即可避免额外状态干扰。
+        override fun observeActiveCount(): Flow<Int> = emptyFlow()
         override suspend fun add(entry: PendingEntry): Long = 1L
         override suspend fun update(entry: PendingEntry) = Unit
         override suspend fun getById(id: Long): PendingEntry? = null

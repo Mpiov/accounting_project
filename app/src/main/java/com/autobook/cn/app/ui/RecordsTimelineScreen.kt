@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material3.Card
@@ -29,8 +28,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -42,13 +39,10 @@ import com.autobook.cn.app.viewmodel.RecordTimelineItemUiModel
 
 /**
  * 用途说明：
- * - 详细记录页与搜索结果页共用时间线浏览界面，负责展示按时间排序的记录列表。
+ * - 详细记录页负责展示按时间排序的完整记录列表。
  *
  * 参数说明：
- * - title：顶部标题。
- * - summary：顶部摘要说明。
  * - items：时间线记录列表。
- * - selectedEntryId：当前高亮的记录 id；为空时不展示定位卡片。
  * - onSelectEntry：点击某条记录后的回调。
  * - onBack：返回上一级页面的回调。
  * - modifier：外层修饰符，方便导航壳层注入布局。
@@ -56,28 +50,16 @@ import com.autobook.cn.app.viewmodel.RecordTimelineItemUiModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordsTimelineScreen(
-    title: String,
-    summary: String,
     items: List<RecordTimelineItemUiModel>,
-    selectedEntryId: Long? = null,
     onSelectEntry: (Long) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val listState = rememberLazyListState()
-    val selectedIndex = remember(selectedEntryId, items) {
-        items.indexOfFirst { it.id == selectedEntryId }.takeIf { it >= 0 }
-    }
-
-    LaunchedEffect(selectedIndex) {
-        selectedIndex?.let { listState.animateScrollToItem(it) }
-    }
-
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                title = { Text("详细记录") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -92,7 +74,6 @@ fun RecordsTimelineScreen(
         containerColor = Color.Transparent,
     ) { innerPadding ->
         LazyColumn(
-            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = 20.dp,
@@ -103,14 +84,7 @@ fun RecordsTimelineScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             item(key = "summary") {
-                RecordsSummaryCard(summary = summary)
-            }
-            selectedEntryId?.let { selectedId ->
-                items.firstOrNull { it.id == selectedId }?.let { selected ->
-                    item(key = "selected") {
-                        SelectedEntryCard(entry = selected)
-                    }
-                }
+                RecordsSummaryCard(totalCount = items.size)
             }
             itemsIndexed(items = items, key = { _, item -> item.id }) { index, item ->
                 val showDate = index == 0 || items[index - 1].dateLabel != item.dateLabel
@@ -122,7 +96,6 @@ fun RecordsTimelineScreen(
                     showDate = showDate,
                     showTopConnector = showTopConnector,
                     showBottomConnector = showBottomConnector,
-                    selected = item.id == selectedEntryId,
                     onClick = { onSelectEntry(item.id) },
                 )
             }
@@ -132,14 +105,14 @@ fun RecordsTimelineScreen(
 
 /**
  * 用途说明：
- * - 顶部摘要卡用于说明当前列表范围或搜索结果概况。
+ * - 顶部摘要卡根据列表数量即时生成说明，避免把固定文案放进 ViewModel 状态里。
  *
  * 参数说明：
- * - summary：摘要文本。
+ * - totalCount：当前完整记录列表的数量。
  */
 @Composable
 private fun RecordsSummaryCard(
-    summary: String,
+    totalCount: Int,
 ) {
     Card(
         shape = AutobookUiTokens.panelShape,
@@ -147,55 +120,15 @@ private fun RecordsSummaryCard(
         colors = autobookCardColors(),
     ) {
         Text(
-            text = summary,
+            text = if (totalCount == 0) {
+                "当前还没有账单记录"
+            } else {
+                "共 $totalCount 笔账单，按时间倒序展示"
+            },
             modifier = Modifier.padding(16.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-/**
- * 用途说明：
- * - 当外部指定了当前焦点记录时，顶部固定展示一张定位卡，方便用户快速确认当前上下文。
- *
- * 参数说明：
- * - entry：当前高亮的记录。
- */
-@Composable
-private fun SelectedEntryCard(
-    entry: RecordTimelineItemUiModel,
-) {
-    Card(
-        shape = AutobookUiTokens.panelShape,
-        border = autobookCardBorder(emphasized = true),
-        colors = autobookCardColors(highlighted = true),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = "当前定位",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = entry.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = "${entry.category} · ${entry.timeLabel}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = entry.amountLabel,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-        }
     }
 }
 
@@ -208,7 +141,6 @@ private fun SelectedEntryCard(
  * - showDate：是否在该条记录上方展示日期标题。
  * - showTopConnector：是否绘制圆点上方连线。
  * - showBottomConnector：是否绘制圆点下方连线。
- * - selected：当前记录是否处于选中状态。
  * - onClick：点击记录后的回调。
  */
 @Composable
@@ -217,20 +149,11 @@ private fun TimelineEntryCard(
     showDate: Boolean,
     showTopConnector: Boolean,
     showBottomConnector: Boolean,
-    selected: Boolean,
     onClick: () -> Unit,
 ) {
     val connectorColor = autobookTimelineConnectorColor()
-    val dotOuterColor = if (selected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.primaryContainer
-    }
-    val dotInnerColor = if (selected) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        MaterialTheme.colorScheme.primary
-    }
+    val dotOuterColor = MaterialTheme.colorScheme.primaryContainer
+    val dotInnerColor = MaterialTheme.colorScheme.primary
 
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
         if (showDate) {
@@ -280,15 +203,15 @@ private fun TimelineEntryCard(
                         )
                     }
 
-                    // 选中态通过放大外圈和提高颜色对比度来强化定位，不再依赖灰色底区分。
+                    // 外圈和内芯拆开绘制，保证时间线节点在不同背景上都清楚。
                     drawCircle(
                         color = dotOuterColor,
-                        radius = if (selected) 8.5.dp.toPx() else 8.dp.toPx(),
+                        radius = 8.dp.toPx(),
                         center = Offset(centerX, centerY),
                     )
                     drawCircle(
                         color = dotInnerColor,
-                        radius = if (selected) 3.8.dp.toPx() else 3.4.dp.toPx(),
+                        radius = 3.4.dp.toPx(),
                         center = Offset(centerX, centerY),
                     )
                 }
@@ -298,8 +221,8 @@ private fun TimelineEntryCard(
                     .weight(1f)
                     .padding(vertical = 4.dp),
                 shape = AutobookUiTokens.compactPanelShape,
-                border = autobookCardBorder(emphasized = selected),
-                colors = autobookCardColors(highlighted = selected),
+                border = autobookCardBorder(),
+                colors = autobookCardColors(),
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),

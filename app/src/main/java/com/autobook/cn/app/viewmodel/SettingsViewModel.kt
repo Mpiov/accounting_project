@@ -6,12 +6,9 @@ import com.autobook.cn.core.common.CurrencyFormatter
 import com.autobook.cn.core.common.TimeFormatter
 import com.autobook.cn.core.data.AuthRepository
 import com.autobook.cn.core.data.CloudLearningRepository
-import com.autobook.cn.core.data.LedgerRepository
 import com.autobook.cn.core.data.MembershipRepository
-import com.autobook.cn.core.data.PendingRepository
 import com.autobook.cn.core.data.PaymentRepository
 import com.autobook.cn.core.data.SettingsRepository
-import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.AuthState
 import com.autobook.cn.core.model.CloudLearningState
 import com.autobook.cn.core.model.LedgerEntry
@@ -19,7 +16,6 @@ import com.autobook.cn.core.model.MembershipPlan
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.NotificationSourceApp
 import com.autobook.cn.core.model.OperationResult
-import com.autobook.cn.core.model.PendingEntry
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import java.time.LocalDate
@@ -29,18 +25,13 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.inject.Inject
 import kotlin.math.roundToInt
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * 用途说明：
@@ -62,32 +53,15 @@ data class SettingsUiState(
     val notificationRetentionDays: Int = 30,
     val screenshotRetentionDays: Int = 7,
     val enabledSources: Set<SettingsNotificationSource> = emptySet(),
-    val totalEntries: Int = 0,
-    val manualEntries: Int = 0,
-    val autoEntries: Int = 0,
-    val pendingEntries: Int = 0,
-    val currentMonthLabel: String = "本月",
-    val currentMonthBudgetInput: String = "",
-    val currentMonthBudgetLabel: String = "未设置",
-    val currentMonthBudgetUsageSummary: String = "保存预算后，这里会自动展示本月剩余额度。",
-    val currentMonthBudgetRemainingLabel: String = "去设置预算",
-    val currentMonthBudgetUsageRatio: Float = 0f,
-    val currentMonthBudgetExceeded: Boolean = false,
-    val currentMonthIncome: String = "¥0.00",
-    val currentMonthExpense: String = "¥0.00",
-    val latestEntrySummary: String = "暂无记账记录",
-    val exportPreview: String = "",
-    val exportPreviewSummary: String = "",
 )
 
 /**
  * 用途说明：
- * - 设置页 ViewModel，负责设置读写与账本概览。
+ * - 设置页 ViewModel，负责设置读写、账号登录、会员状态和云端学习开关。
+ * - 不在设置页订阅账本明细，避免设置页首帧被全量统计拖慢。
  *
  * 参数说明：
  * - settingsRepository：设置仓储。
- * - ledgerRepository：账本仓储。
- * - pendingRepository：待确认仓储。
  * - authRepository：手机号登录/注册仓储。
  * - membershipRepository：会员状态仓储。
  * - paymentRepository：会员支付仓储。
@@ -96,14 +70,11 @@ data class SettingsUiState(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
-    private val ledgerRepository: LedgerRepository,
-    private val pendingRepository: PendingRepository,
     private val authRepository: AuthRepository,
     private val membershipRepository: MembershipRepository,
     private val paymentRepository: PaymentRepository,
     private val cloudLearningRepository: CloudLearningRepository,
 ) : ViewModel() {
-    private val exportPreview = MutableStateFlow("")
     private val membershipActionMessage = MutableStateFlow("")
     private val authPhoneInput = MutableStateFlow("")
     private val authCodeInput = MutableStateFlow("")
@@ -127,50 +98,17 @@ class SettingsViewModel @Inject constructor(
             form = form,
         )
     }
-    private val monthlyBudgets: Flow<Map<String, Double>> = settingsRepository.settings
-        .map { settings: AppSettings -> settings.monthlyBudgets }
-        .distinctUntilChanged()
 
     /**
      * 用途说明：
-     * - 集中计算设置页依赖的账本统计与预算概览。
-     */
-    private val derivedData: Flow<SettingsDerivedData> = combine(
-        ledgerRepository.observeEntries(),
-        pendingRepository.observeEntries(),
-        monthlyBudgets,
-    ) { entries: List<LedgerEntry>, pendingEntries: List<PendingEntry>, monthlyBudgetsValue: Map<String, Double> ->
-        SettingsDerivedInput(
-            entries = entries,
-            pendingCount = pendingEntries.size,
-            monthlyBudgets = monthlyBudgetsValue,
-        )
-    }.mapLatest { input: SettingsDerivedInput ->
-        // 把全量统计放到后台线程，避免设置页被大账本数据拖慢。
-        withContext(Dispatchers.Default) {
-            SettingsDerivedData(
-                overview = buildSettingsOverview(
-                    entries = input.entries,
-                    pendingCount = input.pendingCount,
-                    monthlyBudgets = input.monthlyBudgets,
-                ),
-                exportPreviewSummary = buildExportPreviewSummary(input.entries),
-            )
-        }
-    }
-
-    /**
-     * 用途说明：
-     * - 聚合设置快照、账本概览和导出预览。
+     * - 聚合设置页真实展示的轻量状态。
+     * - 设置页不再订阅全量账本和待确认列表，避免进入页面时触发大量数据扫描。
      */
     val uiState: StateFlow<SettingsUiState> = combine(
         settingsRepository.settings,
         accountState,
-        derivedData,
-        exportPreview,
         membershipActionMessage,
-    ) { settings: AppSettings, account: SettingsAccountState, derived: SettingsDerivedData, preview: String, actionMessage: String ->
-        val overview = derived.overview
+    ) { settings, account, actionMessage ->
         val cloudLearning = account.cloudLearning
         val authState = account.authState
         SettingsUiState(
@@ -195,22 +133,6 @@ class SettingsViewModel @Inject constructor(
             notificationRetentionDays = settings.notificationRetentionDays,
             screenshotRetentionDays = settings.screenshotRetentionDays,
             enabledSources = settings.enabledSources.toSettingsNotificationSources(),
-            totalEntries = overview.totalEntries,
-            manualEntries = overview.manualEntries,
-            autoEntries = overview.autoEntries,
-            pendingEntries = overview.pendingEntries,
-            currentMonthLabel = overview.currentMonthLabel,
-            currentMonthBudgetInput = overview.currentMonthBudgetInput,
-            currentMonthBudgetLabel = overview.currentMonthBudgetLabel,
-            currentMonthBudgetUsageSummary = overview.currentMonthBudgetUsageSummary,
-            currentMonthBudgetRemainingLabel = overview.currentMonthBudgetRemainingLabel,
-            currentMonthBudgetUsageRatio = overview.currentMonthBudgetUsageRatio,
-            currentMonthBudgetExceeded = overview.currentMonthBudgetExceeded,
-            currentMonthIncome = overview.currentMonthIncome,
-            currentMonthExpense = overview.currentMonthExpense,
-            latestEntrySummary = overview.latestEntrySummary,
-            exportPreview = preview,
-            exportPreviewSummary = if (preview.isBlank()) "" else derived.exportPreviewSummary,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -356,26 +278,6 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * 用途说明：
-     * - 保存当前月份预算。
-     *
-     * 参数说明：
-     * - amountInput：输入框中的预算文本；留空表示清除预算。
-     */
-    fun saveCurrentMonthBudget(amountInput: String) {
-        viewModelScope.launch {
-            val normalizedInput = amountInput.trim()
-            val currentMonthKey = YearMonth.now().toString()
-            if (normalizedInput.isBlank()) {
-                settingsRepository.clearMonthlyBudget(currentMonthKey)
-                return@launch
-            }
-            val amount = normalizedInput.toDoubleOrNull() ?: return@launch
-            settingsRepository.setMonthlyBudget(currentMonthKey, amount)
-        }
-    }
-
-    /**
-     * 用途说明：
      * - 设置来源开关。
      *
      * 参数说明：
@@ -391,16 +293,6 @@ class SettingsViewModel @Inject constructor(
                 sources = source.toNotificationSourceApps(),
                 enabled = enabled,
             )
-        }
-    }
-
-    /**
-     * 用途说明：
-     * - 按需生成 CSV 预览，避免每次进入设置页都拼装导出文本。
-     */
-    fun loadExportPreview() {
-        viewModelScope.launch {
-            exportPreview.value = ledgerRepository.exportCsv()
         }
     }
 
@@ -439,25 +331,6 @@ private data class SettingsAccountState(
     val cloudLearning: CloudLearningState,
     val authState: AuthState,
     val form: SettingsAuthForm,
-)
-
-/**
- * 用途说明：
- * - 设置页统计所需输入快照。
- */
-private data class SettingsDerivedInput(
-    val entries: List<LedgerEntry>,
-    val pendingCount: Int,
-    val monthlyBudgets: Map<String, Double>,
-)
-
-/**
- * 用途说明：
- * - 设置页聚合统计结果。
- */
-private data class SettingsDerivedData(
-    val overview: SettingsLedgerOverview,
-    val exportPreviewSummary: String,
 )
 
 internal data class SettingsLedgerOverview(
@@ -542,23 +415,6 @@ internal fun buildSettingsOverview(
 
 /**
  * 用途说明：
- * - 构建导出预览摘要。
- *
- * 参数说明：
- * - entries：账本记录列表。
- */
-internal fun buildExportPreviewSummary(entries: List<LedgerEntry>): String {
-    if (entries.isEmpty()) {
-        return "当前账本为空，导出的 CSV 将只包含表头。"
-    }
-    val earliest = entries.minByOrNull { it.timestamp } ?: return ""
-    val latest = entries.maxByOrNull { it.timestamp } ?: return ""
-    val manualEntries = entries.count { it.editedManually || it.traceSource == "manual" }
-    return "共 ${entries.size} 条记录，覆盖 ${earliest.timestamp.toLocalDate().format(EXPORT_DATE_FORMATTER)} 至 ${latest.timestamp.toLocalDate().format(EXPORT_DATE_FORMATTER)}，其中手动补记 $manualEntries 条。"
-}
-
-/**
- * 用途说明：
  * - 把时间戳转换为本地日期。
  *
  * 参数说明：
@@ -611,4 +467,3 @@ private fun AuthState.toSummary(): String {
 }
 
 private val MONTH_LABEL_FORMATTER = DateTimeFormatter.ofPattern("yyyy 年 M 月", Locale.CHINA)
-private val EXPORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.CHINA)

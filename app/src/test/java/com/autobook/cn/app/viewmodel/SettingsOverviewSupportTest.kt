@@ -50,32 +50,6 @@ class SettingsOverviewSupportTest {
         assertEquals("¥15.00", overview.currentMonthExpense)
     }
 
-    @Test
-    fun buildExportPreviewSummaryIncludesRangeAndManualCount() {
-        val summary = buildExportPreviewSummary(
-            entries = listOf(
-                testEntry(
-                    id = 1L,
-                    date = LocalDate.of(2026, 4, 1),
-                    amount = 12.0,
-                    traceSource = "manual",
-                    editedManually = true,
-                ),
-                testEntry(
-                    id = 2L,
-                    date = LocalDate.of(2026, 4, 13),
-                    amount = 48.0,
-                    traceSource = "notification",
-                ),
-            ),
-        )
-
-        assertEquals(
-            "共 2 条记录，覆盖 2026.04.01 至 2026.04.13，其中手动补记 1 条。",
-            summary,
-        )
-    }
-
     private fun testEntry(
         id: Long,
         date: LocalDate,
