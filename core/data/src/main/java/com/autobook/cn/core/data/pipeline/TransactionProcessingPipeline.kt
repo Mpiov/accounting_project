@@ -2,6 +2,7 @@ package com.autobook.cn.core.data.pipeline
 
 import com.autobook.cn.core.data.LedgerRepository
 import com.autobook.cn.core.data.ModelRouter
+import com.autobook.cn.core.data.ModelTrainingSampleRepository
 import com.autobook.cn.core.data.PendingRepository
 import com.autobook.cn.core.data.SettingsRepository
 import com.autobook.cn.core.data.mapper.toLedgerEntry
@@ -13,6 +14,7 @@ import com.autobook.cn.core.model.NotificationProcessOutcome
 import com.autobook.cn.core.model.NotificationProcessStatus
 import com.autobook.cn.core.model.OperationResult
 import com.autobook.cn.core.model.ProcessDestination
+import com.autobook.cn.core.model.TransactionCandidate
 import javax.inject.Inject
 import kotlinx.coroutines.flow.first
 
@@ -22,6 +24,7 @@ class TransactionProcessingPipeline @Inject constructor(
     private val ledgerRepository: LedgerRepository,
     private val pendingRepository: PendingRepository,
     private val settingsRepository: SettingsRepository,
+    private val modelTrainingSampleRepository: ModelTrainingSampleRepository,
 ) {
     /**
      * 执行通知候选的最终分流。
@@ -44,6 +47,13 @@ class TransactionProcessingPipeline @Inject constructor(
                 val settings = settingsRepository.settings.first()
                 // 低置信度说明当前通知更像“非交易消息”或“结构信息严重不足”，直接过滤，不再打扰用户做待确认。
                 if (candidate.confidence.level == ConfidenceLevel.LOW) {
+                    recordTrainingSampleSafely(
+                        notificationId = notificationId,
+                        event = event,
+                        candidate = candidate,
+                        destination = ProcessDestination.FILTERED,
+                        status = NotificationProcessStatus.FILTERED_OUT,
+                    )
                     return OperationResult.Success(
                         NotificationProcessOutcome(
                             notificationId = notificationId,
@@ -59,11 +69,19 @@ class TransactionProcessingPipeline @Inject constructor(
                 val duplicate = ledgerRepository.findPotentialDuplicate(candidate) != null ||
                     candidate.isDuplicateCandidate
                 if (duplicate) {
-                    pendingRepository.add(
+                    val pendingEntryId = pendingRepository.add(
                         candidate.toPendingEntry(
                             reason = "可能是重复交易，请人工确认",
                             notificationId = notificationId,
                         ),
+                    )
+                    recordTrainingSampleSafely(
+                        notificationId = notificationId,
+                        event = event,
+                        candidate = candidate,
+                        destination = ProcessDestination.PENDING,
+                        status = NotificationProcessStatus.PENDING_REVIEW,
+                        pendingEntryId = pendingEntryId,
                     )
                     return OperationResult.Success(
                         NotificationProcessOutcome(
@@ -79,7 +97,15 @@ class TransactionProcessingPipeline @Inject constructor(
                 val shouldAutoLedger = settings.autoAccountingEnabled &&
                     candidate.confidence.score >= HIGH_CONFIDENCE_THRESHOLD
                 if (shouldAutoLedger) {
-                    ledgerRepository.add(candidate.toLedgerEntry(notificationId = notificationId))
+                    val ledgerEntryId = ledgerRepository.add(candidate.toLedgerEntry(notificationId = notificationId))
+                    recordTrainingSampleSafely(
+                        notificationId = notificationId,
+                        event = event,
+                        candidate = candidate,
+                        destination = ProcessDestination.LEDGER,
+                        status = NotificationProcessStatus.LEDGER_POSTED,
+                        ledgerEntryId = ledgerEntryId,
+                    )
                     OperationResult.Success(
                         NotificationProcessOutcome(
                             notificationId = notificationId,
@@ -91,11 +117,19 @@ class TransactionProcessingPipeline @Inject constructor(
                     )
                 } else {
                     val reason = "置信度不足：${candidate.confidenceReason}"
-                    pendingRepository.add(
+                    val pendingEntryId = pendingRepository.add(
                         candidate.toPendingEntry(
                             reason = reason,
                             notificationId = notificationId,
                         ),
+                    )
+                    recordTrainingSampleSafely(
+                        notificationId = notificationId,
+                        event = event,
+                        candidate = candidate,
+                        destination = ProcessDestination.PENDING,
+                        status = NotificationProcessStatus.PENDING_REVIEW,
+                        pendingEntryId = pendingEntryId,
                     )
                     OperationResult.Success(
                         NotificationProcessOutcome(
@@ -111,6 +145,41 @@ class TransactionProcessingPipeline @Inject constructor(
 
             is OperationResult.RetryableFailure -> candidateResult
             is OperationResult.TerminalFailure -> candidateResult
+        }
+    }
+
+    /**
+     * 用途说明：
+     * - 记录模型训练样本，但不让样本写入失败影响通知主处理链路。
+     *
+     * 参数说明：
+     * - notificationId：来源通知主键。
+     * - event：当前通知事件。
+     * - candidate：解析器产出的交易候选。
+     * - destination：流水线分流落点。
+     * - status：通知最终状态。
+     * - pendingEntryId：待确认记录主键，可为空。
+     * - ledgerEntryId：账本记录主键，可为空。
+     */
+    private suspend fun recordTrainingSampleSafely(
+        notificationId: Long,
+        event: NotificationEvent,
+        candidate: TransactionCandidate,
+        destination: ProcessDestination,
+        status: NotificationProcessStatus,
+        pendingEntryId: Long? = null,
+        ledgerEntryId: Long? = null,
+    ) {
+        runCatching {
+            modelTrainingSampleRepository.recordPipelineDecision(
+                notificationId = notificationId,
+                event = event,
+                candidate = candidate,
+                destination = destination,
+                status = status,
+                pendingEntryId = pendingEntryId,
+                ledgerEntryId = ledgerEntryId,
+            )
         }
     }
 }

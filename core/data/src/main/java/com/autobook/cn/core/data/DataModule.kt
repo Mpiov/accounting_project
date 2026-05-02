@@ -1,10 +1,16 @@
 package com.autobook.cn.core.data
 
 import android.content.Context
+import com.autobook.cn.core.data.impl.CloudModelStoreImpl
 import com.autobook.cn.core.data.impl.AccessibilityCaptureCoordinator
+import com.autobook.cn.core.data.impl.AuthRepositoryImpl
+import com.autobook.cn.core.data.impl.CloudLearningRepositoryImpl
 import com.autobook.cn.core.data.impl.LedgerRepositoryImpl
+import com.autobook.cn.core.data.impl.MembershipRepositoryImpl
+import com.autobook.cn.core.data.impl.ModelTrainingSampleRepositoryImpl
 import com.autobook.cn.core.data.impl.MockImageImportAnalyzer
 import com.autobook.cn.core.data.impl.NotificationIngestorImpl
+import com.autobook.cn.core.data.impl.PaymentRepositoryImpl
 import com.autobook.cn.core.data.impl.NotificationTraceRepositoryImpl
 import com.autobook.cn.core.data.impl.PendingRepositoryImpl
 import com.autobook.cn.core.data.impl.SettingsRepositoryImpl
@@ -37,7 +43,15 @@ abstract class DataBindingsModule {
     abstract fun bindNotificationTraceRepository(impl: NotificationTraceRepositoryImpl): NotificationTraceRepository
 
     @Binds
+    abstract fun bindModelTrainingSampleRepository(
+        impl: ModelTrainingSampleRepositoryImpl,
+    ): ModelTrainingSampleRepository
+
+    @Binds
     abstract fun bindSettingsRepository(impl: SettingsRepositoryImpl): SettingsRepository
+
+    @Binds
+    abstract fun bindAuthRepository(impl: AuthRepositoryImpl): AuthRepository
 
     @Binds
     abstract fun bindNotificationIngestor(impl: NotificationIngestorImpl): NotificationIngestor
@@ -50,6 +64,18 @@ abstract class DataBindingsModule {
 
     @Binds
     abstract fun bindModelRouter(impl: ModelRouterImpl): ModelRouter
+
+    @Binds
+    abstract fun bindMembershipRepository(impl: MembershipRepositoryImpl): MembershipRepository
+
+    @Binds
+    abstract fun bindPaymentRepository(impl: PaymentRepositoryImpl): PaymentRepository
+
+    @Binds
+    abstract fun bindCloudLearningRepository(impl: CloudLearningRepositoryImpl): CloudLearningRepository
+
+    @Binds
+    abstract fun bindCloudModelStore(impl: CloudModelStoreImpl): CloudModelStore
 
     @Binds
     abstract fun bindImageImportAnalyzer(impl: MockImageImportAnalyzer): ImageImportAnalyzer

@@ -22,6 +22,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -36,7 +37,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
@@ -61,6 +64,16 @@ import com.autobook.cn.core.common.SettingsIntents
  * - state：设置页聚合后的界面状态。
  * - onAutoAccountingChanged：自动记账总开关变更回调。
  * - onCloudAnalysisChanged：云端 AI 分析开关变更回调。
+ * - onAuthPhoneChanged：手机号输入变更回调。
+ * - onAuthCodeChanged：短信验证码输入变更回调。
+ * - onRequestLoginCode：请求验证码回调。
+ * - onLoginOrRegister：登录或注册回调。
+ * - onLogout：退出登录回调。
+ * - onCloudLearningChanged：会员全局云端学习开关变更回调。
+ * - onRefreshMembership：刷新会员状态回调。
+ * - onStartMonthlyMembership：创建月卡订单回调。
+ * - onStartYearlyMembership：创建年卡订单回调。
+ * - onSyncCloudLearning：立即同步云端学习回调。
  * - onCaptureEnabledChanged：截图记账入口启停状态回写回调。
  * - onNotificationRetentionChanged：通知保留天数回调。
  * - onScreenshotRetentionChanged：截图保留天数回调。
@@ -73,6 +86,16 @@ fun SettingsWorkspaceScreen(
     state: SettingsUiState,
     onAutoAccountingChanged: (Boolean) -> Unit,
     onCloudAnalysisChanged: (Boolean) -> Unit,
+    onAuthPhoneChanged: (String) -> Unit,
+    onAuthCodeChanged: (String) -> Unit,
+    onRequestLoginCode: () -> Unit,
+    onLoginOrRegister: () -> Unit,
+    onLogout: () -> Unit,
+    onCloudLearningChanged: (Boolean) -> Unit,
+    onRefreshMembership: () -> Unit,
+    onStartMonthlyMembership: () -> Unit,
+    onStartYearlyMembership: () -> Unit,
+    onSyncCloudLearning: () -> Unit,
     onCaptureEnabledChanged: (Boolean) -> Unit,
     onNotificationRetentionChanged: (Int) -> Unit,
     onScreenshotRetentionChanged: (Int) -> Unit,
@@ -214,6 +237,40 @@ fun SettingsWorkspaceScreen(
             }
         }
 
+        item(key = "auth_section") {
+            SettingsSectionTitle(
+                title = "账号",
+                summary = "手机号登录后，会员状态由服务器确认。",
+            )
+        }
+        item(key = "auth_card") {
+            PhoneAuthCard(
+                state = state,
+                onAuthPhoneChanged = onAuthPhoneChanged,
+                onAuthCodeChanged = onAuthCodeChanged,
+                onRequestLoginCode = onRequestLoginCode,
+                onLoginOrRegister = onLoginOrRegister,
+                onLogout = onLogout,
+            )
+        }
+
+        item(key = "membership_section") {
+            SettingsSectionTitle(
+                title = "会员与云端学习",
+                summary = "会员可拉取服务器全局模型；通知原文上传用于改进下一版全局模型。",
+            )
+        }
+        item(key = "membership_card") {
+            MembershipCloudLearningCard(
+                state = state,
+                onCloudLearningChanged = onCloudLearningChanged,
+                onRefreshMembership = onRefreshMembership,
+                onStartMonthlyMembership = onStartMonthlyMembership,
+                onStartYearlyMembership = onStartYearlyMembership,
+                onSyncCloudLearning = onSyncCloudLearning,
+            )
+        }
+
         item(key = "capture_section") {
             SettingsSectionTitle(
                 title = "截图能力",
@@ -314,6 +371,86 @@ fun SettingsWorkspaceScreen(
 }
 
 /**
+ * 手机号账号卡。
+ *
+ * 用途说明：
+ * - 提供手机号验证码登录/注册入口。
+ * - 当前真实账号服务器未配置，按钮会触发占位仓储并展示明确提示。
+ *
+ * 参数说明：
+ * - state：设置页 UI 状态。
+ * - onAuthPhoneChanged：手机号输入回调。
+ * - onAuthCodeChanged：验证码输入回调。
+ * - onRequestLoginCode：请求验证码回调。
+ * - onLoginOrRegister：登录或注册回调。
+ * - onLogout：退出登录回调。
+ */
+@Composable
+private fun PhoneAuthCard(
+    state: SettingsUiState,
+    onAuthPhoneChanged: (String) -> Unit,
+    onAuthCodeChanged: (String) -> Unit,
+    onRequestLoginCode: () -> Unit,
+    onLoginOrRegister: () -> Unit,
+    onLogout: () -> Unit,
+) {
+    Card(
+        shape = AutobookUiTokens.panelShape,
+        border = autobookCardBorder(),
+        colors = autobookCardColors(),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = state.authSummary,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            OutlinedTextField(
+                value = state.authPhoneInput,
+                onValueChange = onAuthPhoneChanged,
+                label = { Text("手机号") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = state.authCodeInput,
+                onValueChange = onAuthCodeChanged,
+                label = { Text("短信验证码") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = onRequestLoginCode,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("获取验证码")
+                }
+                Button(
+                    onClick = onLoginOrRegister,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("登录/注册")
+                }
+            }
+            if (state.authLoggedIn) {
+                OutlinedButton(
+                    onClick = onLogout,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("退出登录")
+                }
+            }
+        }
+    }
+}
+
+/**
  * 应用通知行使用系统通知开关的实时状态展示。
  *
  * 参数说明：
@@ -374,6 +511,99 @@ private fun AutoAccountingToggleSection(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("去开启通知监听权限")
+            }
+        }
+    }
+}
+
+/**
+ * 会员与云端学习设置卡。
+ *
+ * 用途说明：
+ * - 展示会员状态、云端学习开关、购买入口和手动同步入口。
+ * - 当前支付和同步后端尚未配置，按钮会调用占位仓储并展示提示。
+ *
+ * 参数说明：
+ * - state：设置页 UI 状态。
+ * - onCloudLearningChanged：云端学习开关回调。
+ * - onRefreshMembership：刷新会员状态回调。
+ * - onStartMonthlyMembership：开通月卡回调。
+ * - onStartYearlyMembership：开通年卡回调。
+ * - onSyncCloudLearning：立即同步云端学习回调。
+ */
+@Composable
+private fun MembershipCloudLearningCard(
+    state: SettingsUiState,
+    onCloudLearningChanged: (Boolean) -> Unit,
+    onRefreshMembership: () -> Unit,
+    onStartMonthlyMembership: () -> Unit,
+    onStartYearlyMembership: () -> Unit,
+    onSyncCloudLearning: () -> Unit,
+) {
+    Card(
+        shape = AutobookUiTokens.panelShape,
+        border = autobookCardBorder(),
+        colors = autobookCardColors(),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = state.membershipSummary,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            ToggleRow(
+                title = "云端学习增强",
+                summary = state.cloudLearningSummary,
+                checked = state.cloudLearningEnabled,
+                onCheckedChange = onCloudLearningChanged,
+            )
+            Text(
+                text = if (state.cloudLearningEffectiveEnabled) {
+                    "当前会上传通知原文、解析结果和反馈标签，并拉取服务器模型。"
+                } else {
+                    "当前不会上传通知原文，非会员只使用普通规则算法。"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = onStartMonthlyMembership,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("开通月卡")
+                }
+                OutlinedButton(
+                    onClick = onStartYearlyMembership,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("开通年卡")
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = onRefreshMembership,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("刷新会员")
+                }
+                Button(
+                    onClick = onSyncCloudLearning,
+                    enabled = state.cloudLearningEffectiveEnabled,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("立即同步")
+                }
+            }
+            if (state.membershipActionMessage.isNotBlank()) {
+                Text(
+                    text = state.membershipActionMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

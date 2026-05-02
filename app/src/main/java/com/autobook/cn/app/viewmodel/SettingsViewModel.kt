@@ -4,13 +4,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autobook.cn.core.common.CurrencyFormatter
 import com.autobook.cn.core.common.TimeFormatter
+import com.autobook.cn.core.data.AuthRepository
+import com.autobook.cn.core.data.CloudLearningRepository
 import com.autobook.cn.core.data.LedgerRepository
+import com.autobook.cn.core.data.MembershipRepository
 import com.autobook.cn.core.data.PendingRepository
+import com.autobook.cn.core.data.PaymentRepository
 import com.autobook.cn.core.data.SettingsRepository
 import com.autobook.cn.core.model.AppSettings
+import com.autobook.cn.core.model.AuthState
+import com.autobook.cn.core.model.CloudLearningState
 import com.autobook.cn.core.model.LedgerEntry
+import com.autobook.cn.core.model.MembershipPlan
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.NotificationSourceApp
+import com.autobook.cn.core.model.OperationResult
 import com.autobook.cn.core.model.PendingEntry
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
@@ -41,6 +49,15 @@ import kotlinx.coroutines.withContext
 data class SettingsUiState(
     val autoAccountingEnabled: Boolean = true,
     val cloudAnalysisEnabled: Boolean = true,
+    val authPhoneInput: String = "",
+    val authCodeInput: String = "",
+    val authSummary: String = "未登录，会员状态需要手机号登录后从服务器确认。",
+    val authLoggedIn: Boolean = false,
+    val cloudLearningEnabled: Boolean = true,
+    val cloudLearningEffectiveEnabled: Boolean = false,
+    val membershipSummary: String = "免费版",
+    val cloudLearningSummary: String = "免费版仅使用普通规则算法。",
+    val membershipActionMessage: String = "",
     val captureEnabled: Boolean = false,
     val notificationRetentionDays: Int = 30,
     val screenshotRetentionDays: Int = 7,
@@ -71,14 +88,45 @@ data class SettingsUiState(
  * - settingsRepository：设置仓储。
  * - ledgerRepository：账本仓储。
  * - pendingRepository：待确认仓储。
+ * - authRepository：手机号登录/注册仓储。
+ * - membershipRepository：会员状态仓储。
+ * - paymentRepository：会员支付仓储。
+ * - cloudLearningRepository：云端学习仓储。
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val ledgerRepository: LedgerRepository,
     private val pendingRepository: PendingRepository,
+    private val authRepository: AuthRepository,
+    private val membershipRepository: MembershipRepository,
+    private val paymentRepository: PaymentRepository,
+    private val cloudLearningRepository: CloudLearningRepository,
 ) : ViewModel() {
     private val exportPreview = MutableStateFlow("")
+    private val membershipActionMessage = MutableStateFlow("")
+    private val authPhoneInput = MutableStateFlow("")
+    private val authCodeInput = MutableStateFlow("")
+    private val authForm: Flow<SettingsAuthForm> = combine(
+        authPhoneInput,
+        authCodeInput,
+    ) { phone, code ->
+        SettingsAuthForm(
+            phone = phone,
+            code = code,
+        )
+    }
+    private val accountState: Flow<SettingsAccountState> = combine(
+        cloudLearningRepository.cloudLearningState,
+        authRepository.authState,
+        authForm,
+    ) { cloudLearning, authState, form ->
+        SettingsAccountState(
+            cloudLearning = cloudLearning,
+            authState = authState,
+            form = form,
+        )
+    }
     private val monthlyBudgets: Flow<Map<String, Double>> = settingsRepository.settings
         .map { settings: AppSettings -> settings.monthlyBudgets }
         .distinctUntilChanged()
@@ -117,13 +165,32 @@ class SettingsViewModel @Inject constructor(
      */
     val uiState: StateFlow<SettingsUiState> = combine(
         settingsRepository.settings,
+        accountState,
         derivedData,
         exportPreview,
-    ) { settings: AppSettings, derived: SettingsDerivedData, preview: String ->
+        membershipActionMessage,
+    ) { settings: AppSettings, account: SettingsAccountState, derived: SettingsDerivedData, preview: String, actionMessage: String ->
         val overview = derived.overview
+        val cloudLearning = account.cloudLearning
+        val authState = account.authState
         SettingsUiState(
             autoAccountingEnabled = settings.autoAccountingEnabled,
             cloudAnalysisEnabled = settings.cloudAnalysisEnabled,
+            authPhoneInput = account.form.phone,
+            authCodeInput = account.form.code,
+            authSummary = authState.toSummary(),
+            authLoggedIn = authState.isLoggedIn,
+            cloudLearningEnabled = cloudLearning.enabledByUser,
+            cloudLearningEffectiveEnabled = cloudLearning.effectiveEnabled,
+            membershipSummary = if (cloudLearning.isMember) {
+                "会员已由服务器确认，机器学习解析可用。"
+            } else if (authState.isLoggedIn) {
+                "已登录，当前会员状态未由服务器确认。"
+            } else {
+                "免费版，登录并开通会员后才可使用机器学习。"
+            },
+            cloudLearningSummary = cloudLearning.message,
+            membershipActionMessage = actionMessage,
             captureEnabled = settings.captureEnabled,
             notificationRetentionDays = settings.notificationRetentionDays,
             screenshotRetentionDays = settings.screenshotRetentionDays,
@@ -157,6 +224,122 @@ class SettingsViewModel @Inject constructor(
 
     fun setCloudAnalysisEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setCloudAnalysisEnabled(enabled) }
+    }
+
+    /**
+     * 用途说明：
+     * - 更新手机号输入框状态。
+     *
+     * 参数说明：
+     * - phone：用户输入的手机号。
+     */
+    fun setAuthPhoneInput(phone: String) {
+        authPhoneInput.value = phone
+    }
+
+    /**
+     * 用途说明：
+     * - 更新验证码输入框状态。
+     *
+     * 参数说明：
+     * - code：用户输入的短信验证码。
+     */
+    fun setAuthCodeInput(code: String) {
+        authCodeInput.value = code
+    }
+
+    /**
+     * 用途说明：
+     * - 请求手机号验证码；后端未配置时会返回占位提示。
+     */
+    fun requestLoginCode() {
+        viewModelScope.launch {
+            membershipActionMessage.value = authRepository.requestLoginCode(authPhoneInput.value).toMessage()
+        }
+    }
+
+    /**
+     * 用途说明：
+     * - 使用手机号验证码登录或注册，成功后立即刷新服务器会员状态。
+     */
+    fun loginOrRegisterWithCode() {
+        viewModelScope.launch {
+            val result = authRepository.loginOrRegisterWithCode(
+                phone = authPhoneInput.value,
+                code = authCodeInput.value,
+            )
+            membershipActionMessage.value = result.toMessage()
+            if (result is OperationResult.Success) {
+                membershipRepository.refresh()
+            }
+        }
+    }
+
+    /**
+     * 用途说明：
+     * - 退出登录并刷新会员门禁，确保机器学习能力立即关闭。
+     */
+    fun logout() {
+        viewModelScope.launch {
+            authRepository.logout()
+            membershipRepository.refresh()
+            membershipActionMessage.value = "已退出登录，当前仅使用普通规则算法。"
+        }
+    }
+
+    /**
+     * 用途说明：
+     * - 写入用户是否允许会员全局云端学习上传通知原文。
+     *
+     * 参数说明：
+     * - enabled：目标开关状态，默认开启但只有会员才会真正生效。
+     */
+    fun setCloudLearningEnabled(enabled: Boolean) {
+        viewModelScope.launch { cloudLearningRepository.setCloudLearningEnabled(enabled) }
+    }
+
+    /**
+     * 用途说明：
+     * - 主动刷新会员状态，并把结果转换成设置页短提示。
+     */
+    fun refreshMembership() {
+        viewModelScope.launch {
+            val status = membershipRepository.refresh()
+            membershipActionMessage.value = if (status.isMember) {
+                "会员状态已刷新。"
+            } else {
+                "当前仍是免费版。"
+            }
+        }
+    }
+
+    /**
+     * 用途说明：
+     * - 创建月卡会员支付订单。
+     */
+    fun startMonthlyMembershipPayment() {
+        createMembershipOrder(MembershipPlan.MONTHLY)
+    }
+
+    /**
+     * 用途说明：
+     * - 创建年卡会员支付订单。
+     */
+    fun startYearlyMembershipPayment() {
+        createMembershipOrder(MembershipPlan.YEARLY)
+    }
+
+    /**
+     * 用途说明：
+     * - 触发一次云端学习同步：先按用户开关上传样本，再按会员机器学习权限拉取全局模型。
+     */
+    fun syncCloudLearningNow() {
+        viewModelScope.launch {
+            val uploadResult = cloudLearningRepository.uploadTrainingSamples()
+            val pullResult = cloudLearningRepository.pullCloudModel()
+            membershipActionMessage.value = listOf(uploadResult, pullResult)
+                .joinToString(separator = "；") { result -> result.toMessage() }
+        }
     }
 
     fun setCaptureEnabled(enabled: Boolean) {
@@ -220,7 +403,43 @@ class SettingsViewModel @Inject constructor(
             exportPreview.value = ledgerRepository.exportCsv()
         }
     }
+
+    /**
+     * 用途说明：
+     * - 创建会员支付订单占位流程。
+     *
+     * 参数说明：
+     * - plan：用户选择的会员套餐。
+     */
+    private fun createMembershipOrder(plan: MembershipPlan) {
+        viewModelScope.launch {
+            membershipActionMessage.value = when (val result = paymentRepository.createMembershipOrder(plan)) {
+                is OperationResult.Success -> "订单已创建：${result.data.orderId}"
+                is OperationResult.RetryableFailure -> result.message
+                is OperationResult.TerminalFailure -> result.message
+            }
+        }
+    }
 }
+
+/**
+ * 用途说明：
+ * - 设置页账号输入框快照。
+ */
+private data class SettingsAuthForm(
+    val phone: String,
+    val code: String,
+)
+
+/**
+ * 用途说明：
+ * - 设置页账号、会员云学习和输入框的聚合快照。
+ */
+private data class SettingsAccountState(
+    val cloudLearning: CloudLearningState,
+    val authState: AuthState,
+    val form: SettingsAuthForm,
+)
 
 /**
  * 用途说明：
@@ -364,6 +583,31 @@ private fun formatBudgetInput(amount: Double?): String {
         amount % 1.0 == 0.0 -> amount.toLong().toString()
         else -> amount.toString()
     }
+}
+
+/**
+ * 用途说明：
+ * - 把后台操作结果转换成设置页短提示。
+ *
+ * 参数说明：
+ * - 接收者：待展示的操作结果。
+ */
+private fun OperationResult<*>.toMessage(): String = when (this) {
+    is OperationResult.Success -> "操作完成"
+    is OperationResult.RetryableFailure -> message
+    is OperationResult.TerminalFailure -> message
+}
+
+/**
+ * 用途说明：
+ * - 把账号状态转换成设置页摘要。
+ *
+ * 参数说明：
+ * - 接收者：当前账号状态。
+ */
+private fun AuthState.toSummary(): String {
+    val session = session ?: return "未登录，会员状态需要手机号登录后从服务器确认。"
+    return "已登录 ${session.phone}，会员状态以服务器刷新结果为准。"
 }
 
 private val MONTH_LABEL_FORMATTER = DateTimeFormatter.ofPattern("yyyy 年 M 月", Locale.CHINA)

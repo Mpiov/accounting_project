@@ -8,6 +8,7 @@ app/release/
 
 # 本地配置文件
 local.properties
+.ssh/
 
 # IDE 生成的临时文件
 .idea/
@@ -31,3 +32,5 @@ third_party/
 
 # 已移除的本地推理实验目录
 core/llm/
+__pycache__/
+*.pyc

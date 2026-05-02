@@ -133,10 +133,13 @@ internal data class NotificationSemanticFeatures(
  * 参数说明：
  * - score：供 `ParseConfidence` 使用的最终分数。
  * - reason：面向日志、待确认页和调试注入的解释文本。
+ * - featureSnapshotJson：本次模型评分使用的结构化特征快照，不包含通知原文。
  */
 internal data class ConfidenceDecision(
     val score: Float,
     val reason: String,
+    val featureSnapshotJson: String = "",
+    val modelVersion: String = "",
 )
 
 /**
@@ -444,118 +447,6 @@ internal object NotificationSemanticAnalyzer {
     }
 }
 
-/**
- * 统一打分器。
- *
- * 用途说明：
- * - 先计算来源先验和语义组加分，再叠加风险扣分。
- * - 当前按用户最新口径实现为：每组内每一行最多加一次，同组不同行允许叠加。
- */
-internal object NotificationConfidenceScorer {
-    fun score(
-        sourceRule: ResolvedSourceRule,
-        features: NotificationSemanticFeatures,
-    ): ConfidenceDecision {
-        var score = sourceRule.sourceClass.priorScore
-        val reasonParts = mutableListOf("来源=${sourceRule.sourceClass.name}(${formatScore(sourceRule.sourceClass.priorScore)})")
-
-        val amountBonus = when (features.amountKind) {
-            AmountSignalKind.WITH_CURRENCY -> 0.18f
-            AmountSignalKind.WITH_UNIT -> 0.14f
-            AmountSignalKind.BARE_NUMBER -> 0.06f
-        }
-        score += amountBonus
-        reasonParts += "金额组+${formatScore(amountBonus)}"
-
-        if (features.directionDecision.hitIncome) {
-            score += 0.18f
-            reasonParts += "方向组(收入)+0.18"
-        }
-        if (features.directionDecision.hitExpense) {
-            score += 0.18f
-            reasonParts += "方向组(支出)+0.18"
-        }
-
-        var accountBonus = 0f
-        if (features.hasTailNumber) {
-            accountBonus += 0.14f
-        }
-        if (features.hasStrongAccountKeyword) {
-            accountBonus += 0.12f
-        }
-        if (features.hasGenericAccountKeyword) {
-            accountBonus += 0.08f
-        }
-        if (accountBonus > 0f) {
-            score += accountBonus
-            reasonParts += "账户组+${formatScore(accountBonus)}"
-        }
-
-        if (features.hasExplicitTime) {
-            score += 0.06f
-            reasonParts += "时间组+0.06"
-        }
-        if (features.hasTransactionSceneKeyword) {
-            score += 0.10f
-            reasonParts += "动账组+0.10"
-        }
-
-        var counterpartyBonus = 0f
-        if (features.hasCounterpartyKeyword) {
-            counterpartyBonus += 0.04f
-        }
-        if (features.hasExtractedMerchant) {
-            counterpartyBonus += 0.02f
-        }
-        counterpartyBonus = counterpartyBonus.coerceAtMost(0.06f)
-        if (counterpartyBonus > 0f) {
-            score += counterpartyBonus
-            reasonParts += "对手方组+${formatScore(counterpartyBonus)}"
-        }
-
-        if (features.hasCurrencyKeyword) {
-            score += 0.04f
-            reasonParts += "币种组+0.04"
-        }
-        if (features.hasBankEntityKeyword) {
-            score += 0.06f
-            reasonParts += "银行实体组+0.06"
-        }
-        if (features.hasFinanceEntityKeyword) {
-            score += 0.06f
-            reasonParts += "金融实体组+0.06"
-        }
-        if (features.hasFinanceSettledKeyword) {
-            score += 0.10f
-            reasonParts += "收益结算组+0.10"
-        }
-
-        if (features.hasDirectionConflict) {
-            score -= 0.20f
-            reasonParts += "方向冲突-0.20"
-        }
-        if (!features.hasReliableAmount) {
-            score -= 0.25f
-            reasonParts += "金额不可靠-0.25"
-        }
-        if (features.hasMarketingKeyword) {
-            score -= 0.25f
-            reasonParts += "营销资讯-0.25"
-        }
-        if (features.hasUnsettledAssetValuationRisk) {
-            reasonParts += "命中资产估值风险词"
-        }
-
-        return ConfidenceDecision(
-            // 用户当前要求取消总分上限，因此这里只保留 0 分下界，不再对高分做统一截顶。
-            score = score.coerceAtLeast(0f),
-            reason = reasonParts.joinToString(separator = "；"),
-        )
-    }
-
-    private fun formatScore(score: Float): String = String.format(Locale.ROOT, "%.2f", score)
-}
-
 private data class SourceRule(
     val sourceClass: NotificationSourceClass,
     val channelLabel: String,
@@ -598,14 +489,6 @@ private enum class CategoryTag {
     SALARY,
     TRANSFER,
 }
-
-private val NotificationSourceClass.priorScore: Float
-    get() = when (this) {
-        NotificationSourceClass.TRUSTED_PAYMENT -> 0.52f
-        NotificationSourceClass.TRUSTED_BANK -> 0.48f
-        NotificationSourceClass.TRUSTED_FINANCE -> 0.34f
-        NotificationSourceClass.UNKNOWN -> 0.25f
-    }
 
 private val DEFAULT_WECHAT_RULE = SourceRule(
     sourceClass = NotificationSourceClass.TRUSTED_PAYMENT,

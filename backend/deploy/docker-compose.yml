@@ -1,0 +1,72 @@
+# AutoBook 后端部署编排。
+# 当前只暴露 Nginx 的 80 端口，API 服务留在 Docker 内网。
+services:
+  api:
+    build:
+      context: ./api
+    container_name: autobook-api
+    restart: unless-stopped
+    environment:
+      # SQLite 放在宿主持久化目录，容器重建不会丢失账号和会员数据。
+      AUTOBOOK_DB_PATH: /data/autobook.sqlite3
+      # 令牌签名密钥必须由服务器 .env 注入。
+      AUTOBOOK_TOKEN_SECRET: ${AUTOBOOK_TOKEN_SECRET}
+      # 开发阶段固定验证码，接入短信服务后删除。
+      AUTOBOOK_DEV_SMS_CODE: ${AUTOBOOK_DEV_SMS_CODE:-123456}
+      # 管理后台密码只通过服务器 .env 注入，后台端口仅绑定 127.0.0.1。
+      AUTOBOOK_ADMIN_PASSWORD: ${AUTOBOOK_ADMIN_PASSWORD}
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8080:8000"
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  trainer:
+    build:
+      context: ./api
+    container_name: autobook-trainer
+    restart: unless-stopped
+    command: ["python", "-m", "app.training_scheduler"]
+    environment:
+      # 训练容器和 API 共用同一个 SQLite 数据库，读取全局样本池并发布全局模型。
+      AUTOBOOK_DB_PATH: /data/autobook.sqlite3
+      # 训练任务会加载完整配置对象，令牌密钥沿用 API 配置即可。
+      AUTOBOOK_TOKEN_SECRET: ${AUTOBOOK_TOKEN_SECRET}
+      # 默认北京时间凌晨 3 点检查一次；样本不足时只记录 SKIPPED，不发布模型。
+      AUTOBOOK_TRAINING_SCHEDULE_HOUR: ${AUTOBOOK_TRAINING_SCHEDULE_HOUR:-3}
+      AUTOBOOK_TRAINING_MIN_NEW_SAMPLES: ${AUTOBOOK_TRAINING_MIN_NEW_SAMPLES:-100}
+      AUTOBOOK_TRAINING_MIN_TOTAL_SAMPLES: ${AUTOBOOK_TRAINING_MIN_TOTAL_SAMPLES:-100}
+      AUTOBOOK_TRAINING_MIN_PER_CLASS: ${AUTOBOOK_TRAINING_MIN_PER_CLASS:-10}
+      AUTOBOOK_TRAINING_MIN_ACCURACY: ${AUTOBOOK_TRAINING_MIN_ACCURACY:-0.65}
+      AUTOBOOK_TRAINING_MAX_FALSE_POSITIVE_RATE: ${AUTOBOOK_TRAINING_MAX_FALSE_POSITIVE_RATE:-0.25}
+    volumes:
+      - ./data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: autobook-gateway
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./www:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health | grep -q '^ok$'"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

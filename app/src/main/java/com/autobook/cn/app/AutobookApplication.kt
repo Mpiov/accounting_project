@@ -1,8 +1,10 @@
 package com.autobook.cn.app
 
 import android.app.Application
+import com.autobook.cn.app.sync.CloudLearningSyncScheduler
 import com.autobook.cn.core.data.parser.NotificationRuleWarmup
 import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -11,6 +13,15 @@ import kotlinx.coroutines.launch
 /** 应用入口，负责初始化 Hilt 依赖注入。 */
 @HiltAndroidApp
 class AutobookApplication : Application() {
+    /**
+     * 云端学习同步调度器。
+     *
+     * 用途说明：
+     * - 应用启动时注册周期任务，并立刻排队一次会员状态刷新。
+     */
+    @Inject
+    lateinit var cloudLearningSyncScheduler: CloudLearningSyncScheduler
+
     /**
      * 应用级后台作用域。
      *
@@ -26,9 +37,12 @@ class AutobookApplication : Application() {
      * 用途说明：
      * - AC 自动机建树只做一次，后续通知解析直接复用只读结构。
      * - 预热仍会尽早执行，但不再阻塞 `Application.onCreate()`，从而减少冷启动掉帧和首屏卡顿。
+     * - 云端学习周期任务在这里注册，保证进程启动后自动接上后台同步。
      */
     override fun onCreate() {
         super.onCreate()
+        cloudLearningSyncScheduler.ensurePeriodicSync()
+        cloudLearningSyncScheduler.enqueueForegroundMembershipRefresh()
         applicationScope.launch {
             NotificationRuleWarmup.warmUp()
         }

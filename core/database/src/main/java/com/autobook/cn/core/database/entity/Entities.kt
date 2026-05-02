@@ -83,3 +83,66 @@ data class PendingEntryEntity(
     val isFalsePositive: Boolean,
     val editedManually: Boolean,
 )
+
+/**
+ * 置信度模型训练样本实体。
+ *
+ * 用途说明：
+ * - 保存模型当时看到的结构化特征、分数、分流结果和用户后续反馈。
+ * - 会员全局云端学习需要把通知标题和正文作为监督训练输入，因此这里保留原始通知文本快照。
+ */
+@Entity(
+    tableName = "model_training_samples",
+    indices = [
+        Index("notificationId"),
+        Index("pendingEntryId"),
+        Index("ledgerEntryId"),
+        Index("feedbackLabel"),
+        Index("uploadState"),
+    ],
+)
+data class ModelTrainingSampleEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val notificationId: Long?,
+    val pendingEntryId: Long?,
+    val ledgerEntryId: Long?,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val packageName: String,
+    val rawTitle: String?,
+    val rawText: String?,
+    val rawPostedAt: Long,
+    val sourceApp: String,
+    val modelVersion: String,
+    val parsePath: String,
+    val amount: Double,
+    val direction: String,
+    val merchant: String,
+    val channel: String,
+    val candidateTimestamp: Long,
+    val candidateCategory: String,
+    val candidateOrderId: String?,
+    val confidenceScore: Float,
+    val confidenceLevel: String,
+    val confidenceReason: String,
+    val featureSnapshotJson: String,
+    val routeDestination: String,
+    val processStatus: String,
+    val feedbackLabel: String,
+    val feedbackSource: String?,
+    val feedbackAt: Long?,
+    val editedManually: Boolean,
+    val feedbackNote: String?,
+    val correctedAmount: Double?,
+    val correctedDirection: String?,
+    val correctedMerchant: String?,
+    val correctedChannel: String?,
+    val correctedTimestamp: Long?,
+    val correctedCategory: String?,
+    val correctedOrderId: String?,
+    val correctedNote: String?,
+    val changedFieldsJson: String?,
+    val uploadState: String,
+    val uploadedAt: Long?,
+    val lastUploadAttemptAt: Long?,
+)

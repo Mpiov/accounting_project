@@ -1,6 +1,8 @@
 package com.autobook.cn.core.data.parser
 
 import com.autobook.cn.core.data.TransactionExtractor
+import com.autobook.cn.core.data.TransactionScoringMode
+import com.autobook.cn.core.data.CloudModelStore
 import com.autobook.cn.core.model.NotificationEvent
 import com.autobook.cn.core.model.NotificationSourceApp
 import com.autobook.cn.core.model.OperationResult
@@ -14,15 +16,24 @@ import javax.inject.Inject
  * 用途说明：
  * - 当前实现已切换到“AC 自动机 + 来源规则表 + 语义特征 + 打分器 + 高置信度硬门槛”的新链路。
  * - 解析器自身只负责组织调用顺序，避免把来源判断、关键词扫描和分数公式再次揉回一个大函数。
+ *
+ * 参数说明：
+ * - cloudModelStore：服务器全局模型的本地缓存；会员模式下优先读取它的权重。
  */
-class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
+class LocalTransactionExtractor @Inject constructor(
+    private val cloudModelStore: CloudModelStore,
+) : TransactionExtractor {
     /**
      * 从单条通知里抽取标准化候选。
      *
      * 参数说明：
      * - event：原始通知事件，包含包名、标题、正文、时间戳与来源先验。
+     * - scoringMode：免费用户使用普通规则，会员用户才允许机器学习评分。
      */
-    override suspend fun extract(event: NotificationEvent): OperationResult<TransactionCandidate> {
+    override suspend fun extract(
+        event: NotificationEvent,
+        scoringMode: TransactionScoringMode,
+    ): OperationResult<TransactionCandidate> {
         val textWindow = NotificationTextWindowBuilder.build(
             title = event.title,
             text = event.text,
@@ -59,10 +70,17 @@ class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
             merchant = merchant,
             channelLabel = sourceRule.channelLabel,
         )
-        val confidence = NotificationConfidenceScorer.score(
-            sourceRule = sourceRule,
-            features = features,
-        )
+        val confidence = when (scoringMode) {
+            TransactionScoringMode.RULES_ONLY -> NotificationRuleConfidenceScorer.score(
+                sourceRule = sourceRule,
+                features = features,
+            )
+            TransactionScoringMode.MEMBER_MACHINE_LEARNING -> NotificationConfidenceScorer.score(
+                sourceRule = sourceRule,
+                features = features,
+                cloudModel = cloudModelStore.getActiveModel()?.takeIf { model -> model.isUsableAt() },
+            )
+        }
         val categoryHint = NotificationCategoryClassifier.detect(
             text = textWindow.scoringText,
             hasFinanceSettledKeyword = features.hasFinanceSettledKeyword,
@@ -80,7 +98,10 @@ class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
                 confidenceReason = confidence.reason,
                 categoryHint = categoryHint,
                 rawSource = event.rawSource,
-                parsePath = "local-parser",
+                parsePath = scoringMode.toParsePath(),
+                // 版本号来自实际打分器，服务器模型落盘后会写入全局模型版本。
+                modelVersion = confidence.modelVersion.ifBlank { scoringMode.toModelVersion() },
+                modelFeatureSnapshotJson = confidence.featureSnapshotJson,
                 sourceApp = normalizeSourceApp(
                     originalSourceApp = sourceApp,
                     sourceRule = sourceRule,
@@ -106,6 +127,30 @@ class LocalTransactionExtractor @Inject constructor() : TransactionExtractor {
             else -> originalSourceApp
         }
     }
+}
+
+/**
+ * 用途说明：
+ * - 把解析模式转换成可追踪的解析路径。
+ *
+ * 参数说明：
+ * - 接收者：本次解析使用的置信度来源。
+ */
+private fun TransactionScoringMode.toParsePath(): String = when (this) {
+    TransactionScoringMode.RULES_ONLY -> "local-parser/rules"
+    TransactionScoringMode.MEMBER_MACHINE_LEARNING -> "local-parser/member-ml"
+}
+
+/**
+ * 用途说明：
+ * - 把解析模式转换成候选记录中的版本号。
+ *
+ * 参数说明：
+ * - 接收者：本次解析使用的置信度来源。
+ */
+private fun TransactionScoringMode.toModelVersion(): String = when (this) {
+    TransactionScoringMode.RULES_ONLY -> NotificationRuleConfidenceScorer.VERSION
+    TransactionScoringMode.MEMBER_MACHINE_LEARNING -> NotificationConfidenceScorer.MODEL_VERSION
 }
 
 /** 订单号模式保留为结构化补充字段，不再参与重权重打分。 */

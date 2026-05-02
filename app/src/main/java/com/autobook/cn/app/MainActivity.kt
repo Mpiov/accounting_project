@@ -5,17 +5,37 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import com.autobook.cn.app.sync.CloudLearningSyncScheduler
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /** 单 Activity 容器，承载整套 Compose 导航。 */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    /**
+     * 云端学习同步调度器。
+     *
+     * 用途说明：
+     * - Activity 回到前台时排队刷新会员状态，避免会员开通或到期后界面长时间使用旧门禁。
+     */
+    @Inject
+    lateinit var cloudLearningSyncScheduler: CloudLearningSyncScheduler
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             AutobookRoot()
         }
+    }
+
+    /**
+     * 用途说明：
+     * - App 每次回到前台时，补一次服务器会员状态刷新。
+     */
+    override fun onStart() {
+        super.onStart()
+        cloudLearningSyncScheduler.enqueueForegroundMembershipRefresh()
     }
 }
 

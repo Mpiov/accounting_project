@@ -75,6 +75,7 @@ private fun fakeSettingsRepository(settings: AppSettings): SettingsRepository {
         override suspend fun setOnboardingCompleted(completed: Boolean) = Unit
         override suspend fun setAutoAccountingEnabled(enabled: Boolean) = Unit
         override suspend fun setCloudAnalysisEnabled(enabled: Boolean) = Unit
+        override suspend fun setCloudLearningEnabled(enabled: Boolean) = Unit
         override suspend fun setCaptureEnabled(enabled: Boolean) = Unit
         override suspend fun setNotificationRetentionDays(days: Int) = Unit
         override suspend fun setScreenshotRetentionDays(days: Int) = Unit

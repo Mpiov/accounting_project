@@ -71,6 +71,7 @@ dependencies {
     implementation(libs.hilt.android)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.material)
 
     implementation(platform(libs.compose.bom))

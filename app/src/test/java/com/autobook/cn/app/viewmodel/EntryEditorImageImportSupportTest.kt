@@ -1,6 +1,7 @@
 package com.autobook.cn.app.viewmodel
 
 import androidx.lifecycle.SavedStateHandle
+import com.autobook.cn.app.sync.CloudLearningSyncScheduler
 import com.autobook.cn.core.data.ImageImportAnalyzer
 import com.autobook.cn.core.data.LedgerRepository
 import com.autobook.cn.core.data.PendingRepository
@@ -12,6 +13,7 @@ import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.OperationResult
 import com.autobook.cn.core.model.ParseConfidence
 import com.autobook.cn.core.model.PendingEntry
+import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.flow.Flow
@@ -80,6 +82,7 @@ class EntryEditorImageImportSupportTest {
                 },
                 ledgerRepository = fakeLedgerRepository(),
                 pendingRepository = fakePendingRepository(),
+                cloudLearningSyncScheduler = fakeCloudLearningSyncScheduler(),
             )
 
             viewModel.importFromImage("content://demo/image-1")
@@ -145,6 +148,7 @@ class EntryEditorImageImportSupportTest {
                 },
                 ledgerRepository = recordingLedgerRepository,
                 pendingRepository = fakePendingRepository(),
+                cloudLearningSyncScheduler = fakeCloudLearningSyncScheduler(),
             )
 
             viewModel.importFromImage("content://demo/image-2")
@@ -161,6 +165,14 @@ class EntryEditorImageImportSupportTest {
         }
     }
 }
+
+/**
+ * 提供不会真正注册 WorkManager 任务的云端学习调度器替身。
+ *
+ * 返回值说明：
+ * - 使用 relaxed mock，让测试只关注编辑页字段映射，不触发系统后台任务。
+ */
+private fun fakeCloudLearningSyncScheduler(): CloudLearningSyncScheduler = mockk(relaxed = true)
 
 /** 提供不会访问真实数据库的账本仓储替身。 */
 private fun fakeLedgerRepository(): LedgerRepository {
@@ -225,6 +237,10 @@ private fun fakePendingRepository(): PendingRepository {
         override suspend fun update(entry: PendingEntry) = Unit
         override suspend fun getById(id: Long): PendingEntry? = null
         override suspend fun confirm(id: Long): PendingEntry? = null
+        override suspend fun confirmEdited(
+            id: Long,
+            correctedEntry: LedgerEntry,
+        ): PendingEntry? = null
         override suspend fun ignore(id: Long) = Unit
         override suspend fun markFalsePositive(id: Long) = Unit
     }

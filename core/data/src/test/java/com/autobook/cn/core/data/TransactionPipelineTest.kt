@@ -5,6 +5,7 @@ import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.NotificationEvent
+import com.autobook.cn.core.model.NotificationProcessStatus
 import com.autobook.cn.core.model.NotificationSourceApp
 import com.autobook.cn.core.model.OperationResult
 import com.autobook.cn.core.model.ParseConfidence
@@ -70,16 +71,22 @@ class TransactionPipelineTest {
             override suspend fun update(entry: PendingEntry) = Unit
             override suspend fun getById(id: Long): PendingEntry? = null
             override suspend fun confirm(id: Long): PendingEntry? = null
+            override suspend fun confirmEdited(
+                id: Long,
+                correctedEntry: LedgerEntry,
+            ): PendingEntry? = null
             override suspend fun ignore(id: Long) = Unit
             override suspend fun markFalsePositive(id: Long) = Unit
         }
         val settingsRepository = buildSettingsRepository(AppSettings(autoAccountingEnabled = true))
+        val trainingSampleRepository = RecordingModelTrainingSampleRepository()
 
         val outcome = TransactionProcessingPipeline(
             modelRouter = modelRouter,
             ledgerRepository = ledgerRepository,
             pendingRepository = pendingRepository,
             settingsRepository = settingsRepository,
+            modelTrainingSampleRepository = trainingSampleRepository,
         ).process(
             notificationId = 10L,
             event = NotificationEvent(
@@ -95,6 +102,7 @@ class TransactionPipelineTest {
         assertEquals("/tmp/pending.png", data.screenshotRef)
         assertEquals("低置信度候选已过滤：Low confidence candidate from local parser", data.message)
         assertEquals(0, pendingCount)
+        assertEquals(listOf(ProcessDestination.FILTERED), trainingSampleRepository.destinations)
     }
 
     @Test
@@ -152,16 +160,22 @@ class TransactionPipelineTest {
             override suspend fun update(entry: PendingEntry) = Unit
             override suspend fun getById(id: Long): PendingEntry? = null
             override suspend fun confirm(id: Long): PendingEntry? = null
+            override suspend fun confirmEdited(
+                id: Long,
+                correctedEntry: LedgerEntry,
+            ): PendingEntry? = null
             override suspend fun ignore(id: Long) = Unit
             override suspend fun markFalsePositive(id: Long) = Unit
         }
         val settingsRepository = buildSettingsRepository(AppSettings(autoAccountingEnabled = true))
+        val trainingSampleRepository = RecordingModelTrainingSampleRepository()
 
         val outcome = TransactionProcessingPipeline(
             modelRouter = modelRouter,
             ledgerRepository = ledgerRepository,
             pendingRepository = pendingRepository,
             settingsRepository = settingsRepository,
+            modelTrainingSampleRepository = trainingSampleRepository,
         ).process(
             notificationId = 42L,
             event = NotificationEvent(
@@ -176,6 +190,7 @@ class TransactionPipelineTest {
         assertEquals(ProcessDestination.LEDGER, data.destination)
         assertEquals(1, ledgerAddCount)
         assertEquals("Auto-posted with confidence 0.9", data.message)
+        assertEquals(listOf(ProcessDestination.LEDGER), trainingSampleRepository.destinations)
     }
 
     /**
@@ -229,16 +244,22 @@ class TransactionPipelineTest {
             override suspend fun update(entry: PendingEntry) = Unit
             override suspend fun getById(id: Long): PendingEntry? = null
             override suspend fun confirm(id: Long): PendingEntry? = null
+            override suspend fun confirmEdited(
+                id: Long,
+                correctedEntry: LedgerEntry,
+            ): PendingEntry? = null
             override suspend fun ignore(id: Long) = Unit
             override suspend fun markFalsePositive(id: Long) = Unit
         }
         val settingsRepository = buildSettingsRepository(AppSettings(autoAccountingEnabled = true))
+        val trainingSampleRepository = RecordingModelTrainingSampleRepository()
 
         val outcome = TransactionProcessingPipeline(
             modelRouter = modelRouter,
             ledgerRepository = ledgerRepository,
             pendingRepository = pendingRepository,
             settingsRepository = settingsRepository,
+            modelTrainingSampleRepository = trainingSampleRepository,
         ).process(
             notificationId = 100L,
             event = NotificationEvent(
@@ -253,6 +274,7 @@ class TransactionPipelineTest {
         assertEquals(ProcessDestination.PENDING, data.destination)
         assertEquals("置信度不足：Local parser medium confidence review", data.message)
         assertEquals(1, pendingCount)
+        assertEquals(listOf(ProcessDestination.PENDING), trainingSampleRepository.destinations)
     }
 }
 
@@ -268,9 +290,66 @@ private fun buildSettingsRepository(settings: AppSettings): SettingsRepository {
         override suspend fun setOnboardingCompleted(completed: Boolean) = Unit
         override suspend fun setAutoAccountingEnabled(enabled: Boolean) = Unit
         override suspend fun setCloudAnalysisEnabled(enabled: Boolean) = Unit
+        override suspend fun setCloudLearningEnabled(enabled: Boolean) = Unit
         override suspend fun setCaptureEnabled(enabled: Boolean) = Unit
         override suspend fun setNotificationRetentionDays(days: Int) = Unit
         override suspend fun setScreenshotRetentionDays(days: Int) = Unit
         override suspend fun setSourceEnabled(source: NotificationSourceApp, enabled: Boolean) = Unit
     }
+}
+
+/**
+ * 记录流水线写入的训练样本落点。
+ *
+ * 用途说明：
+ * - 让流水线单测不用依赖 Room，也能验证新增训练样本记录不会漏掉分流结果。
+ */
+private class RecordingModelTrainingSampleRepository : ModelTrainingSampleRepository {
+    val destinations = mutableListOf<ProcessDestination>()
+
+    override suspend fun recordPipelineDecision(
+        notificationId: Long,
+        event: NotificationEvent,
+        candidate: TransactionCandidate,
+        destination: ProcessDestination,
+        status: NotificationProcessStatus,
+        pendingEntryId: Long?,
+        ledgerEntryId: Long?,
+    ) {
+        destinations += destination
+    }
+
+    override suspend fun linkLedgerEntry(
+        notificationId: Long?,
+        ledgerEntryId: Long,
+    ) = Unit
+
+    override suspend fun markPendingConfirmed(
+        pendingEntryId: Long,
+        editedManually: Boolean,
+        correctedEntry: LedgerEntry?,
+    ) = Unit
+
+    override suspend fun markPendingIgnored(pendingEntryId: Long) = Unit
+
+    override suspend fun markPendingFalsePositive(pendingEntryId: Long) = Unit
+
+    override suspend fun markLedgerEdited(entry: LedgerEntry) = Unit
+
+    override suspend fun markLedgerDeleted(entry: LedgerEntry) = Unit
+
+    override suspend fun loadUploadBatch(limit: Int): ModelTrainingSampleUploadBatch =
+        ModelTrainingSampleUploadBatch(sampleIds = emptyList(), jsonl = "")
+
+    override suspend fun markUploadBatchAttempted(
+        sampleIds: List<Long>,
+        attemptedAt: Long,
+    ) = Unit
+
+    override suspend fun markUploadBatchUploaded(
+        sampleIds: List<Long>,
+        uploadedAt: Long,
+    ) = Unit
+
+    override suspend fun exportJsonl(): String = ""
 }

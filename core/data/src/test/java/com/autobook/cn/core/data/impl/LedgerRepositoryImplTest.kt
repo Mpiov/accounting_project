@@ -1,9 +1,15 @@
 package com.autobook.cn.core.data.impl
 
+import com.autobook.cn.core.data.ModelTrainingSampleRepository
+import com.autobook.cn.core.data.ModelTrainingSampleUploadBatch
 import com.autobook.cn.core.database.dao.LedgerEntryDao
 import com.autobook.cn.core.database.entity.LedgerEntryEntity
 import com.autobook.cn.core.model.MoneyDirection
+import com.autobook.cn.core.model.NotificationEvent
+import com.autobook.cn.core.model.NotificationProcessStatus
 import com.autobook.cn.core.model.ParseConfidence
+import com.autobook.cn.core.model.ProcessDestination
+import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.TransactionCandidate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -23,7 +29,10 @@ class LedgerRepositoryImplTest {
     @Test
     fun findPotentialDuplicateUsesThirtySecondWindowWithoutMerchantConstraint() = runTest {
         val ledgerEntryDao = RecordingLedgerEntryDao()
-        val repository = LedgerRepositoryImpl(ledgerEntryDao = ledgerEntryDao)
+        val repository = LedgerRepositoryImpl(
+            ledgerEntryDao = ledgerEntryDao,
+            modelTrainingSampleRepository = NoOpModelTrainingSampleRepository,
+        )
         val candidate = TransactionCandidate(
             amount = 18.88,
             direction = MoneyDirection.EXPENSE,
@@ -50,6 +59,56 @@ class LedgerRepositoryImplTest {
         assertNotNull(duplicate)
         assertEquals("银行卡动账提醒", duplicate?.merchant)
     }
+}
+
+/**
+ * 用途说明：
+ * - 账本仓储单测中的训练样本仓储空实现。
+ */
+private object NoOpModelTrainingSampleRepository : ModelTrainingSampleRepository {
+    override suspend fun recordPipelineDecision(
+        notificationId: Long,
+        event: NotificationEvent,
+        candidate: TransactionCandidate,
+        destination: ProcessDestination,
+        status: NotificationProcessStatus,
+        pendingEntryId: Long?,
+        ledgerEntryId: Long?,
+    ) = Unit
+
+    override suspend fun linkLedgerEntry(
+        notificationId: Long?,
+        ledgerEntryId: Long,
+    ) = Unit
+
+    override suspend fun markPendingConfirmed(
+        pendingEntryId: Long,
+        editedManually: Boolean,
+        correctedEntry: LedgerEntry?,
+    ) = Unit
+
+    override suspend fun markPendingIgnored(pendingEntryId: Long) = Unit
+
+    override suspend fun markPendingFalsePositive(pendingEntryId: Long) = Unit
+
+    override suspend fun markLedgerEdited(entry: LedgerEntry) = Unit
+
+    override suspend fun markLedgerDeleted(entry: LedgerEntry) = Unit
+
+    override suspend fun loadUploadBatch(limit: Int): ModelTrainingSampleUploadBatch =
+        ModelTrainingSampleUploadBatch(sampleIds = emptyList(), jsonl = "")
+
+    override suspend fun markUploadBatchAttempted(
+        sampleIds: List<Long>,
+        attemptedAt: Long,
+    ) = Unit
+
+    override suspend fun markUploadBatchUploaded(
+        sampleIds: List<Long>,
+        uploadedAt: Long,
+    ) = Unit
+
+    override suspend fun exportJsonl(): String = ""
 }
 
 /**

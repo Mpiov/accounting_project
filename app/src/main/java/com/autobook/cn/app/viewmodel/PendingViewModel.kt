@@ -2,6 +2,7 @@ package com.autobook.cn.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.autobook.cn.app.sync.CloudLearningSyncScheduler
 import com.autobook.cn.core.common.CurrencyFormatter
 import com.autobook.cn.core.common.TimeFormatter
 import com.autobook.cn.core.data.LedgerRepository
@@ -29,6 +30,7 @@ class PendingViewModel @Inject constructor(
     private val pendingRepository: PendingRepository,
     private val ledgerRepository: LedgerRepository,
     private val notificationTraceRepository: NotificationTraceRepository,
+    private val cloudLearningSyncScheduler: CloudLearningSyncScheduler,
 ) : ViewModel() {
     /** 把待确认仓库中的领域模型转换成 UI 模型。 */
     val uiState: StateFlow<PendingUiState> = combine(
@@ -82,18 +84,24 @@ class PendingViewModel @Inject constructor(
                     editedManually = item.editedManually,
                 ),
             )
+            // 直接确认说明模型候选被用户认可，同样是正向标签，延迟上传用于累计到云端训练池。
+            cloudLearningSyncScheduler.enqueueDelayedTrainingSampleUpload()
         }
     }
 
     fun ignorePending(id: Long) {
         viewModelScope.launch {
             pendingRepository.ignore(id)
+            // 忽略表示本条候选不该入账，作为负向反馈上传后能降低类似误识别。
+            cloudLearningSyncScheduler.enqueueDelayedTrainingSampleUpload()
         }
     }
 
     fun markFalsePositive(id: Long) {
         viewModelScope.launch {
             pendingRepository.markFalsePositive(id)
+            // 显式误识别反馈比普通忽略更强，排队上传给服务器训练时使用。
+            cloudLearningSyncScheduler.enqueueDelayedTrainingSampleUpload()
         }
     }
 }

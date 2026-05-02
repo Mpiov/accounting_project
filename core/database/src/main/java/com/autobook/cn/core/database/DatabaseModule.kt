@@ -3,6 +3,7 @@ package com.autobook.cn.core.database
 import android.content.Context
 import androidx.room.Room
 import com.autobook.cn.core.database.dao.LedgerEntryDao
+import com.autobook.cn.core.database.dao.ModelTrainingSampleDao
 import com.autobook.cn.core.database.dao.NotificationEventDao
 import com.autobook.cn.core.database.dao.PendingEntryDao
 import dagger.Module
@@ -67,6 +68,17 @@ object DatabaseModule {
      */
     @Provides
     fun providePendingEntryDao(database: AutobookDatabase): PendingEntryDao = database.pendingEntryDao()
+
+    /**
+     * 用途说明：
+     * - 暴露模型训练样本 DAO。
+     *
+     * 参数说明：
+     * - database：已构建完成的数据库实例。
+     */
+    @Provides
+    fun provideModelTrainingSampleDao(database: AutobookDatabase): ModelTrainingSampleDao =
+        database.modelTrainingSampleDao()
 }
 
 private const val DATABASE_NAME = "autobook.db"
