@@ -244,8 +244,14 @@ private fun recordLedgerTrace(
     context: Context,
     ledgerEntry: LedgerEntry,
 ) {
+    // 账本模型已删除商户字段，调试 trace 只记录备注首行，避免旧字段继续误导排查。
+    val notePreview = ledgerEntry.note
+        ?.lineSequence()
+        ?.map(String::trim)
+        ?.firstOrNull(String::isNotBlank)
+        ?: "无备注"
     recordTrace(
         context = context,
-        message = "ledgerTrace tracePath=${ledgerEntry.tracePath} modelVersion=${ledgerEntry.traceModelVersion} merchant=${ledgerEntry.merchant}",
+        message = "ledgerTrace tracePath=${ledgerEntry.tracePath} modelVersion=${ledgerEntry.traceModelVersion} note=$notePreview",
     )
 }

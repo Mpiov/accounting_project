@@ -34,7 +34,7 @@ interface AutobookBackendApi {
      * - 请求登录验证码。
      *
      * 参数说明：
-     * - body：手机号和验证码场景。
+     * - body：邮箱和验证码场景；字段名暂沿用后端旧契约。
      */
     @POST("v1/auth/sms-code")
     suspend fun requestSmsCode(
@@ -46,7 +46,7 @@ interface AutobookBackendApi {
      * - 使用验证码登录或注册。
      *
      * 参数说明：
-     * - body：手机号、验证码和客户端信息。
+     * - body：邮箱、验证码和客户端信息；字段名暂沿用后端旧契约。
      */
     @POST("v1/auth/login")
     suspend fun login(
@@ -166,15 +166,20 @@ data class BackendErrorResponse(
     val message: String = "",
 )
 
-/** 用途说明：短信验证码请求体。 */
+/** 用途说明：邮箱验证码请求体；接口路径暂沿用 `/v1/auth/sms-code`。 */
 data class BackendSmsCodeRequest(
     val phone: String,
     val scene: String = "login",
 )
 
-/** 用途说明：短信验证码响应体。 */
+/**
+ * 用途说明：
+ * - 邮箱验证码响应体，只描述验证码有效期。
+ *
+ * 参数说明：
+ * - expiresInSeconds：验证码从创建到过期的秒数；获取按钮的 60 秒等待由客户端本地限流维护。
+ */
 data class BackendSmsCodeResponse(
-    val cooldownSeconds: Int = 0,
     val expiresInSeconds: Int = 0,
 )
 

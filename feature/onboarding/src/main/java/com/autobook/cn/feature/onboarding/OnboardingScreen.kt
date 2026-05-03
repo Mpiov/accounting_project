@@ -6,13 +6,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AdminPanelSettings
-import androidx.compose.material.icons.outlined.Cloud
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.ScreenshotMonitor
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -23,6 +19,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 
 /** 引导页的界面状态。 */
@@ -33,6 +30,21 @@ data class OnboardingUiState(
     val cloudAnalysisEnabled: Boolean = true,
     val onboardingCompleted: Boolean = false,
 )
+
+/**
+ * 首次引导页图标。
+ *
+ * 参数说明：
+ * - iconRes：模块内 IconPark VectorDrawable 资源 id，用于和主 App 图标保持同一套 outline 风格。
+ */
+@Composable
+private fun OnboardingIcon(iconRes: Int) {
+    Icon(
+        painter = painterResource(id = iconRes),
+        contentDescription = null,
+        modifier = Modifier.size(24.dp),
+    )
+}
 
 /** 首次启动引导页，聚合权限说明与核心策略开关。 */
 @Composable
@@ -65,7 +77,7 @@ fun OnboardingScreen(
             title = "通知读取",
             summary = "读取微信、支付宝和银行卡短信通知，提取交易线索。",
             enabled = state.notificationAccess,
-            icon = { Icon(Icons.Outlined.Notifications, contentDescription = null) },
+            icon = { OnboardingIcon(R.drawable.ic_onboarding_notifications) },
             actionLabel = "去开启",
             onAction = onOpenNotificationSettings,
         )
@@ -73,7 +85,7 @@ fun OnboardingScreen(
             title = "无障碍自动化",
             summary = "仅在需要时拉起通知栏，不做其他自动化操作。",
             enabled = state.accessibilityAccess,
-            icon = { Icon(Icons.Outlined.AdminPanelSettings, contentDescription = null) },
+            icon = { OnboardingIcon(R.drawable.ic_onboarding_permission) },
             actionLabel = "去开启",
             onAction = onOpenAccessibilitySettings,
         )
@@ -81,7 +93,7 @@ fun OnboardingScreen(
             title = "截图分析",
             summary = "当前版本先预留能力入口，后续补齐更稳定的截图授权与规则校验流程。",
             enabled = false,
-            icon = { Icon(Icons.Outlined.ScreenshotMonitor, contentDescription = null) },
+            icon = { OnboardingIcon(R.drawable.ic_onboarding_screenshot) },
             actionLabel = "后续接入",
             onAction = {},
         )
@@ -89,14 +101,14 @@ fun OnboardingScreen(
             title = "自动记账总开关",
             summary = "关闭后仍可手动记账，但系统不会自动入账。",
             checked = state.autoAccountingEnabled,
-            icon = { Icon(Icons.Outlined.Notifications, contentDescription = null) },
+            icon = { OnboardingIcon(R.drawable.ic_onboarding_notifications) },
             onCheckedChange = onToggleAutoAccounting,
         )
         ToggleCard(
             title = "云端分析",
             summary = "默认开启，在本地解析不足时作为补充回退路径。",
             checked = state.cloudAnalysisEnabled,
-            icon = { Icon(Icons.Outlined.Cloud, contentDescription = null) },
+            icon = { OnboardingIcon(R.drawable.ic_onboarding_cloud) },
             onCheckedChange = onToggleCloudAnalysis,
         )
         Button(

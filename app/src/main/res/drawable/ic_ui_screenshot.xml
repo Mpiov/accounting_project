@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    用途说明：
+    - 截图能力入口图标，使用四角取景框和中心画面表达“截取当前屏幕”。
+    - 相比相机图标，这个图标更贴近 App 的截图记账场景。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M7 18V10C7 8.3431 8.3431 7 10 7H18" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M30 7H38C39.6569 7 41 8.3431 41 10V18" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M41 30V38C41 39.6569 39.6569 41 38 41H30" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M18 41H10C8.3431 41 7 39.6569 7 38V30" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M16 18H32V31H16Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M16 31L22 25L26 29L29 26L32 29" />
+</vector>

@@ -14,29 +14,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 亮色主题配色，整体改成米白纸张 + 棕色墨迹的暖调记账风格。 */
+/**
+ * 亮色主题配色。
+ *
+ * 用途说明：
+ * - 以白色作为主视觉面积，让设置页、账本页和列表页更轻、更干净。
+ * - 米白色只承担页面背景、选中态和次级容器，浅棕色只用于主按钮和少量强调。
+ */
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF7B4B34),
-    onPrimary = Color(0xFFFFFBF6),
-    primaryContainer = Color(0xFFF4E1CD),
-    onPrimaryContainer = Color(0xFF52301F),
-    secondary = Color(0xFFA67C52),
-    onSecondary = Color(0xFF2E1B0E),
-    secondaryContainer = Color(0xFFFFF0DE),
-    onSecondaryContainer = Color(0xFF4A3021),
-    tertiary = Color(0xFFD6A95F),
-    onTertiary = Color(0xFF3E2812),
-    tertiaryContainer = Color(0xFFFFECCB),
-    onTertiaryContainer = Color(0xFF5F4022),
-    background = Color(0xFFFFF7EE),
-    onBackground = Color(0xFF2F2119),
-    surface = Color(0xFFFFFCF6),
-    onSurface = Color(0xFF2F2119),
-    surfaceVariant = Color(0xFFFFF1E0),
-    onSurfaceVariant = Color(0xFF6A5748),
-    outline = Color(0xFFE2CDB7),
-    error = Color(0xFFB35B45),
-    onError = Color(0xFFFFFBF8),
+    primary = Color(0xFF8B6047),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFF3E6DC),
+    onPrimaryContainer = Color(0xFF4F3526),
+    secondary = Color(0xFFAE9274),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFF7EFE6),
+    onSecondaryContainer = Color(0xFF4C3A2A),
+    tertiary = Color(0xFF4F8F7A),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFE4F2EC),
+    onTertiaryContainer = Color(0xFF24483C),
+    background = Color(0xFFFEFCF8),
+    onBackground = Color(0xFF28231F),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF28231F),
+    surfaceVariant = Color(0xFFF6F0E8),
+    onSurfaceVariant = Color(0xFF6D6258),
+    outline = Color(0xFFE7DDD2),
+    error = Color(0xFFB84F4A),
+    onError = Color(0xFFFFFFFF),
 )
 
 /** 暗色主题也保持纸张与棕色气质，避免出现偏绿或偏紫观感。 */
@@ -64,19 +70,19 @@ private val DarkColors = darkColorScheme(
     onError = Color(0xFF341912),
 )
 
-/** 整体字号下调半档，减少金额和标题在窄屏上的换行概率。 */
+/** 整体字号继续下调到轻设置页密度，减少各页面之间的视觉落差。 */
 private val AutobookTypography = Typography(
-    headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    headlineSmall = TextStyle(fontSize = 21.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold),
-    titleMedium = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
-    titleSmall = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp),
-    labelLarge = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium),
-    labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
-    labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.Medium),
+    headlineMedium = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold),
+    headlineSmall = TextStyle(fontSize = 19.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold),
+    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold),
+    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+    titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
+    bodyMedium = TextStyle(fontSize = 13.sp, lineHeight = 20.sp),
+    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp),
+    labelLarge = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Medium),
+    labelMedium = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium),
+    labelSmall = TextStyle(fontSize = 10.sp, lineHeight = 13.sp, fontWeight = FontWeight.Medium),
 )
 
 /** 全局圆角改成更接近纸卡的方圆角，避免页面到处都是过圆的胶囊感。 */

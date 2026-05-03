@@ -1,10 +1,12 @@
 """AutoBook 后端 API 入口。
 
 当前版本是生产后端的技术骨架：接口路径、鉴权、会员门禁和持久化都已打通，
-短信、微信支付和模型训练任务后续再接真实供应商或异步任务。
+验证码邮件、微信支付和模型训练任务后续再接企业级供应商或异步任务。
 """
 
 import json
+import re
+import secrets
 from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -13,6 +15,7 @@ from fastapi.responses import JSONResponse
 
 from .admin_web import router as admin_router
 from .auth import build_token_pair, hash_value, require_user
+from .auth_code_delivery import AuthCodeDeliveryError, deliver_auth_code
 from .config import load_config
 from .database import init_database, transaction
 from .global_model_service import GLOBAL_MODEL_SCOPE
@@ -30,6 +33,7 @@ from .schemas import (
 CONFIG = load_config()
 app = FastAPI(title="AutoBook API", version="0.1.0")
 app.include_router(admin_router)
+EMAIL_PATTERN = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$", re.IGNORECASE)
 
 
 @app.on_event("startup")
@@ -131,6 +135,38 @@ def ensure_member_feature(user_id: str, feature: str) -> dict[str, object]:
     return membership
 
 
+def normalize_auth_email(raw_email: str) -> str:
+    """归一化登录邮箱。
+
+    参数：
+        raw_email: 客户端提交的邮箱文本。
+
+    返回：
+        str: 去除首尾空白并转小写后的邮箱地址。
+    """
+
+    email = raw_email.strip().lower()
+    if not EMAIL_PATTERN.fullmatch(email):
+        raise fail(400, "BAD_REQUEST", "请输入正确的邮箱地址")
+    return email
+
+
+def create_auth_code(delivery_mode: str) -> str:
+    """生成本次登录验证码。
+
+    参数：
+        delivery_mode: 当前验证码发送通道，dev 模式继续使用固定验证码。
+
+    返回：
+        str: 6 位数字验证码。
+    """
+
+    if delivery_mode == "dev":
+        return CONFIG.dev_sms_code
+    # 真实邮件模式生成随机 6 位码，避免所有用户共用固定验证码。
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     """服务健康检查。
@@ -144,21 +180,33 @@ def health() -> dict[str, str]:
 
 @app.post("/v1/auth/sms-code")
 def request_sms_code(body: SmsCodeRequest) -> dict[str, object]:
-    """发送验证码。
+    """发送邮箱验证码。
 
     参数：
-        body: 手机号和登录场景。
+        body: 登录邮箱和登录场景。
 
     返回：
-        dict[str, object]: 冷却时间与过期时间。
+        dict[str, object]: 验证码有效期；按钮等待时间由客户端本地限流维护。
     """
 
+    email = normalize_auth_email(body.phone)
     issued_at = now_millis()
     expires_at = issued_at + 300_000
-    code_hash = hash_value(f"{body.phone}:{body.scene}:{CONFIG.dev_sms_code}", CONFIG.token_secret)
+    code = create_auth_code(CONFIG.auth_code_delivery)
+    code_hash = hash_value(f"{email}:{body.scene}:{code}", CONFIG.token_secret)
+
+    try:
+        deliver_auth_code(
+            config=CONFIG,
+            recipient_email=email,
+            code=code,
+            expires_in_seconds=300,
+        )
+    except AuthCodeDeliveryError as exc:
+        raise fail(503, "EMAIL_SEND_FAILED", str(exc)) from exc
 
     with transaction(CONFIG.database_path) as db:
-        # 当前阶段不接真实短信，把固定开发验证码的摘要写入数据库，保留完整登录流程。
+        # 验证码只保存哈希和过期时间，数据库里不落明文，降低泄露风险。
         db.execute(
             """
             INSERT INTO sms_codes(phone, scene, code_hash, expires_at, requested_at)
@@ -168,39 +216,43 @@ def request_sms_code(body: SmsCodeRequest) -> dict[str, object]:
                 expires_at = excluded.expires_at,
                 requested_at = excluded.requested_at
             """,
-            (body.phone, body.scene, code_hash, expires_at, issued_at),
+            (email, body.scene, code_hash, expires_at, issued_at),
         )
 
-    return ok({"cooldownSeconds": 60, "expiresInSeconds": 300})
+    return ok({"expiresInSeconds": 300})
 
 
 @app.post("/v1/auth/login")
 def login(body: LoginRequest) -> dict[str, object]:
-    """验证码登录或自动注册。
+    """邮箱验证码登录或自动注册。
 
     参数：
-        body: 手机号、验证码和客户端信息。
+        body: 登录邮箱、验证码和客户端信息。
 
     返回：
         dict[str, object]: 用户身份和令牌数据。
     """
 
-    expected_hash = hash_value(f"{body.phone}:login:{body.code}", CONFIG.token_secret)
+    email = normalize_auth_email(body.phone)
+    code = body.code.strip()
+    expected_hash = hash_value(f"{email}:login:{code}", CONFIG.token_secret)
     now = now_millis()
 
     with transaction(CONFIG.database_path) as db:
         sms_row = db.execute(
             "SELECT code_hash, expires_at FROM sms_codes WHERE phone = ? AND scene = 'login'",
-            (body.phone,),
+            (email,),
         ).fetchone()
         if sms_row is None or sms_row["expires_at"] < now or sms_row["code_hash"] != expected_hash:
             raise fail(400, "BAD_REQUEST", "验证码错误或已过期")
+        # 登录成功后立即删除验证码，防止同一个验证码在有效期内重复使用。
+        db.execute("DELETE FROM sms_codes WHERE phone = ? AND scene = 'login'", (email,))
 
-        user_row = db.execute("SELECT id, phone FROM users WHERE phone = ?", (body.phone,)).fetchone()
+        user_row = db.execute("SELECT id, phone FROM users WHERE phone = ?", (email,)).fetchone()
         is_new_user = user_row is None
         user_id = f"user_{uuid4().hex}"
         if is_new_user:
-            db.execute("INSERT INTO users(id, phone, created_at) VALUES (?, ?, ?)", (user_id, body.phone, now))
+            db.execute("INSERT INTO users(id, phone, created_at) VALUES (?, ?, ?)", (user_id, email, now))
             # 新账号默认免费，后续只由支付回调或后台操作改成会员。
             db.execute(
                 """
@@ -213,7 +265,7 @@ def login(body: LoginRequest) -> dict[str, object]:
             user_id = user_row["id"]
 
     token_pair = build_token_pair(user_id, CONFIG)
-    return ok({"userId": user_id, "phone": body.phone, "isNewUser": is_new_user, **token_pair})
+    return ok({"userId": user_id, "phone": email, "isNewUser": is_new_user, **token_pair})
 
 
 @app.post("/v1/auth/refresh")

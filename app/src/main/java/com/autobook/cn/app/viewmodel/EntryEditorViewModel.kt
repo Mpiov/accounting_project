@@ -14,6 +14,12 @@ import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.PendingEntry
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
+import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,10 +40,10 @@ data class EntryEditorUiState(
     val amount: String = "",
     /** 当前表单对应的交易时间；图片导入识别出时间时会优先写入这里。 */
     val entryTimestamp: Long? = null,
-    val merchant: String = "",
+    /** 时间输入框文本，保存时按固定格式解析为毫秒时间戳。 */
+    val entryTimeText: String = formatEntryTime(System.currentTimeMillis()),
     val category: String = "待分类",
     val note: String = "",
-    val orderId: String = "",
     val direction: MoneyDirection = MoneyDirection.EXPENSE,
     val canDelete: Boolean = false,
     val errorMessage: String? = null,
@@ -72,7 +78,6 @@ internal data class EntryTemplate(
     val label: String,
     val direction: MoneyDirection,
     val category: String,
-    val defaultMerchant: String = "",
     val defaultNote: String = "",
 )
 
@@ -122,10 +127,9 @@ class EntryEditorViewModel @Inject constructor(
     }
 
     fun updateAmount(value: String) = updateState { copy(amount = value, errorMessage = null) }
-    fun updateMerchant(value: String) = updateState { copy(merchant = value, errorMessage = null) }
+    fun updateEntryTime(value: String) = updateState { copy(entryTimeText = value, errorMessage = null) }
     fun updateCategory(value: String) = updateState { copy(category = value, errorMessage = null) }
     fun updateNote(value: String) = updateState { copy(note = value, errorMessage = null) }
-    fun updateOrderId(value: String) = updateState { copy(orderId = value, errorMessage = null) }
     fun updateDirection(value: MoneyDirection) = updateState { copy(direction = value, errorMessage = null) }
     fun applyTemplate(templateId: String) = updateState { applyEntryTemplate(templateId) }
 
@@ -171,11 +175,10 @@ class EntryEditorViewModel @Inject constructor(
                             val baseState = copy(
                                 amount = suggestion.amount?.toString() ?: amount,
                                 entryTimestamp = suggestion.timestamp ?: entryTimestamp,
+                                entryTimeText = suggestion.timestamp?.let(::formatEntryTime) ?: entryTimeText,
                                 direction = suggestion.direction,
-                                merchant = suggestion.merchant.ifBlank { merchant },
                                 category = suggestion.category.ifBlank { category },
                                 note = suggestion.note.ifBlank { note },
-                                orderId = suggestion.orderId ?: orderId,
                                 imageImportMessage = suggestion.message,
                                 imageImportTracePath = suggestion.tracePath,
                                 importedImageRef = imageRef,
@@ -257,8 +260,9 @@ class EntryEditorViewModel @Inject constructor(
                 updateState { copy(errorMessage = "请输入有效金额") }
                 return@launch
             }
-            if (state.merchant.isBlank()) {
-                updateState { copy(errorMessage = "请输入商户或备注对象") }
+            val entryTimestamp = parseEntryTime(state.entryTimeText)
+            if (entryTimestamp == null) {
+                updateState { copy(errorMessage = "请输入正确时间，格式如 2026-05-03 18:30") }
                 return@launch
             }
             if (state.direction == MoneyDirection.UNKNOWN) {
@@ -266,6 +270,8 @@ class EntryEditorViewModel @Inject constructor(
                 updateState { copy(errorMessage = "请选择收支方向") }
                 return@launch
             }
+            val category = state.category.trim().ifBlank { "待分类" }
+            val note = state.note.trim().ifBlank { null }
 
             when (state.mode) {
                 EntryEditorMode.CREATE -> {
@@ -273,12 +279,10 @@ class EntryEditorViewModel @Inject constructor(
                         LedgerEntry(
                             amount = amount,
                             direction = state.direction,
-                            merchant = state.merchant.trim(),
                             channel = if (state.importedImageRef != null) "图片导入" else "手动记账",
-                            timestamp = state.entryTimestamp ?: System.currentTimeMillis(),
-                            category = state.category.trim().ifBlank { "待分类" },
-                            orderId = state.orderId.trim().ifBlank { null },
-                            note = state.note.trim().ifBlank { null },
+                            timestamp = entryTimestamp,
+                            category = category,
+                            note = note,
                             traceSource = if (state.importedImageRef != null) "image-import" else "manual",
                             tracePath = state.imageImportTracePath?.name?.lowercase() ?: "manual-entry",
                             traceModelVersion = if (state.importedImageRef != null) "image-import-v1" else "manual-v1",
@@ -292,12 +296,10 @@ class EntryEditorViewModel @Inject constructor(
                     ledgerRepository.update(
                         current.copy(
                             amount = amount,
-                            timestamp = state.entryTimestamp ?: current.timestamp,
+                            timestamp = entryTimestamp,
                             direction = state.direction,
-                            merchant = state.merchant.trim(),
-                            category = state.category.trim().ifBlank { "待分类" },
-                            orderId = state.orderId.trim().ifBlank { null },
-                            note = state.note.trim().ifBlank { null },
+                            category = category,
+                            note = note,
                             editedManually = true,
                         ),
                     )
@@ -309,14 +311,13 @@ class EntryEditorViewModel @Inject constructor(
                     // 待确认项保存后写入账本，并从待确认队列中移除。
                     val pending = resolvingPending ?: return@launch
                     val correctedEntry = LedgerEntry(
+                        sortId = pending.sortId,
                         amount = amount,
                         direction = state.direction,
-                        merchant = state.merchant.trim(),
                         channel = pending.channel,
-                        timestamp = state.entryTimestamp ?: pending.timestamp,
-                        category = state.category.trim().ifBlank { pending.categoryHint },
-                        orderId = state.orderId.trim().ifBlank { pending.orderId },
-                        note = state.note.trim().ifBlank { null },
+                        timestamp = entryTimestamp,
+                        category = category.ifBlank { pending.categoryHint },
+                        note = note,
                         traceSource = pending.rawSource,
                         tracePath = pending.parsePath,
                         traceModelVersion = pending.modelVersion,
@@ -366,10 +367,9 @@ class EntryEditorViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(
                         amount = entry.amount.toString(),
                         entryTimestamp = entry.timestamp,
-                        merchant = entry.merchant,
+                        entryTimeText = formatEntryTime(entry.timestamp),
                         category = entry.category,
                         note = entry.note.orEmpty(),
-                        orderId = entry.orderId.orEmpty(),
                         direction = entry.direction,
                     )
                 }
@@ -381,10 +381,9 @@ class EntryEditorViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(
                         amount = entry.amount.toString(),
                         entryTimestamp = entry.timestamp,
-                        merchant = entry.merchant,
+                        entryTimeText = formatEntryTime(entry.timestamp),
                         category = entry.categoryHint,
-                        note = "",
-                        orderId = entry.orderId.orEmpty(),
+                        note = entry.note.orEmpty(),
                         direction = entry.direction,
                     )
                 }
@@ -403,13 +402,12 @@ class EntryEditorViewModel @Inject constructor(
     }
 }
 
-/** 快捷模板只预填常用字段，避免覆盖用户已确认的金额和订单号。 */
+/** 快捷模板只预填常用字段，避免覆盖用户已确认的金额和时间。 */
 internal fun EntryEditorUiState.applyEntryTemplate(templateId: String): EntryEditorUiState {
     val template = ENTRY_TEMPLATES.firstOrNull { it.id == templateId } ?: return this
     return copy(
         direction = template.direction,
         category = template.category,
-        merchant = merchant.ifBlank { template.defaultMerchant },
         note = note.ifBlank { template.defaultNote },
         errorMessage = null,
     )
@@ -421,7 +419,6 @@ private val ENTRY_TEMPLATES = listOf(
         label = "早餐",
         direction = MoneyDirection.EXPENSE,
         category = "餐饮",
-        defaultMerchant = "早餐",
         defaultNote = "晨间用餐",
     ),
     EntryTemplate(
@@ -429,7 +426,6 @@ private val ENTRY_TEMPLATES = listOf(
         label = "午餐",
         direction = MoneyDirection.EXPENSE,
         category = "餐饮",
-        defaultMerchant = "午餐",
         defaultNote = "工作日用餐",
     ),
     EntryTemplate(
@@ -437,15 +433,13 @@ private val ENTRY_TEMPLATES = listOf(
         label = "打车",
         direction = MoneyDirection.EXPENSE,
         category = "交通",
-        defaultMerchant = "滴滴出行",
-        defaultNote = "城市出行",
+        defaultNote = "滴滴出行\n城市出行",
     ),
     EntryTemplate(
         id = "shopping",
         label = "购物",
         direction = MoneyDirection.EXPENSE,
         category = "购物",
-        defaultMerchant = "日常购物",
         defaultNote = "生活消费",
     ),
     EntryTemplate(
@@ -453,7 +447,6 @@ private val ENTRY_TEMPLATES = listOf(
         label = "工资",
         direction = MoneyDirection.INCOME,
         category = "工资",
-        defaultMerchant = "工资入账",
         defaultNote = "固定收入",
     ),
     EntryTemplate(
@@ -461,7 +454,6 @@ private val ENTRY_TEMPLATES = listOf(
         label = "转账",
         direction = MoneyDirection.EXPENSE,
         category = "转账",
-        defaultMerchant = "银行卡转账",
         defaultNote = "账户间转移",
     ),
 )
@@ -484,14 +476,48 @@ internal fun EntryEditorUiState.applyImageImportCandidate(index: Int): EntryEdit
     return copy(
         amount = candidate.amount?.toString() ?: amount,
         entryTimestamp = candidate.timestamp ?: entryTimestamp,
+        entryTimeText = candidate.timestamp?.let(::formatEntryTime) ?: entryTimeText,
         direction = candidate.direction,
-        merchant = candidate.merchant.ifBlank { merchant },
         category = candidate.category.ifBlank { category },
         note = candidate.note.ifBlank { note },
-        orderId = candidate.orderId ?: orderId,
         selectedImageImportCandidateIndex = index,
         errorMessage = null,
     )
 }
+
+/**
+ * 用途说明：
+ * - 把毫秒时间戳格式化成编辑页统一展示和输入的时间文本。
+ *
+ * 参数说明：
+ * - timestamp：交易发生时间戳。
+ */
+internal fun formatEntryTime(timestamp: Long): String {
+    return Instant.ofEpochMilli(timestamp)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDateTime()
+        .format(ENTRY_TIME_FORMATTER)
+}
+
+/**
+ * 用途说明：
+ * - 把用户输入的时间文本解析成毫秒时间戳。
+ * - 解析失败返回空，由保存流程给出错误提示，避免用户输入过程中反复弹错。
+ *
+ * 参数说明：
+ * - value：时间输入框中的文本，格式为 `yyyy-MM-dd HH:mm`。
+ */
+private fun parseEntryTime(value: String): Long? {
+    return try {
+        LocalDateTime.parse(value.trim(), ENTRY_TIME_FORMATTER)
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+    } catch (_: DateTimeParseException) {
+        null
+    }
+}
+
+private val ENTRY_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.CHINA)
 
 private const val TAG = "EntryEditorViewModel"

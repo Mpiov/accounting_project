@@ -85,8 +85,8 @@ fun ChartDashboardScreen(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 112.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item(key = "chart_header") {
             ChartHeaderCard(
@@ -139,8 +139,8 @@ private fun ChartHeaderCard(
         colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
                 text = "图表",
@@ -206,8 +206,8 @@ private fun TrendChartCard(
         colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
                 text = "${selectedDirection.label}${selectedPeriod.label}趋势",
@@ -322,10 +322,10 @@ private fun TrendBarCanvas(
     scale: ChartTrendScale,
     modifier: Modifier = Modifier,
 ) {
-    val guideColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
-    val zeroLineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.78f)
-    val positiveBarColor = MaterialTheme.colorScheme.primary
-    val negativeBarColor = MaterialTheme.colorScheme.tertiary
+    val guideColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
+    val zeroLineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.70f)
+    val incomeBarColor = chartIncomeColor
+    val expenseBarColor = chartExpenseColor
 
     Canvas(modifier = modifier) {
         val widthPerPoint = if (points.isEmpty()) size.width else size.width / points.size
@@ -360,10 +360,11 @@ private fun TrendBarCanvas(
             val top = min(zeroY, valueY)
             val height = max(abs(zeroY - valueY), 6.dp.toPx())
             val color = when (selectedDirection) {
-                ChartDirection.INCOME -> positiveBarColor
-                ChartDirection.EXPENSE -> negativeBarColor
+                ChartDirection.INCOME -> incomeBarColor
+                ChartDirection.EXPENSE -> expenseBarColor
                 ChartDirection.NET -> {
-                    if (point.amount >= 0) positiveBarColor else negativeBarColor
+                    // 结余模式继续用收入/支出色区分正负，用户扫一眼就能看出盈亏方向。
+                    if (point.amount >= 0) incomeBarColor else expenseBarColor
                 }
             }.copy(alpha = if (point.isCurrent) 1f else 0.48f)
 
@@ -396,8 +397,8 @@ private fun CategoryDonutCard(
         colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
                 text = "${selectedDirection.label}分类",
@@ -412,12 +413,12 @@ private fun CategoryDonutCard(
                 )
             } else {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     CategoryDonutChart(
                         categories = categories,
-                        modifier = Modifier.size(136.dp),
+                        modifier = Modifier.size(120.dp),
                     )
                     Column(
                         modifier = Modifier.weight(1f),
@@ -490,7 +491,7 @@ private fun CategoryLegendRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -657,14 +658,14 @@ private fun buildChartCategories(
                 amount = totalIncome,
                 ratio = (totalIncome / total).toFloat(),
                 ratioLabel = "${((totalIncome / total) * 100).toInt()}%",
-                color = Color(0xFF7B4B34),
+                color = chartIncomeColor,
             ),
             ChartCategoryItem(
                 category = "支出",
                 amount = totalExpense,
                 ratio = (totalExpense / total).toFloat(),
                 ratioLabel = "${((totalExpense / total) * 100).toInt()}%",
-                color = Color(0xFFD6A95F),
+                color = chartExpenseColor,
             ),
         )
     }
@@ -672,28 +673,24 @@ private fun buildChartCategories(
     val total = entries.sumOf { it.amount }
     if (total <= 0.0) return emptyList()
 
-    val palette = listOf(
-        Color(0xFF7B4B34),
-        Color(0xFFB07454),
-        Color(0xFFD6A95F),
-        Color(0xFFC28E79),
-        Color(0xFF8E6A52),
-    )
-
     return entries.groupBy { it.category.ifBlank { "未分类" } }
         .entries
-        .mapIndexed { index, entry ->
+        .map { entry ->
             val amount = entry.value.sumOf { it.amount }
             val ratio = (amount / total).toFloat()
+            Triple(entry.key, amount, ratio)
+        }
+        .sortedByDescending { (_, amount, _) -> amount }
+        .mapIndexed { index, (category, amount, ratio) ->
             ChartCategoryItem(
-                category = entry.key,
+                category = category,
                 amount = amount,
                 ratio = ratio,
                 ratioLabel = "${(ratio * 100).toInt()}%",
-                color = palette[index % palette.size],
+                // 分类图表使用独立多色盘，不再继承全局浅棕主题，保证数据区有足够区分度。
+                color = chartCategoryPalette[index % chartCategoryPalette.size],
             )
         }
-        .sortedByDescending { it.amount }
 }
 
 /**
@@ -817,4 +814,25 @@ private data class ChartCategoryItem(
     val ratio: Float,
     val ratioLabel: String,
     val color: Color,
+)
+
+/** 用途说明：收入图表色，统一使用绿色，和全局收入金额语义保持一致。 */
+private val chartIncomeColor = AutobookIncomeColor
+
+/** 用途说明：支出图表色，统一使用红色，和全局支出金额语义保持一致。 */
+private val chartExpenseColor = AutobookExpenseColor
+
+/**
+ * 用途说明：
+ * - 分类图表专用多色盘，避免数据可视化也被浅棕主题同化。
+ * - 颜色覆盖蓝、红、绿、橙、紫、青等方向，便于用户快速区分不同分类。
+ */
+private val chartCategoryPalette = listOf(
+    Color(0xFF3B82F6),
+    Color(0xFFE15B64),
+    Color(0xFF2E8B57),
+    Color(0xFFF59E0B),
+    Color(0xFF8B5CF6),
+    Color(0xFF06A7A0),
+    Color(0xFFEC4899),
 )

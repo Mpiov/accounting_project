@@ -123,11 +123,9 @@ interface ModelTrainingSampleDao {
      * - feedbackNote：反馈补充说明。
      * - correctedAmount：用户最终确认的金额。
      * - correctedDirection：用户最终确认的收支方向。
-     * - correctedMerchant：用户最终确认的商户。
      * - correctedChannel：用户最终确认的渠道。
      * - correctedTimestamp：用户最终确认的交易时间。
      * - correctedCategory：用户最终确认的分类。
-     * - correctedOrderId：用户最终确认的订单号。
      * - correctedNote：用户最终确认的备注。
      * - changedFieldsJson：被用户改动的字段名 JSON 数组。
      */
@@ -142,11 +140,9 @@ interface ModelTrainingSampleDao {
             feedbackNote = :feedbackNote,
             correctedAmount = :correctedAmount,
             correctedDirection = :correctedDirection,
-            correctedMerchant = :correctedMerchant,
             correctedChannel = :correctedChannel,
             correctedTimestamp = :correctedTimestamp,
             correctedCategory = :correctedCategory,
-            correctedOrderId = :correctedOrderId,
             correctedNote = :correctedNote,
             changedFieldsJson = :changedFieldsJson,
             uploadState = :uploadState
@@ -162,11 +158,9 @@ interface ModelTrainingSampleDao {
         feedbackNote: String?,
         correctedAmount: Double?,
         correctedDirection: String?,
-        correctedMerchant: String?,
         correctedChannel: String?,
         correctedTimestamp: Long?,
         correctedCategory: String?,
-        correctedOrderId: String?,
         correctedNote: String?,
         changedFieldsJson: String?,
         uploadState: String,
@@ -186,11 +180,9 @@ interface ModelTrainingSampleDao {
      * - feedbackNote：反馈补充说明。
      * - correctedAmount：用户最终确认的金额。
      * - correctedDirection：用户最终确认的收支方向。
-     * - correctedMerchant：用户最终确认的商户。
      * - correctedChannel：用户最终确认的渠道。
      * - correctedTimestamp：用户最终确认的交易时间。
      * - correctedCategory：用户最终确认的分类。
-     * - correctedOrderId：用户最终确认的订单号。
      * - correctedNote：用户最终确认的备注。
      * - changedFieldsJson：被用户改动的字段名 JSON 数组。
      */
@@ -205,11 +197,9 @@ interface ModelTrainingSampleDao {
             feedbackNote = :feedbackNote,
             correctedAmount = :correctedAmount,
             correctedDirection = :correctedDirection,
-            correctedMerchant = :correctedMerchant,
             correctedChannel = :correctedChannel,
             correctedTimestamp = :correctedTimestamp,
             correctedCategory = :correctedCategory,
-            correctedOrderId = :correctedOrderId,
             correctedNote = :correctedNote,
             changedFieldsJson = :changedFieldsJson,
             uploadState = :uploadState
@@ -227,11 +217,9 @@ interface ModelTrainingSampleDao {
         feedbackNote: String?,
         correctedAmount: Double?,
         correctedDirection: String?,
-        correctedMerchant: String?,
         correctedChannel: String?,
         correctedTimestamp: Long?,
         correctedCategory: String?,
-        correctedOrderId: String?,
         correctedNote: String?,
         changedFieldsJson: String?,
         uploadState: String,

@@ -45,9 +45,9 @@ internal object NotificationRuleConfidenceScorer {
             score += FINANCE_SETTLED_SCORE
             reasons += "收益结算${formatSigned(FINANCE_SETTLED_SCORE)}"
         }
-        if (features.hasExtractedMerchant) {
-            score += MERCHANT_SCORE
-            reasons += "商户${formatSigned(MERCHANT_SCORE)}"
+        if (features.hasExtractedCounterparty) {
+            score += COUNTERPARTY_DETAIL_SCORE
+            reasons += "备注线索${formatSigned(COUNTERPARTY_DETAIL_SCORE)}"
         }
 
         val guardedScore = applyRuleGuards(score, features, reasons)
@@ -281,7 +281,7 @@ private const val DIRECTION_SCORE = 0.15f
 private const val STRUCTURE_SCORE = 0.14f
 private const val TRANSACTION_SCENE_SCORE = 0.08f
 private const val FINANCE_SETTLED_SCORE = 0.16f
-private const val MERCHANT_SCORE = 0.04f
+private const val COUNTERPARTY_DETAIL_SCORE = 0.04f
 private const val ASSET_VALUATION_MAX_SCORE = 0.40f
 private const val DIRECTION_CONFLICT_MAX_SCORE = 0.42f
 private const val UNRELIABLE_AMOUNT_MAX_SCORE = 0.80f

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    IconPark 分类图标：LoveAndHelp。
+    说明：由 @icon-park/svg 的 outline SVG 机械转换为 Android VectorDrawable。
+    授权：Apache-2.0，详见项目 THIRD_PARTY_LICENSES.md。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M15 7C8.92487 7 4 11.9249 4 18C4 29 17 39 24 41.3262C31 39 44 29 44 18C44 11.9249 39.0751 7 33 7C29.2797 7 25.9907 8.8469 24 11.6738C22.0093 8.8469 18.7203 7 15 7Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M18 24H30" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M24 18V30" />
+</vector>

@@ -328,7 +328,7 @@ def admin_index(request: Request, q: str = "", message: str = "") -> Response:
 
     参数：
         request: FastAPI 请求对象。
-        q: 手机号搜索关键字。
+        q: 邮箱或旧手机号搜索关键字。
         message: 操作结果提示。
 
     返回：
@@ -352,8 +352,8 @@ def admin_index(request: Request, q: str = "", message: str = "") -> Response:
       <h2>搜索</h2>
       <form method="get" action="/admin">
         <label>
-          手机号
-          <input type="text" name="q" value="{escape(q)}" inputmode="numeric">
+          邮箱/账号
+          <input type="text" name="q" value="{escape(q)}">
         </label>
         <button type="submit">查询</button>
       </form>
@@ -362,8 +362,8 @@ def admin_index(request: Request, q: str = "", message: str = "") -> Response:
       <h2>发放会员</h2>
       <form method="post" action="/admin/memberships/grant">
         <label>
-          手机号
-          <input type="text" name="phone" inputmode="numeric" required>
+          邮箱
+          <input type="email" name="phone" required>
         </label>
         <label>
           天数
@@ -385,7 +385,7 @@ def admin_index(request: Request, q: str = "", message: str = "") -> Response:
       <table>
         <thead>
           <tr>
-            <th>手机号</th>
+            <th>邮箱/账号</th>
             <th>等级</th>
             <th>到期</th>
             <th>模型</th>

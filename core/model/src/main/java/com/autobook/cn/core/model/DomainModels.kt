@@ -90,10 +90,9 @@ data class ParseConfidence(
  * 参数说明：
  * - amount：识别出的金额。
  * - direction：识别出的收支方向。
- * - merchant：商户或对手方。
  * - channel：识别来源渠道。
  * - timestamp：交易时间戳。
- * - orderId：订单号，可为空。
+ * - note：备注文本；商户、对手方、订单号等非核心信息统一折叠到这里。
  * - confidence：候选置信度。
  * - confidenceReason：置信度原因说明。
  * - categoryHint：建议分类。
@@ -108,10 +107,9 @@ data class ParseConfidence(
 data class TransactionCandidate(
     val amount: Double,
     val direction: MoneyDirection,
-    val merchant: String,
     val channel: String,
     val timestamp: Long,
-    val orderId: String? = null,
+    val note: String? = null,
     val confidence: ParseConfidence,
     val confidenceReason: String,
     val categoryHint: String = "待分类",
@@ -130,13 +128,12 @@ data class TransactionCandidate(
  */
 data class LedgerEntry(
     val id: Long = 0L,
+    val sortId: Long = 0L,
     val amount: Double,
     val direction: MoneyDirection,
-    val merchant: String,
     val channel: String,
     val timestamp: Long,
     val category: String,
-    val orderId: String? = null,
     val note: String? = null,
     val traceSource: String,
     val tracePath: String,
@@ -151,14 +148,14 @@ data class LedgerEntry(
  */
 data class PendingEntry(
     val id: Long = 0L,
+    val sortId: Long = 0L,
     val amount: Double,
     val direction: MoneyDirection,
-    val merchant: String,
     val channel: String,
     val timestamp: Long,
     val confidence: ParseConfidence,
-    val orderId: String? = null,
     val categoryHint: String = "待分类",
+    val note: String? = null,
     val rawSource: String,
     val parsePath: String,
     val modelVersion: String,
@@ -191,11 +188,11 @@ data class AppSettings(
 
 /**
  * 用途说明：
- * - 手机号登录成功后由服务器返回的账号会话。
+ * - 邮箱登录成功后由服务器返回的账号会话。
  *
  * 参数说明：
  * - userId：服务器账号主键。
- * - phone：已绑定的手机号。
+ * - phone：已绑定的邮箱；字段名暂沿用旧契约。
  * - accessToken：访问业务接口的短期令牌。
  * - refreshToken：刷新访问令牌的长期令牌。
  * - loggedInAt：本地记录的登录时间。
@@ -220,7 +217,7 @@ data class AuthSession(
 data class AuthState(
     val session: AuthSession? = null,
 ) {
-    /** 用途说明：当前是否已有手机号登录会话。 */
+    /** 用途说明：当前是否已有邮箱登录会话。 */
     val isLoggedIn: Boolean
         get() = session != null
 }
@@ -253,7 +250,7 @@ enum class MembershipPaymentState {
  *
  * 参数说明：
  * - userId：服务器账号主键，未登录时为空。
- * - phone：当前登录手机号，未登录时为空。
+ * - phone：当前登录邮箱，未登录时为空；字段名暂沿用旧契约。
  * - tier：当前会员等级。
  * - expiresAt：会员过期时间戳，免费用户为空。
  * - serverVerified：本次会员状态是否来自服务器权威校验。
@@ -407,10 +404,8 @@ data class ImageImportCandidate(
     val amount: Double? = null,
     val timestamp: Long? = null,
     val direction: MoneyDirection = MoneyDirection.EXPENSE,
-    val merchant: String = "",
     val category: String = "待分类",
     val note: String = "",
-    val orderId: String? = null,
     val confidence: ParseConfidence = ParseConfidence(0f),
     val transactionState: ImageImportTransactionState = ImageImportTransactionState.UNKNOWN,
     val stateReason: String = "",
@@ -426,10 +421,8 @@ data class ImageImportSuggestion(
     val amount: Double? = null,
     val timestamp: Long? = null,
     val direction: MoneyDirection = MoneyDirection.EXPENSE,
-    val merchant: String = "",
     val category: String = "待分类",
     val note: String = "",
-    val orderId: String? = null,
     val confidence: ParseConfidence = ParseConfidence(0f),
     val tracePath: ImageImportAnalysisPath,
     val message: String,

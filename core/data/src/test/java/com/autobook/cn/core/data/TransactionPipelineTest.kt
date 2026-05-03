@@ -79,6 +79,7 @@ class TransactionPipelineTest {
             ): PendingEntry? = null
             override suspend fun ignore(id: Long) = Unit
             override suspend fun markFalsePositive(id: Long) = Unit
+            override suspend fun purgeUploadedFalsePositives(): Int = 0
         }
         val settingsRepository = buildSettingsRepository(AppSettings(autoAccountingEnabled = true))
         val trainingSampleRepository = RecordingModelTrainingSampleRepository()
@@ -170,6 +171,7 @@ class TransactionPipelineTest {
             ): PendingEntry? = null
             override suspend fun ignore(id: Long) = Unit
             override suspend fun markFalsePositive(id: Long) = Unit
+            override suspend fun purgeUploadedFalsePositives(): Int = 0
         }
         val settingsRepository = buildSettingsRepository(AppSettings(autoAccountingEnabled = true))
         val trainingSampleRepository = RecordingModelTrainingSampleRepository()
@@ -256,6 +258,7 @@ class TransactionPipelineTest {
             ): PendingEntry? = null
             override suspend fun ignore(id: Long) = Unit
             override suspend fun markFalsePositive(id: Long) = Unit
+            override suspend fun purgeUploadedFalsePositives(): Int = 0
         }
         val settingsRepository = buildSettingsRepository(AppSettings(autoAccountingEnabled = true))
         val trainingSampleRepository = RecordingModelTrainingSampleRepository()

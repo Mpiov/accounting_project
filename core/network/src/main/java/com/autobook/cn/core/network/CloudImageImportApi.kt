@@ -51,10 +51,8 @@ data class CloudImageImportRequest(
  * - amount：建议金额；为空表示模型没有稳定识别出金额。
  * - timestamp：建议交易时间；为空表示模型没有稳定识别出时间。
  * - direction：建议方向。
- * - merchant：建议商户。
  * - category：建议分类。
- * - note：建议备注。
- * - orderId：建议订单号。
+ * - note：建议备注；商户、对方、订单号等非核心信息统一写入这里。
  * - modelName：本次实际命中的云端模型名。
  * - message：面向用户的提示信息。
  * - requiresManualConfirmation：是否仍需要人工确认。
@@ -63,10 +61,8 @@ data class CloudImageImportResponse(
     val amount: Double? = null,
     val timestamp: Long? = null,
     val direction: String = "EXPENSE",
-    val merchant: String = "",
     val category: String = "待分类",
     val note: String = "",
-    val orderId: String? = null,
     val modelName: String,
     val message: String,
     val requiresManualConfirmation: Boolean = true,
@@ -83,10 +79,8 @@ data class CloudImageImportResponse(
  * - amount：候选金额。
  * - timestamp：候选交易时间；为空表示当前候选没有稳定时间。
  * - direction：候选方向。
- * - merchant：候选商户。
  * - category：候选分类。
- * - note：候选备注。
- * - orderId：候选订单号。
+ * - note：候选备注；商户、对方、订单号等非核心信息统一写入这里。
  * - confidenceScore：候选置信度。
  * - transactionState：候选状态，如 ACTIVE / REFUNDED / RETURNED。
  * - stateReason：状态判断原因。
@@ -96,10 +90,8 @@ data class CloudImageImportCandidateResponse(
     val amount: Double? = null,
     val timestamp: Long? = null,
     val direction: String = "EXPENSE",
-    val merchant: String = "",
     val category: String = "待分类",
     val note: String = "",
-    val orderId: String? = null,
     val confidenceScore: Float = 0f,
     val transactionState: String = "UNKNOWN",
     val stateReason: String = "",
@@ -145,10 +137,8 @@ class DirectCloudImageImportApi @Inject constructor(
                         ?: return@withContext CloudImageImportResponse(
                             amount = null,
                             direction = "EXPENSE",
-                            merchant = "",
                             category = "待分类",
                             note = "",
-                            orderId = null,
                             modelName = BuildConfig.CLOUD_IMAGE_MODEL,
                             message = "无法读取所选图片，请重新选择图片后再试。",
                             requiresManualConfirmation = true,
@@ -198,10 +188,8 @@ class DirectCloudImageImportApi @Inject constructor(
                             CloudImageImportResponse(
                                 amount = null,
                                 direction = "EXPENSE",
-                                merchant = "",
                                 category = "待分类",
                                 note = "",
-                                orderId = null,
                                 modelName = BuildConfig.CLOUD_IMAGE_MODEL,
                                 message = "云端大模型代理请求失败：HTTP ${connection.responseCode}，请检查代理或网络后重试。",
                                 requiresManualConfirmation = true,
@@ -210,10 +198,8 @@ class DirectCloudImageImportApi @Inject constructor(
                             parseResponse(responseText) ?: CloudImageImportResponse(
                                 amount = null,
                                 direction = "EXPENSE",
-                                merchant = "",
                                 category = "待分类",
                                 note = "",
-                                orderId = null,
                                 modelName = BuildConfig.CLOUD_IMAGE_MODEL,
                                 message = "云端大模型已返回结果，但当前无法稳定解析，请手动确认。",
                                 requiresManualConfirmation = true,
@@ -229,10 +215,8 @@ class DirectCloudImageImportApi @Inject constructor(
             CloudImageImportResponse(
                 amount = null,
                 direction = "EXPENSE",
-                merchant = "",
                 category = "待分类",
                 note = "",
-                orderId = null,
                 modelName = BuildConfig.CLOUD_IMAGE_MODEL,
                 message = "云端大模型请求超时，请检查网络或稍后重试。",
                 requiresManualConfirmation = true,
@@ -242,10 +226,8 @@ class DirectCloudImageImportApi @Inject constructor(
             CloudImageImportResponse(
                 amount = null,
                 direction = "EXPENSE",
-                merchant = "",
                 category = "待分类",
                 note = "",
-                orderId = null,
                 modelName = BuildConfig.CLOUD_IMAGE_MODEL,
                 message = "云端大模型连接超时，请检查网络或稍后重试。",
                 requiresManualConfirmation = true,
@@ -255,10 +237,8 @@ class DirectCloudImageImportApi @Inject constructor(
             CloudImageImportResponse(
                 amount = null,
                 direction = "EXPENSE",
-                merchant = "",
                 category = "待分类",
                 note = "",
-                orderId = null,
                 modelName = BuildConfig.CLOUD_IMAGE_MODEL,
                 message = "云端大模型调用失败：${throwable.message ?: throwable.javaClass.simpleName}",
                 requiresManualConfirmation = true,
@@ -317,6 +297,7 @@ class DirectCloudImageImportApi @Inject constructor(
             2.在QQ聊天场景下，右侧气泡为红包，出现"已被领完"，此时金额未知，但代表支出。
             3.出现"您的3.0元补贴尚未使用"，表明这是噪音，抛弃。
             4.如果图片里能看到支付时间、到账时间、交易时间或账单时间，必须尽量识别并填入 transactionTime。
+            5.不要单独返回商户、对方、订单号字段；如果能识别到这些信息，全部写入 note。
             JSON 结构如下：
             {
               "candidates": [
@@ -324,10 +305,8 @@ class DirectCloudImageImportApi @Inject constructor(
                   "amount": 可能为数字或 null,
                   "transactionTime": "yyyy-MM-dd HH:mm:ss 格式字符串或 null",
                   "direction": "INCOME" | "EXPENSE" | "UNKNOWN",
-                  "merchant": "字符串，无法确认时为空字符串",
                   "category": "字符串，无法确认时填待分类",
-                  "note": "字符串，可为空",
-                  "orderId": "字符串或 null",
+                  "note": "字符串，可为空；商户、对方、订单号等补充信息都写在这里",
                   "confidenceScore": 0.0,
                   "transactionState": "ACTIVE" | "REFUNDED" | "RETURNED" | "REVERSED" | "CANCELLED" | "UNKNOWN",
                   "stateReason": "字符串，可为空",
@@ -400,10 +379,12 @@ class DirectCloudImageImportApi @Inject constructor(
                     rawValue = payload.optStringOrNull("transactionTime") ?: payload.optStringOrNull("timestamp"),
                 ),
             direction = primaryCandidate?.direction ?: payload.optString("direction", "EXPENSE"),
-            merchant = primaryCandidate?.merchant ?: payload.optString("merchant", ""),
             category = primaryCandidate?.category ?: payload.optString("category", "待分类"),
-            note = primaryCandidate?.note ?: payload.optString("note", ""),
-            orderId = primaryCandidate?.orderId ?: payload.optStringOrNull("orderId"),
+            note = primaryCandidate?.note ?: buildCloudImageNote(
+                note = payload.optString("note", ""),
+                legacyCounterparty = payload.optString("merchant", ""),
+                legacyOrderNumber = payload.optStringOrNull("orderId"),
+            ),
             modelName = BuildConfig.CLOUD_IMAGE_MODEL,
             message = payload.optString("message", "图片分析已完成，请人工确认后保存。"),
             requiresManualConfirmation = payload.optBoolean("requiresManualConfirmation", true),
@@ -471,44 +452,6 @@ class DirectCloudImageImportApi @Inject constructor(
     }
 }
 
-/**
- * 云端大模型图片导入分析的 fake 实现。
- *
- * 用途说明：
- * - 在不希望发真实网络请求时，仍能返回固定结果联调图片导入流程。
- */
-/* class FakeCloudImageImportApi : CloudImageImportApi {
-    override suspend fun analyze(request: CloudImageImportRequest): CloudImageImportResponse {
-        return CloudImageImportResponse(
-            amount = 32.5,
-            timestamp = MOCK_TRANSACTION_TIMESTAMP,
-            direction = "EXPENSE",
-            merchant = "云端大模型图片建议商户",
-            category = "餐饮",
-            note = "来自云端大模型 mock，建议人工确认后保存",
-            orderId = "IMG-CLOUD-MODEL-MOCK-001",
-            modelName = "gemini-3-flash-preview",
-            message = "已按云端大模型链路生成 mock 建议，请核对金额、商户和备注后确认保存。",
-            requiresManualConfirmation = true,
-            candidates = listOf(
-                CloudImageImportCandidateResponse(
-                    amount = 32.5,
-                    timestamp = MOCK_TRANSACTION_TIMESTAMP,
-                    direction = "EXPENSE",
-                    merchant = "云端大模型图片建议商户",
-                    category = "餐饮",
-                    note = "来自云端大模型 mock，建议人工确认后保存",
-                    orderId = "IMG-CLOUD-MODEL-MOCK-001",
-                    confidenceScore = 0.88f,
-                    transactionState = "ACTIVE",
-                    stateReason = "页面呈现付款成功",
-                    evidence = "支付成功 32.50 元",
-                ),
-            ),
-        )
-    }
-} */
-
 /** inline data 所需的最小图片载荷。 */
 private data class InlineImagePayload(
     val mimeType: String,
@@ -532,10 +475,12 @@ private fun parseImageCandidates(array: JSONArray): List<CloudImageImportCandida
                         rawValue = item.optStringOrNull("transactionTime") ?: item.optStringOrNull("timestamp"),
                     ),
                     direction = item.optString("direction", "EXPENSE"),
-                    merchant = item.optString("merchant", ""),
                     category = item.optString("category", "待分类"),
-                    note = item.optString("note", ""),
-                    orderId = item.optStringOrNull("orderId"),
+                    note = buildCloudImageNote(
+                        note = item.optString("note", ""),
+                        legacyCounterparty = item.optString("merchant", ""),
+                        legacyOrderNumber = item.optStringOrNull("orderId"),
+                    ),
                     confidenceScore = item.optDouble("confidenceScore", 0.0).toFloat(),
                     transactionState = item.optString("transactionState", "UNKNOWN"),
                     stateReason = item.optString("stateReason", ""),
@@ -552,6 +497,28 @@ private fun JSONObject.optDoubleOrNull(key: String): Double? {
 
 private fun JSONObject.optStringOrNull(key: String): String? {
     return if (isNull(key)) null else optString(key)
+}
+
+/**
+ * 用途说明：
+ * - 兼容旧版云端响应，把商户、对方、订单号折叠进备注。
+ * - 新提示词不再要求这些独立字段，但旧代理或缓存响应可能仍返回它们。
+ *
+ * 参数说明：
+ * - note：模型返回的备注正文。
+ * - legacyCounterparty：旧字段中的商户或对方。
+ * - legacyOrderNumber：旧字段中的订单号。
+ */
+private fun buildCloudImageNote(
+    note: String,
+    legacyCounterparty: String,
+    legacyOrderNumber: String?,
+): String {
+    return buildList {
+        note.trim().takeIf(String::isNotBlank)?.let(::add)
+        legacyCounterparty.trim().takeIf(String::isNotBlank)?.let { value -> add("对方：$value") }
+        legacyOrderNumber?.trim()?.takeIf(String::isNotBlank)?.let { value -> add("订单号：$value") }
+    }.distinct().joinToString(separator = "\n")
 }
 
 /**
@@ -633,4 +600,3 @@ private const val INITIAL_JPEG_QUALITY = 85
 private const val MIN_JPEG_QUALITY = 45
 private const val JPEG_QUALITY_STEP = 10
 private const val TAG = "CloudImageImportApi"
-private const val MOCK_TRANSACTION_TIMESTAMP = 1_744_684_800_000L

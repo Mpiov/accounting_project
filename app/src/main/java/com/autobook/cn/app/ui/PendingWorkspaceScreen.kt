@@ -1,6 +1,5 @@
 package com.autobook.cn.app.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,10 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.DoneAll
-import androidx.compose.material.icons.outlined.PendingActions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -24,16 +19,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.autobook.cn.feature.pending.model.PendingItemUiModel
 import com.autobook.cn.feature.pending.model.PendingUiState
@@ -45,7 +36,6 @@ import com.autobook.cn.feature.pending.model.PendingUiState
  * - state：待确认列表的界面状态。
  * - onConfirm：确认入账回调。
  * - onEdit：编辑后入账回调。
- * - onIgnore：忽略回调。
  * - onOpenLedger：空状态下前往账本页的回调。
  * - onCreateEntry：空状态下快速记一笔的回调。
  * - modifier：外层修饰符。
@@ -55,15 +45,14 @@ fun PendingWorkspaceScreen(
     state: PendingUiState,
     onConfirm: (Long) -> Unit,
     onEdit: (Long) -> Unit,
-    onIgnore: (Long) -> Unit,
     onOpenLedger: () -> Unit,
     onCreateEntry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 112.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (state.items.isEmpty()) {
             item(key = "pending_empty") {
@@ -85,14 +74,22 @@ fun PendingWorkspaceScreen(
                     item = item,
                     onConfirm = { onConfirm(item.id) },
                     onEdit = { onEdit(item.id) },
-                    onIgnore = { onIgnore(item.id) },
                 )
             }
         }
     }
 }
 
-/** 顶部摘要卡把数量和处理建议放到一眼就能看到的位置。 */
+/**
+ * 顶部摘要卡。
+ *
+ * 用途说明：
+ * - 只展示待复核数量，不再附带建议说明，避免用户进入页面后被非操作信息打断。
+ *
+ * 参数说明：
+ * - pendingCount：当前待确认记录数量。
+ * - modifier：外层修饰符。
+ */
 @Composable
 private fun PendingSummaryCard(
     pendingCount: Int,
@@ -106,23 +103,24 @@ private fun PendingSummaryCard(
         colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Surface(
-                    modifier = Modifier.size(46.dp),
+                    modifier = Modifier.size(40.dp),
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.primaryContainer,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        androidx.compose.material3.Icon(
-                            imageVector = Icons.Outlined.PendingActions,
+                        AutobookIcon(
+                            asset = AutobookIconAsset.Pending,
                             contentDescription = "待确认",
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(22.dp),
                         )
                     }
                 }
@@ -139,26 +137,26 @@ private fun PendingSummaryCard(
                     )
                 }
             }
-            Text(
-                text = if (pendingCount > 0) {
-                    "建议优先处理这部分低置信度记录，避免分类和月度统计出现偏差。"
-                } else {
-                    "自动入账链路目前比较顺畅，你可以回到账本继续查看最近流水。"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
-
-/** 单条待确认卡强化原始通知查看、分类建议和主要操作层级。 */
+/**
+ * 单条待确认卡。
+ *
+ * 用途说明：
+ * - 取消建议分类和提示，把用户判断依据集中到默认展开的通知原文。
+ * - 第一行提供四个轻量修改入口，第二行只保留更重的“确认入账”主按钮。
+ *
+ * 参数说明：
+ * - item：当前待确认项。
+ * - onConfirm：确认入账回调。
+ * - onEdit：进入编辑页回调；当前四个修改入口先共用编辑页。
+ */
 @Composable
 private fun PendingResolveCard(
     item: PendingItemUiModel,
     onConfirm: () -> Unit,
     onEdit: () -> Unit,
-    onIgnore: () -> Unit,
 ) {
     Card(
         shape = AutobookUiTokens.panelShape,
@@ -166,8 +164,8 @@ private fun PendingResolveCard(
         colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -179,7 +177,7 @@ private fun PendingResolveCard(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = item.merchant,
+                        text = item.title,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -193,55 +191,70 @@ private fun PendingResolveCard(
                     text = item.amount,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.tertiary,
+                    color = pendingAmountColor(item),
                 )
             }
-            PendingHintCard(
-                rawNotificationText = item.rawNotificationText,
-                categoryHint = item.categoryHint,
-                orderId = item.orderId,
-                directionHint = item.directionHint,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = {
-                        if (item.canDirectConfirm) {
-                            onConfirm()
-                        } else {
-                            onEdit()
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(item.primaryActionLabel)
-                }
-                OutlinedButton(
+            PendingRawNotificationCard(rawNotificationText = item.rawNotificationText)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                PendingFieldActionButton(
+                    label = "修改收支方向",
                     onClick = onEdit,
                     modifier = Modifier.weight(1f),
-                ) {
-                    Text(if (item.canDirectConfirm) "编辑后入账" else "继续编辑")
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SecondaryActionChip(
-                    label = "不入账",
-                    onClick = onIgnore,
+                )
+                PendingFieldActionButton(
+                    label = "修改分类",
+                    onClick = onEdit,
                     modifier = Modifier.weight(1f),
                 )
+                PendingFieldActionButton(
+                    label = "修改金额",
+                    onClick = onEdit,
+                    modifier = Modifier.weight(1f),
+                )
+                PendingFieldActionButton(
+                    label = "编辑备注",
+                    onClick = onEdit,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Button(
+                onClick = onConfirm,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("确认入账")
             }
         }
     }
 }
 
-/** 建议分类和通知原文集中展示，降低用户判断成本。 */
+/**
+ * 用途说明：
+ * - 根据待确认项方向决定金额颜色，保证收入为绿、支出为红、未知方向为中性色。
+ *
+ * 参数说明：
+ * - item：当前待确认列表项，包含方向是否已知以及是否收入两个展示字段。
+ */
 @Composable
-private fun PendingHintCard(
+private fun pendingAmountColor(item: PendingItemUiModel) = when {
+    item.isIncome -> AutobookIncomeColor
+    item.isDirectionKnown -> AutobookExpenseColor
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+/**
+ * 通知原文卡。
+ *
+ * 用途说明：
+ * - 原文默认展开，用户不用再额外点击才能核对信息。
+ * - 缺少原文时给出短占位，避免卡片突然缺一块造成视觉跳动。
+ *
+ * 参数说明：
+ * - rawNotificationText：原始通知文本。
+ */
+@Composable
+private fun PendingRawNotificationCard(
     rawNotificationText: String?,
-    categoryHint: String,
-    orderId: String?,
-    directionHint: String?,
 ) {
-    var expanded by rememberSaveable(rawNotificationText) { mutableStateOf(false) }
     Card(
         shape = AutobookUiTokens.innerPanelShape,
         border = autobookCardBorder(),
@@ -252,41 +265,52 @@ private fun PendingHintCard(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "建议分类：$categoryHint",
+                text = "通知原文",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
-            directionHint?.let { hint ->
-                Text(
-                    text = "提示：$hint",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            orderId?.takeIf { it.isNotBlank() }?.let { id ->
-                Text(
-                    text = "订单号：$id",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            rawNotificationText?.takeIf { it.isNotBlank() }?.let { rawText ->
-                TextButton(
-                    onClick = { expanded = !expanded },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (expanded) "收起通知原文" else "展开通知原文")
-                }
-                if (expanded) {
-                    // 原文采用完整多行展示，便于用户对照通知内容自行判断是否入账。
-                    Text(
-                        text = rawText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            Text(
+                text = rawNotificationText?.takeIf { it.isNotBlank() } ?: "暂无通知原文",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
+    }
+}
+
+/**
+ * 待确认字段修改按钮。
+ *
+ * 用途说明：
+ * - 字段修改入口属于辅助操作，使用浅色 Surface，避免抢过“确认入账”的主按钮权重。
+ *
+ * 参数说明：
+ * - label：按钮文案。
+ * - onClick：点击回调。
+ * - modifier：外层布局修饰符。
+ */
+@Composable
+private fun PendingFieldActionButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val chipShape = AutobookUiTokens.innerPanelShape
+    Surface(
+        modifier = modifier.autobookClippedClickable(shape = chipShape, onClick = onClick),
+        shape = chipShape,
+        border = autobookCardBorder(),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -305,8 +329,8 @@ private fun PendingEmptyCard(
         colors = autobookCardColors(highlighted = true),
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -318,10 +342,11 @@ private fun PendingEmptyCard(
                     color = autobookSoftFillColor(),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        androidx.compose.material3.Icon(
-                            imageVector = Icons.Outlined.DoneAll,
+                        AutobookIcon(
+                            asset = AutobookIconAsset.DoneAll,
                             contentDescription = "完成",
                             tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp),
                         )
                     }
                 }
@@ -350,34 +375,6 @@ private fun PendingEmptyCard(
                     Text("记一笔")
                 }
             }
-        }
-    }
-}
-
-/** 次级操作统一用轻量胶囊按钮表现，避免和主按钮抢权重。 */
-@Composable
-private fun SecondaryActionChip(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val chipShape = RoundedCornerShape(18.dp)
-    Surface(
-        modifier = modifier.autobookClippedClickable(shape = chipShape, onClick = onClick),
-        shape = chipShape,
-        border = autobookCardBorder(),
-        color = autobookSoftFillColor(),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

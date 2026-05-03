@@ -100,7 +100,7 @@ internal data class NotificationSemanticFeatures(
     val hasExplicitTime: Boolean,
     val hasTransactionSceneKeyword: Boolean,
     val hasCounterpartyKeyword: Boolean,
-    val hasExtractedMerchant: Boolean,
+    val hasExtractedCounterparty: Boolean,
     val hasCurrencyKeyword: Boolean,
     val hasBankEntityKeyword: Boolean,
     val hasFinanceSettledKeyword: Boolean,
@@ -360,14 +360,14 @@ internal object NotificationDirectionDetector {
     }
 }
 
-/** 商户和对手方提取器。 */
-internal object NotificationMerchantExtractor {
+/** 备注线索提取器：只把商户、对手方等信息作为备注候选，不再形成独立记账字段。 */
+internal object NotificationCounterpartyExtractor {
     fun extract(
         text: String,
         fallbackTitle: String?,
         channelLabel: String,
-    ): String {
-        val merchant = COUNTERPARTY_PATTERNS.firstNotNullOfOrNull { pattern ->
+    ): String? {
+        val counterparty = COUNTERPARTY_PATTERNS.firstNotNullOfOrNull { pattern ->
             pattern.find(text)
                 ?.groupValues
                 ?.getOrNull(1)
@@ -375,9 +375,9 @@ internal object NotificationMerchantExtractor {
                 ?.takeIf(String::isNotBlank)
         }
         return when {
-            !merchant.isNullOrBlank() -> merchant
+            !counterparty.isNullOrBlank() -> counterparty
             !fallbackTitle.isNullOrBlank() && fallbackTitle.trim() !in GENERIC_NOTIFICATION_TITLES && fallbackTitle.trim() != channelLabel -> fallbackTitle.trim()
-            else -> channelLabel
+            else -> null
         }
     }
 }
@@ -418,7 +418,7 @@ internal object NotificationSemanticAnalyzer {
         textWindow: NotificationTextWindow,
         amountResult: AmountParseResult,
         directionDecision: DirectionDecision,
-        merchant: String,
+        counterparty: String?,
         channelLabel: String,
     ): NotificationSemanticFeatures {
         val matches = SEMANTIC_TAG_MATCHER.find(textWindow.scoringText)
@@ -434,7 +434,7 @@ internal object NotificationSemanticAnalyzer {
             hasExplicitTime = EXPLICIT_TIME_PATTERNS.any { pattern -> pattern.containsMatchIn(textWindow.scoringText) },
             hasTransactionSceneKeyword = SemanticTag.TRANSACTION_SCENE in matchedTags,
             hasCounterpartyKeyword = SemanticTag.COUNTERPARTY in matchedTags,
-            hasExtractedMerchant = merchant.isNotBlank() && merchant != "通知" && merchant != "银行卡短信" && merchant != channelLabel,
+            hasExtractedCounterparty = !counterparty.isNullOrBlank() && counterparty != "通知" && counterparty != "银行卡短信" && counterparty != channelLabel,
             hasCurrencyKeyword = amountResult.kind == AmountSignalKind.WITH_CURRENCY || SemanticTag.CURRENCY in matchedTags,
             hasBankEntityKeyword = SemanticTag.BANK_ENTITY in matchedTags,
             hasFinanceSettledKeyword = SemanticTag.FINANCE_SETTLED in matchedTags,

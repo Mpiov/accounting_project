@@ -10,31 +10,37 @@ from .database import init_database, transaction
 from .response import now_millis
 
 PHONE_PATTERN = re.compile(r"^1\d{10}$")
+EMAIL_PATTERN = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$", re.IGNORECASE)
 MILLIS_PER_DAY = 24 * 60 * 60 * 1000
 
 
 def normalize_phone(raw_phone: str) -> str:
-    """归一化手机号。
+    """归一化后台输入的账号。
 
     参数：
-        raw_phone: 原始手机号文本，允许包含空格或分隔符。
+        raw_phone: 原始账号文本，支持邮箱或 11 位手机号；参数名沿用旧 CLI 契约。
 
     返回：
-        str: 11 位中国大陆手机号。
+        str: 归一化后的邮箱或 11 位中国大陆手机号。
     """
 
-    phone = "".join(char for char in raw_phone if char.isdigit())
-    if not PHONE_PATTERN.fullmatch(phone):
-        raise ValueError("手机号必须是 11 位中国大陆手机号")
-    return phone
+    account = raw_phone.strip().lower()
+    if "@" in account:
+        if not EMAIL_PATTERN.fullmatch(account):
+            raise ValueError("邮箱地址格式不正确")
+        return account
+    phone = "".join(char for char in account if char.isdigit())
+    if PHONE_PATTERN.fullmatch(phone):
+        return phone
+    raise ValueError("账号必须是邮箱或 11 位中国大陆手机号")
 
 
 def ensure_user(database_path: str, phone: str) -> str:
-    """确保手机号对应用户存在。
+    """确保后台输入账号对应的用户存在。
 
     参数：
         database_path: SQLite 数据库文件路径。
-        phone: 已归一化的手机号。
+        phone: 已归一化的账号，当前通常是邮箱；字段名沿用数据库旧列名。
 
     返回：
         str: 服务器用户 ID。
@@ -74,7 +80,7 @@ def grant_member(
 
     参数：
         database_path: SQLite 数据库文件路径。
-        phone: 手机号。
+        phone: 邮箱或旧手机号账号；字段名沿用后台旧参数。
         days: 会员有效天数。
         model_confidence_enabled: 是否允许机器学习置信度。
         cloud_learning_enabled: 是否允许云端学习。
@@ -118,7 +124,7 @@ def revoke_member(database_path: str, phone: str) -> dict[str, object]:
 
     参数：
         database_path: SQLite 数据库文件路径。
-        phone: 手机号。
+        phone: 邮箱或旧手机号账号；字段名沿用后台旧参数。
 
     返回：
         dict[str, object]: 更新后的会员状态摘要。
@@ -148,11 +154,11 @@ def revoke_member(database_path: str, phone: str) -> dict[str, object]:
 
 
 def get_member_status_by_phone(database_path: str, phone: str) -> dict[str, object]:
-    """按手机号读取会员状态。
+    """按账号读取会员状态。
 
     参数：
         database_path: SQLite 数据库文件路径。
-        phone: 手机号。
+        phone: 邮箱或旧手机号账号；字段名沿用后台旧参数。
 
     返回：
         dict[str, object]: 当前会员状态摘要。
@@ -195,7 +201,7 @@ def list_member_statuses(
 
     参数：
         database_path: SQLite 数据库文件路径。
-        query: 手机号搜索关键字。
+        query: 账号搜索关键字，可输入邮箱或旧手机号片段。
         limit: 最大返回数量。
 
     返回：
@@ -203,7 +209,7 @@ def list_member_statuses(
     """
 
     init_database(database_path)
-    normalized_query = "".join(char for char in query if char.isdigit())
+    normalized_query = query.strip().lower()
     like_query = f"%{normalized_query}%"
     with transaction(database_path) as db:
         rows = db.execute(

@@ -68,8 +68,8 @@ class RecordsBrowserViewModel @Inject constructor(
     /** 输出可直接渲染的时间线状态。 */
     val uiState: StateFlow<RecordsBrowserUiState> = ledgerRepository.observeEntries()
         .map { entries ->
-            // 详细记录页没有二次筛选，只按时间倒序展示完整账单。
-            val timelineEntries = entries.sortedByDescending { it.timestamp }
+            // 详细记录页没有二次筛选，直接按最终入账顺序倒排，和首页最近记录保持一致。
+            val timelineEntries = entries.sortNewestForDisplay()
             RecordsBrowserUiState(
                 items = timelineEntries.map { entry -> entry.toTimelineItem() },
             )
@@ -86,7 +86,7 @@ private fun LedgerEntry.toTimelineItem(): RecordTimelineItemUiModel {
     val localDateTime = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).toLocalDateTime()
     return RecordTimelineItemUiModel(
         id = id,
-        title = merchant,
+        title = buildLedgerTitle(),
         category = category,
         sourceLabel = channel,
         amountLabel = buildTimelineAmountLabel(),

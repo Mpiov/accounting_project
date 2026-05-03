@@ -50,7 +50,7 @@ BOOLEAN_FEATURES = {
     "structure.explicit_time": "hasExplicitTime",
     "semantic.transaction_scene": "hasTransactionSceneKeyword",
     "semantic.counterparty": "hasCounterpartyKeyword",
-    "semantic.extracted_merchant": "hasExtractedMerchant",
+    "semantic.extracted_counterparty": "hasExtractedCounterparty",
     "semantic.currency_keyword": "hasCurrencyKeyword",
     "semantic.bank_entity": "hasBankEntityKeyword",
     "semantic.finance_settled": "hasFinanceSettledKeyword",

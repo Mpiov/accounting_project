@@ -2,15 +2,7 @@ package com.autobook.cn.app.navigation
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.PendingActions
-import androidx.compose.material.icons.outlined.ReceiptLong
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -27,7 +19,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -40,11 +31,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.autobook.cn.app.ui.AutobookIcon
+import com.autobook.cn.app.ui.AutobookIconAsset
 import com.autobook.cn.app.ui.ChartDashboardScreen
 import com.autobook.cn.app.ui.LedgerBoardScreen
 import com.autobook.cn.app.ui.OverviewScreen
 import com.autobook.cn.app.ui.PendingWorkspaceScreen
-import com.autobook.cn.app.ui.QuickActionSheet
 import com.autobook.cn.app.ui.SettingsWorkspaceScreen
 import com.autobook.cn.app.viewmodel.ChartViewModel
 import com.autobook.cn.app.viewmodel.LedgerBoardMode
@@ -76,12 +68,12 @@ fun MainShell(
     val navBackStackEntry by shellNavController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val currentTab = MainShellTab.match(currentDestination) ?: MainShellTab.Overview
-    var showQuickActionSheet by rememberSaveable { mutableStateOf(false) }
+    var settingsHomeResetKey by rememberSaveable { mutableStateOf(0) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        // 主壳层背景改成透明，让根导航层铺设的纸张底图能够透出来。
-        containerColor = Color.Transparent,
+        // 主壳层使用不透明背景，设置页快速滚动时不再透出底层内容参与合成。
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             /**
              * 底部导航统一包一层暖色面板。
@@ -94,7 +86,8 @@ fun MainShell(
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
                 shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                // 底部导航使用不透明白底，避免设置页快速滑动时持续触发半透明混合。
+                color = MaterialTheme.colorScheme.surface,
                 border = com.autobook.cn.app.ui.autobookCardBorder(),
             ) {
                 NavigationBar(
@@ -104,7 +97,13 @@ fun MainShell(
                     MainShellTab.entries.forEach { tab ->
                         NavigationBarItem(
                             selected = currentTab == tab,
-                            onClick = { shellNavController.navigateToMainTab(tab) },
+                            onClick = {
+                                if (tab == MainShellTab.Settings && currentTab != MainShellTab.Settings) {
+                                    // 从其它底部页回到设置页时，清掉设置页内部二级页状态，让用户重新看到设置首页。
+                                    settingsHomeResetKey += 1
+                                }
+                                shellNavController.navigateToMainTab(tab)
+                            },
                             icon = {
                                 MainShellNavigationIcon(
                                     tab = tab,
@@ -127,10 +126,14 @@ fun MainShell(
         floatingActionButton = {
             if (currentTab != MainShellTab.Settings) {
                 FloatingActionButton(
-                    onClick = { showQuickActionSheet = true },
+                    onClick = {
+                        rootNavController.navigate(
+                            AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.EXPENSE),
+                        )
+                    },
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Add,
+                    AutobookIcon(
+                        asset = AutobookIconAsset.Add,
                         contentDescription = "记一笔",
                     )
                 }
@@ -161,7 +164,11 @@ fun MainShell(
                     onOpenEntry = { ledgerId ->
                         rootNavController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
                     },
-                    onCreateEntry = { rootNavController.navigate(AutobookDestination.EntryCreate.createRoute()) },
+                    onCreateEntry = {
+                        rootNavController.navigate(
+                            AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.EXPENSE),
+                        )
+                    },
                 )
             }
             composable(AutobookDestination.MainLedger.route) {
@@ -197,9 +204,12 @@ fun MainShell(
                     onEdit = { pendingId ->
                         rootNavController.navigate(AutobookDestination.PendingResolve.createRoute(pendingId))
                     },
-                    onIgnore = viewModel::ignorePending,
                     onOpenLedger = { shellNavController.navigateToMainTab(MainShellTab.Ledger) },
-                    onCreateEntry = { showQuickActionSheet = true },
+                    onCreateEntry = {
+                        rootNavController.navigate(
+                            AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.EXPENSE),
+                        )
+                    },
                 )
             }
             composable(AutobookDestination.MainSettings.route) {
@@ -208,6 +218,7 @@ fun MainShell(
 
                 SettingsWorkspaceScreen(
                     state = state,
+                    homeResetKey = settingsHomeResetKey,
                     onAutoAccountingChanged = viewModel::setAutoAccountingEnabled,
                     onCloudAnalysisChanged = viewModel::setCloudAnalysisEnabled,
                     onAuthPhoneChanged = viewModel::setAuthPhoneInput,
@@ -220,6 +231,7 @@ fun MainShell(
                     onStartMonthlyMembership = viewModel::startMonthlyMembershipPayment,
                     onStartYearlyMembership = viewModel::startYearlyMembershipPayment,
                     onSyncCloudLearning = viewModel::syncCloudLearningNow,
+                    onPullCloudModel = viewModel::pullCloudModelNow,
                     onCaptureEnabledChanged = viewModel::setCaptureEnabled,
                     onNotificationRetentionChanged = viewModel::setNotificationRetentionDays,
                     onScreenshotRetentionChanged = viewModel::setScreenshotRetentionDays,
@@ -229,23 +241,6 @@ fun MainShell(
         }
     }
 
-    if (showQuickActionSheet) {
-        QuickActionSheet(
-            onDismiss = { showQuickActionSheet = false },
-            onExpenseClick = {
-                showQuickActionSheet = false
-                rootNavController.navigate(
-                    AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.EXPENSE),
-                )
-            },
-            onIncomeClick = {
-                showQuickActionSheet = false
-                rootNavController.navigate(
-                    AutobookDestination.EntryCreate.createRoute(direction = MoneyDirection.INCOME),
-                )
-            },
-        )
-    }
 }
 
 /**
@@ -262,7 +257,7 @@ private fun MainShellNavigationIcon(
     pendingCount: Int,
 ) {
     if (tab != MainShellTab.Pending || pendingCount <= 0) {
-        Icon(imageVector = tab.icon, contentDescription = tab.label)
+        AutobookIcon(asset = tab.icon, contentDescription = tab.label)
         return
     }
 
@@ -274,7 +269,7 @@ private fun MainShellNavigationIcon(
             }
         },
     ) {
-        Icon(imageVector = tab.icon, contentDescription = tab.label)
+        AutobookIcon(asset = tab.icon, contentDescription = tab.label)
     }
 }
 
@@ -285,32 +280,32 @@ private fun MainShellNavigationIcon(
 private enum class MainShellTab(
     val route: String,
     val label: String,
-    val icon: ImageVector,
+    val icon: AutobookIconAsset,
 ) {
     Overview(
         route = AutobookDestination.MainOverview.route,
         label = "总览",
-        icon = Icons.Outlined.ReceiptLong,
+        icon = AutobookIconAsset.Overview,
     ),
     Ledger(
         route = AutobookDestination.MainLedger.route,
         label = "账本",
-        icon = Icons.Outlined.BarChart,
+        icon = AutobookIconAsset.Ledger,
     ),
     Charts(
         route = AutobookDestination.MainCharts.route,
         label = "图表",
-        icon = Icons.Outlined.Timeline,
+        icon = AutobookIconAsset.Charts,
     ),
     Pending(
         route = AutobookDestination.MainPending.route,
         label = "待确认",
-        icon = Icons.Outlined.PendingActions,
+        icon = AutobookIconAsset.Pending,
     ),
     Settings(
         route = AutobookDestination.MainSettings.route,
         label = "设置",
-        icon = Icons.Outlined.Settings,
+        icon = AutobookIconAsset.Settings,
     ),
     ;
 

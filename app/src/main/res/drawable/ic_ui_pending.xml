@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    IconPark UI 图标：ListCheckbox。
+    说明：由 @icon-park/svg 的 outline SVG 机械转换为 Android VectorDrawable。
+    授权：Apache-2.0，详见项目 THIRD_PARTY_LICENSES.md。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:fillType="evenOdd"
+        android:pathData="M20 24H44H20Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M20 24H44" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:fillType="evenOdd"
+        android:pathData="M20 38H44H20Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M20 38H44" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:fillType="evenOdd"
+        android:pathData="M20 10H44H20Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M20 10H44" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineJoin="round"
+        android:pathData="M4,34H12V42H4Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineJoin="round"
+        android:pathData="M4,20H12V28H4Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineJoin="round"
+        android:pathData="M4,6H12V14H4Z" />
+</vector>

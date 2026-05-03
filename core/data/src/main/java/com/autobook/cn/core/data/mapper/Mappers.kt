@@ -65,13 +65,12 @@ fun NotificationEventEntity.toDomain(): NotificationEvent = NotificationEvent(
  */
 fun LedgerEntry.toEntity(): LedgerEntryEntity = LedgerEntryEntity(
     id = id,
+    sortId = sortId,
     amount = amount,
     direction = direction.name,
-    merchant = merchant,
     channel = channel,
     timestamp = timestamp,
     category = category,
-    orderId = orderId,
     note = note,
     traceSource = traceSource,
     tracePath = tracePath,
@@ -88,13 +87,12 @@ fun LedgerEntry.toEntity(): LedgerEntryEntity = LedgerEntryEntity(
  */
 fun LedgerEntryEntity.toDomain(): LedgerEntry = LedgerEntry(
     id = id,
+    sortId = sortId,
     amount = amount,
     direction = MoneyDirection.valueOf(direction),
-    merchant = merchant,
     channel = channel,
     timestamp = timestamp,
     category = category,
-    orderId = orderId,
     note = note,
     traceSource = traceSource,
     tracePath = tracePath,
@@ -110,22 +108,20 @@ fun LedgerEntryEntity.toDomain(): LedgerEntry = LedgerEntry(
  * - category：最终写入账本的分类名称。
  * - notificationId：来源通知主键，用于回查通知处理链。
  * - editedManually：是否由用户手动编辑后保存。
- * - note：附加备注。
+ * - noteOverride：外部覆盖备注；为空时使用候选自身已经折叠好的备注。
  */
 fun TransactionCandidate.toLedgerEntry(
     category: String = categoryHint,
     notificationId: Long? = null,
     editedManually: Boolean = false,
-    note: String? = null,
+    noteOverride: String? = null,
 ): LedgerEntry = LedgerEntry(
     amount = amount,
     direction = direction,
-    merchant = merchant,
     channel = channel,
     timestamp = timestamp,
     category = category,
-    orderId = orderId,
-    note = note,
+    note = noteOverride ?: note,
     traceSource = rawSource,
     tracePath = parsePath,
     traceModelVersion = modelVersion,
@@ -146,12 +142,11 @@ fun TransactionCandidate.toPendingEntry(
 ): PendingEntry = PendingEntry(
     amount = amount,
     direction = direction,
-    merchant = merchant,
     channel = channel,
     timestamp = timestamp,
     confidence = confidence,
-    orderId = orderId,
     categoryHint = categoryHint,
+    note = note,
     rawSource = rawSource,
     parsePath = parsePath,
     modelVersion = modelVersion,
@@ -167,14 +162,14 @@ fun TransactionCandidate.toPendingEntry(
  */
 fun PendingEntry.toEntity(): PendingEntryEntity = PendingEntryEntity(
     id = id,
+    sortId = sortId,
     amount = amount,
     direction = direction.name,
-    merchant = merchant,
     channel = channel,
     timestamp = timestamp,
     confidenceScore = confidence.score,
-    orderId = orderId,
     categoryHint = categoryHint,
+    note = note,
     rawSource = rawSource,
     parsePath = parsePath,
     modelVersion = modelVersion,
@@ -192,14 +187,14 @@ fun PendingEntry.toEntity(): PendingEntryEntity = PendingEntryEntity(
  */
 fun PendingEntryEntity.toDomain(): PendingEntry = PendingEntry(
     id = id,
+    sortId = sortId,
     amount = amount,
     direction = MoneyDirection.valueOf(direction),
-    merchant = merchant,
     channel = channel,
     timestamp = timestamp,
     confidence = ParseConfidence(confidenceScore),
-    orderId = orderId,
     categoryHint = categoryHint,
+    note = note,
     rawSource = rawSource,
     parsePath = parsePath,
     modelVersion = modelVersion,

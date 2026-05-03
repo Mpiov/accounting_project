@@ -125,7 +125,7 @@ private fun buildOverviewUiState(
     val anchorDate = today
     val filtered = entries
         .filterByRange(range = range, selectedDate = today, today = today)
-        .sortedByDescending { it.timestamp }
+        .sortNewestForDisplay()
     val filteredSummary = filtered.summarize()
     val monthEntries = entries.filterWithinMonth(YearMonth.from(anchorDate))
     val budgetState = buildBudgetState(
@@ -148,7 +148,7 @@ private fun buildOverviewUiState(
         recentEntries = filtered.map { entry ->
             LedgerItemUiModel(
                 id = entry.id,
-                merchant = entry.merchant,
+                title = entry.buildLedgerTitle(),
                 amount = formatAmountByDirection(entry),
                 subtitle = "${entry.channel} · ${TimeFormatter.format(entry.timestamp)}",
                 category = entry.category,
@@ -158,15 +158,28 @@ private fun buildOverviewUiState(
     )
 }
 
-/** 按关键词过滤商户、分类和备注。 */
+/** 按关键词过滤分类和备注。 */
 internal fun List<LedgerEntry>.filterByQuery(query: String): List<LedgerEntry> {
     if (query.isBlank()) return this
     val normalized = query.trim()
     return filter { entry ->
-        entry.merchant.contains(normalized, ignoreCase = true) ||
-            entry.category.contains(normalized, ignoreCase = true) ||
+        entry.category.contains(normalized, ignoreCase = true) ||
             entry.note?.contains(normalized, ignoreCase = true) == true
     }
+}
+
+/**
+ * 按前端列表展示口径排序账本记录。
+ *
+ * 用途说明：
+ * - 最近记录展示的是跨待确认和正式账本的原始生成顺序，而不是交易发生时间。
+ * - 待确认转正式账本时会保留原 `sortId`，因此不会因为“确认得晚”而错误排成最新。
+ *
+ * 接收者说明：
+ * - 待展示的账本记录列表。
+ */
+internal fun List<LedgerEntry>.sortNewestForDisplay(): List<LedgerEntry> {
+    return sortedByDescending { it.sortId }
 }
 
 /** 按日期范围过滤账本记录。 */
@@ -287,6 +300,21 @@ private fun buildBudgetState(
 private fun formatAmountByDirection(entry: LedgerEntry): String {
     val sign = if (entry.direction == MoneyDirection.INCOME) "+" else "-"
     return "$sign${CurrencyFormatter.format(entry.amount)}"
+}
+
+/**
+ * 用途说明：
+ * - 生成账本列表主标题，优先使用备注首行，备注为空时回退到分类。
+ *
+ * 参数说明：
+ * - 接收者：当前账本记录。
+ */
+internal fun LedgerEntry.buildLedgerTitle(): String {
+    return note
+        ?.lineSequence()
+        ?.map(String::trim)
+        ?.firstOrNull(String::isNotBlank)
+        ?: category.ifBlank { "待分类" }
 }
 
 private fun formatSignedCurrency(amount: Double): String {

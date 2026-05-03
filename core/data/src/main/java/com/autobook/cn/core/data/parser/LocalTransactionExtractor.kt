@@ -58,16 +58,17 @@ class LocalTransactionExtractor @Inject constructor(
             scoringText = textWindow.scoringText,
             sourceApp = sourceApp,
         )
-        val merchant = NotificationMerchantExtractor.extract(
+        val counterparty = NotificationCounterpartyExtractor.extract(
             text = textWindow.scoringText,
             fallbackTitle = event.title,
             channelLabel = sourceRule.channelLabel,
         )
+        val orderNumber = ORDER_NUMBER_REGEX.find(textWindow.scoringText)?.groupValues?.getOrNull(1)
         val features = NotificationSemanticAnalyzer.analyze(
             textWindow = textWindow,
             amountResult = amountResult,
             directionDecision = directionDecision,
-            merchant = merchant,
+            counterparty = counterparty,
             channelLabel = sourceRule.channelLabel,
         )
         val confidence = when (scoringMode) {
@@ -90,10 +91,12 @@ class LocalTransactionExtractor @Inject constructor(
             TransactionCandidate(
                 amount = amountResult.amount,
                 direction = directionDecision.direction,
-                merchant = merchant,
                 channel = sourceRule.channelLabel,
                 timestamp = event.postedAt,
-                orderId = ORDER_ID_REGEX.find(textWindow.scoringText)?.groupValues?.getOrNull(1),
+                note = buildCandidateNote(
+                    counterparty = counterparty,
+                    orderNumber = orderNumber,
+                ),
                 confidence = ParseConfidence(confidence.score),
                 confidenceReason = confidence.reason,
                 categoryHint = categoryHint,
@@ -131,6 +134,26 @@ class LocalTransactionExtractor @Inject constructor(
 
 /**
  * 用途说明：
+ * - 把解析出来的非核心结构化信息收敛成备注文本。
+ * - 这样商户、对方、订单号不会再进入账本字段层，只作为用户可编辑的备注线索保留。
+ *
+ * 参数说明：
+ * - counterparty：通知里提取出的商户、收款方或付款对象，可为空。
+ * - orderNumber：通知里提取出的订单号或交易单号，可为空。
+ */
+private fun buildCandidateNote(
+    counterparty: String?,
+    orderNumber: String?,
+): String? {
+    val noteLines = buildList {
+        counterparty?.trim()?.takeIf(String::isNotBlank)?.let { value -> add("对方：$value") }
+        orderNumber?.trim()?.takeIf(String::isNotBlank)?.let { value -> add("订单号：$value") }
+    }
+    return noteLines.joinToString(separator = "\n").takeIf(String::isNotBlank)
+}
+
+/**
+ * 用途说明：
  * - 把解析模式转换成可追踪的解析路径。
  *
  * 参数说明：
@@ -153,5 +176,5 @@ private fun TransactionScoringMode.toModelVersion(): String = when (this) {
     TransactionScoringMode.MEMBER_MACHINE_LEARNING -> NotificationConfidenceScorer.MODEL_VERSION
 }
 
-/** 订单号模式保留为结构化补充字段，不再参与重权重打分。 */
-private val ORDER_ID_REGEX = Regex("""(?:订单号|交易单号|单号|订单)\s*[:：]?\s*([A-Za-z0-9-]{6,})""")
+/** 订单号模式只用于补充备注，不再作为账本字段或判重字段。 */
+private val ORDER_NUMBER_REGEX = Regex("""(?:订单号|交易单号|单号|订单)\s*[:：]?\s*([A-Za-z0-9-]{6,})""")

@@ -50,11 +50,10 @@ class ModelTrainingSampleRepositoryImpl @Inject constructor(
                 parsePath = candidate.parsePath,
                 amount = candidate.amount,
                 direction = candidate.direction.name,
-                merchant = candidate.merchant,
                 channel = candidate.channel,
                 candidateTimestamp = candidate.timestamp,
                 candidateCategory = candidate.categoryHint,
-                candidateOrderId = candidate.orderId,
+                candidateNote = candidate.note,
                 confidenceScore = candidate.confidence.score,
                 confidenceLevel = candidate.confidence.level.name,
                 confidenceReason = candidate.confidenceReason,
@@ -68,11 +67,9 @@ class ModelTrainingSampleRepositoryImpl @Inject constructor(
                 feedbackNote = null,
                 correctedAmount = null,
                 correctedDirection = null,
-                correctedMerchant = null,
                 correctedChannel = null,
                 correctedTimestamp = null,
                 correctedCategory = null,
-                correctedOrderId = null,
                 correctedNote = null,
                 changedFieldsJson = null,
                 uploadState = UPLOAD_STATE_PENDING,
@@ -117,11 +114,9 @@ class ModelTrainingSampleRepositoryImpl @Inject constructor(
             feedbackNote = if (editedManually) "用户编辑后确认入账" else "用户直接确认入账",
             correctedAmount = correction?.amount,
             correctedDirection = correction?.direction,
-            correctedMerchant = correction?.merchant,
             correctedChannel = correction?.channel,
             correctedTimestamp = correction?.timestamp,
             correctedCategory = correction?.category,
-            correctedOrderId = correction?.orderId,
             correctedNote = correction?.note,
             changedFieldsJson = correction?.changedFieldsJson,
             uploadState = UPLOAD_STATE_PENDING,
@@ -138,11 +133,9 @@ class ModelTrainingSampleRepositoryImpl @Inject constructor(
             feedbackNote = "用户忽略待确认候选",
             correctedAmount = null,
             correctedDirection = null,
-            correctedMerchant = null,
             correctedChannel = null,
             correctedTimestamp = null,
             correctedCategory = null,
-            correctedOrderId = null,
             correctedNote = null,
             changedFieldsJson = null,
             uploadState = UPLOAD_STATE_PENDING,
@@ -159,11 +152,9 @@ class ModelTrainingSampleRepositoryImpl @Inject constructor(
             feedbackNote = "用户标记为误识别",
             correctedAmount = null,
             correctedDirection = null,
-            correctedMerchant = null,
             correctedChannel = null,
             correctedTimestamp = null,
             correctedCategory = null,
-            correctedOrderId = null,
             correctedNote = null,
             changedFieldsJson = null,
             uploadState = UPLOAD_STATE_PENDING,
@@ -186,11 +177,9 @@ class ModelTrainingSampleRepositoryImpl @Inject constructor(
             feedbackNote = "用户编辑已入账记录",
             correctedAmount = correction?.amount,
             correctedDirection = correction?.direction,
-            correctedMerchant = correction?.merchant,
             correctedChannel = correction?.channel,
             correctedTimestamp = correction?.timestamp,
             correctedCategory = correction?.category,
-            correctedOrderId = correction?.orderId,
             correctedNote = correction?.note,
             changedFieldsJson = correction?.changedFieldsJson,
             uploadState = UPLOAD_STATE_PENDING,
@@ -208,11 +197,9 @@ class ModelTrainingSampleRepositoryImpl @Inject constructor(
             feedbackNote = "用户删除已入账记录",
             correctedAmount = null,
             correctedDirection = null,
-            correctedMerchant = null,
             correctedChannel = null,
             correctedTimestamp = null,
             correctedCategory = null,
-            correctedOrderId = null,
             correctedNote = null,
             changedFieldsJson = null,
             uploadState = UPLOAD_STATE_PENDING,
@@ -309,22 +296,18 @@ private fun ProcessDestination.toInitialFeedbackLabel(): String = when (this) {
  * 参数说明：
  * - amount：用户最终确认的金额。
  * - direction：用户最终确认的收支方向。
- * - merchant：用户最终确认的商户或对手方。
  * - channel：用户最终确认的渠道。
  * - timestamp：用户最终确认的交易时间。
  * - category：用户最终确认的分类。
- * - orderId：用户最终确认的订单号。
  * - note：用户最终确认的备注。
  * - changedFieldsJson：字段名数组 JSON。
  */
 private data class CorrectionSnapshot(
     val amount: Double,
     val direction: String,
-    val merchant: String,
     val channel: String,
     val timestamp: Long,
     val category: String,
-    val orderId: String?,
     val note: String?,
     val changedFieldsJson: String,
 )
@@ -339,30 +322,24 @@ private data class CorrectionSnapshot(
 private fun ModelTrainingSampleEntity.toCorrectionSnapshot(correctedEntry: LedgerEntry?): CorrectionSnapshot {
     val amountValue = correctedEntry?.amount ?: amount
     val directionValue = correctedEntry?.direction?.name ?: direction
-    val merchantValue = correctedEntry?.merchant ?: merchant
     val channelValue = correctedEntry?.channel ?: channel
     val timestampValue = correctedEntry?.timestamp ?: candidateTimestamp
     val categoryValue = correctedEntry?.category ?: candidateCategory
-    val orderIdValue = correctedEntry?.orderId ?: candidateOrderId
-    val noteValue = correctedEntry?.note
+    val noteValue = correctedEntry?.note ?: candidateNote
     val changedFields = buildList {
         if (!amount.closeTo(amountValue)) add("amount")
         if (direction != directionValue) add("direction")
-        if (merchant.normalizedText() != merchantValue.normalizedText()) add("merchant")
         if (channel.normalizedText() != channelValue.normalizedText()) add("channel")
         if (candidateTimestamp != timestampValue) add("timestamp")
         if (candidateCategory.normalizedText() != categoryValue.normalizedText()) add("category")
-        if (candidateOrderId.normalizedNullableText() != orderIdValue.normalizedNullableText()) add("orderId")
-        if (!noteValue.isNullOrBlank()) add("note")
+        if (candidateNote.normalizedNullableText() != noteValue.normalizedNullableText()) add("note")
     }
     return CorrectionSnapshot(
         amount = amountValue,
         direction = directionValue,
-        merchant = merchantValue,
         channel = channelValue,
         timestamp = timestampValue,
         category = categoryValue,
-        orderId = orderIdValue,
         note = noteValue,
         changedFieldsJson = changedFields.toJsonArray(),
     )
@@ -409,15 +386,13 @@ private fun ModelTrainingSampleEntity.toJsonLine(): String = buildString {
     append(",")
     appendJsonString("direction", direction)
     append(",")
-    appendJsonString("merchant", merchant)
-    append(",")
     appendJsonString("channel", channel)
     append(",")
     appendJsonNumber("candidateTimestamp", candidateTimestamp)
     append(",")
     appendJsonString("category", candidateCategory)
     append(",")
-    appendJsonNullableString("orderId", candidateOrderId)
+    appendJsonNullableString("note", candidateNote)
     append(",")
     appendJsonFloat("confidenceScore", confidenceScore)
     append(",")
@@ -462,15 +437,13 @@ private fun StringBuilder.appendParsedSnapshotJson(sample: ModelTrainingSampleEn
     append(",")
     appendJsonString("direction", sample.direction)
     append(",")
-    appendJsonString("merchant", sample.merchant)
-    append(",")
     appendJsonString("channel", sample.channel)
     append(",")
     appendJsonNumber("timestamp", sample.candidateTimestamp)
     append(",")
     appendJsonString("category", sample.candidateCategory)
     append(",")
-    appendJsonNullableString("orderId", sample.candidateOrderId)
+    appendJsonNullableString("note", sample.candidateNote)
     append("}")
 }
 
@@ -484,8 +457,8 @@ private fun StringBuilder.appendParsedSnapshotJson(sample: ModelTrainingSampleEn
 private fun StringBuilder.appendCorrectedSnapshotJson(sample: ModelTrainingSampleEntity) {
     if (sample.correctedAmount == null &&
         sample.correctedDirection == null &&
-        sample.correctedMerchant == null &&
-        sample.correctedTimestamp == null
+        sample.correctedTimestamp == null &&
+        sample.correctedNote == null
     ) {
         append("null")
         return
@@ -495,15 +468,11 @@ private fun StringBuilder.appendCorrectedSnapshotJson(sample: ModelTrainingSampl
     append(",")
     appendJsonNullableString("direction", sample.correctedDirection)
     append(",")
-    appendJsonNullableString("merchant", sample.correctedMerchant)
-    append(",")
     appendJsonNullableString("channel", sample.correctedChannel)
     append(",")
     appendJsonNullableNumber("timestamp", sample.correctedTimestamp)
     append(",")
     appendJsonNullableString("category", sample.correctedCategory)
-    append(",")
-    appendJsonNullableString("orderId", sample.correctedOrderId)
     append(",")
     appendJsonNullableString("note", sample.correctedNote)
     append("}")

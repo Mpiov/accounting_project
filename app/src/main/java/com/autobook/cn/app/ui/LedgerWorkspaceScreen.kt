@@ -16,15 +16,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.ChevronLeft
-import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -88,9 +82,10 @@ fun LedgerWorkspaceScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                        AutobookIcon(
+                            asset = AutobookIconAsset.Back,
                             contentDescription = "返回",
+                            tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 },
@@ -100,12 +95,12 @@ fun LedgerWorkspaceScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = 20.dp,
-                end = 20.dp,
+                start = 16.dp,
+                end = 16.dp,
                 top = innerPadding.calculateTopPadding() + 8.dp,
-                bottom = 120.dp,
+                bottom = 112.dp,
             ),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "calendar") {
                 LedgerCalendarOverviewCard(
@@ -175,8 +170,8 @@ private fun LedgerCalendarOverviewCard(
         colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -190,12 +185,12 @@ private fun LedgerCalendarOverviewCard(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CalendarSwitchButton(
-                        icon = Icons.Outlined.ChevronLeft,
+                        icon = AutobookIconAsset.ChevronLeft,
                         contentDescription = "上个月",
                         onClick = onPreviousMonthClick,
                     )
                     CalendarSwitchButton(
-                        icon = Icons.Outlined.ChevronRight,
+                        icon = AutobookIconAsset.ChevronRight,
                         contentDescription = "下个月",
                         onClick = onNextMonthClick,
                     )
@@ -241,14 +236,14 @@ private fun LedgerSearchCard(
         colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedTextField(
                 value = state.searchQuery,
                 onValueChange = onSearchChange,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("搜索商户、分类、备注") },
+                placeholder = { Text("搜索分类、备注") },
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.background,
@@ -257,9 +252,10 @@ private fun LedgerSearchCard(
                     unfocusedBorderColor = MaterialTheme.colorScheme.outline,
                 ),
                 trailingIcon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Search,
+                    AutobookIcon(
+                        asset = AutobookIconAsset.Search,
                         contentDescription = "搜索",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 },
                 shape = AutobookUiTokens.chipShape,
@@ -337,8 +333,8 @@ private fun LedgerCalendarDayCard(
                     Text(
                         text = income,
                         style = MaterialTheme.typography.labelSmall,
-                        // 日历格里的收入按当前口径使用红色，和账本页结余卡里的收入语义保持一致。
-                        color = Color(0xFFD1495B),
+                        // 日历格里的收入统一使用绿色，和其它页面的收入金额保持同一语义。
+                        color = AutobookIncomeColor,
                         maxLines = 1,
                     )
                 }
@@ -346,8 +342,8 @@ private fun LedgerCalendarDayCard(
                     Text(
                         text = expense,
                         style = MaterialTheme.typography.labelSmall,
-                        // 日历格里的支出按当前口径使用绿色，和收入颜色明确分开。
-                        color = Color(0xFF2E8B57),
+                        // 日历格里的支出统一使用红色，用户扫视时能立刻识别消费项。
+                        color = AutobookExpenseColor,
                         maxLines = 1,
                     )
                 }
@@ -358,7 +354,7 @@ private fun LedgerCalendarDayCard(
 
 /**
  * 用途说明：
- * - 月份详情页流水卡片负责展示商户、分类、时间和金额。
+ * - 月份详情页流水卡片负责展示备注标题、分类、时间和金额。
  *
  * 参数说明：
  * - entry：当前账单条目。
@@ -379,7 +375,7 @@ private fun LedgerTimelineCard(
         colors = autobookCardColors(),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top,
         ) {
@@ -388,15 +384,17 @@ private fun LedgerTimelineCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = entry.merchant,
+                    text = entry.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text(
-                    text = entry.category,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (entry.title != entry.category) {
+                    Text(
+                        text = entry.category,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
                     text = entry.subtitle,
                     style = MaterialTheme.typography.bodySmall,
@@ -410,9 +408,9 @@ private fun LedgerTimelineCard(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = if (entry.direction == MoneyDirection.INCOME) {
-                    MaterialTheme.colorScheme.primary
+                    AutobookIncomeColor
                 } else {
-                    MaterialTheme.colorScheme.tertiary
+                    AutobookExpenseColor
                 },
             )
         }
@@ -443,7 +441,7 @@ private fun LedgerEmptyCard(
     ) {
         Text(
             text = message,
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier.padding(14.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -461,7 +459,7 @@ private fun LedgerEmptyCard(
  */
 @Composable
 private fun CalendarSwitchButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: AutobookIconAsset,
     contentDescription: String,
     onClick: () -> Unit,
 ) {
@@ -476,9 +474,10 @@ private fun CalendarSwitchButton(
             modifier = Modifier.padding(8.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = icon,
+            AutobookIcon(
+                asset = icon,
                 contentDescription = contentDescription,
+                tint = MaterialTheme.colorScheme.onSurface,
             )
         }
     }

@@ -70,13 +70,13 @@ class PendingViewModel @Inject constructor(
             val item = pendingRepository.confirm(id) ?: return@launch
             ledgerRepository.add(
                 LedgerEntry(
+                    sortId = item.sortId,
                     amount = item.amount,
                     direction = item.direction,
-                    merchant = item.merchant,
                     channel = item.channel,
                     timestamp = item.timestamp,
                     category = item.categoryHint,
-                    orderId = item.orderId,
+                    note = item.note,
                     traceSource = item.rawSource,
                     tracePath = item.parsePath,
                     traceModelVersion = item.modelVersion,
@@ -122,13 +122,14 @@ internal fun PendingEntry.toPendingItemUiModel(
     val canDirectConfirm = direction != MoneyDirection.UNKNOWN
     return PendingItemUiModel(
         id = id,
-        merchant = merchant,
-        amount = CurrencyFormatter.format(amount),
+        title = buildPendingTitle(),
+        amount = formatPendingSignedAmount(),
+        isIncome = direction == MoneyDirection.INCOME,
+        isDirectionKnown = canDirectConfirm,
         subtitle = "${channel} · ${TimeFormatter.format(timestamp)}",
         reason = reason,
         rawNotificationText = rawNotificationText,
         categoryHint = categoryHint,
-        orderId = orderId,
         canDirectConfirm = canDirectConfirm,
         primaryActionLabel = if (canDirectConfirm) "确认入账" else "先补方向",
         directionHint = if (canDirectConfirm) {
@@ -137,4 +138,30 @@ internal fun PendingEntry.toPendingItemUiModel(
             "当前尚未识别出收支方向，建议先编辑后入账，否则不会计入预算和收支汇总。"
         },
     )
+}
+
+/**
+ * 用途说明：
+ * - 给待确认金额补上方向符号，避免列表里只看到金额却看不出收入还是支出。
+ * - 未识别方向时使用“±”而不是强行写成支出，提醒用户需要先补方向。
+ */
+private fun PendingEntry.formatPendingSignedAmount(): String {
+    val formattedAmount = CurrencyFormatter.format(kotlin.math.abs(amount))
+    return when (direction) {
+        MoneyDirection.INCOME -> "+$formattedAmount"
+        MoneyDirection.EXPENSE -> "-$formattedAmount"
+        MoneyDirection.UNKNOWN -> "±$formattedAmount"
+    }
+}
+
+/**
+ * 用途说明：
+ * - 生成待确认列表主标题，优先展示备注首行，备注为空时展示建议分类。
+ */
+private fun PendingEntry.buildPendingTitle(): String {
+    return note
+        ?.lineSequence()
+        ?.map(String::trim)
+        ?.firstOrNull(String::isNotBlank)
+        ?: categoryHint.ifBlank { "待分类" }
 }

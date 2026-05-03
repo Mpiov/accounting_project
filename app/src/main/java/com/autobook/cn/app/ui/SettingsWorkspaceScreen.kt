@@ -10,20 +10,29 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -38,10 +47,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
@@ -67,10 +80,11 @@ import kotlinx.coroutines.withContext
  *
  * 参数说明：
  * - state：设置页聚合后的界面状态。
+ * - homeResetKey：设置首页重置标记；从其它底部 Tab 回到设置页时递增，用于清空二级页。
  * - onAutoAccountingChanged：自动记账总开关变更回调。
  * - onCloudAnalysisChanged：云端 AI 分析开关变更回调。
- * - onAuthPhoneChanged：手机号输入变更回调。
- * - onAuthCodeChanged：短信验证码输入变更回调。
+ * - onAuthPhoneChanged：邮箱输入变更回调；参数名暂沿用旧账号契约。
+ * - onAuthCodeChanged：邮箱验证码输入变更回调。
  * - onRequestLoginCode：请求验证码回调。
  * - onLoginOrRegister：登录或注册回调。
  * - onLogout：退出登录回调。
@@ -79,6 +93,7 @@ import kotlinx.coroutines.withContext
  * - onStartMonthlyMembership：创建月卡订单回调。
  * - onStartYearlyMembership：创建年卡订单回调。
  * - onSyncCloudLearning：立即同步云端学习回调。
+ * - onPullCloudModel：只拉取服务器最新全局模型回调。
  * - onCaptureEnabledChanged：截图记账入口启停状态回写回调。
  * - onNotificationRetentionChanged：通知保留天数回调。
  * - onScreenshotRetentionChanged：截图保留天数回调。
@@ -88,6 +103,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun SettingsWorkspaceScreen(
     state: SettingsUiState,
+    homeResetKey: Int,
     onAutoAccountingChanged: (Boolean) -> Unit,
     onCloudAnalysisChanged: (Boolean) -> Unit,
     onAuthPhoneChanged: (String) -> Unit,
@@ -100,6 +116,7 @@ fun SettingsWorkspaceScreen(
     onStartMonthlyMembership: () -> Unit,
     onStartYearlyMembership: () -> Unit,
     onSyncCloudLearning: () -> Unit,
+    onPullCloudModel: () -> Unit,
     onCaptureEnabledChanged: (Boolean) -> Unit,
     onNotificationRetentionChanged: (Int) -> Unit,
     onScreenshotRetentionChanged: (Int) -> Unit,
@@ -122,6 +139,18 @@ fun SettingsWorkspaceScreen(
      */
     var appNotificationSettingsLaunching by rememberSaveable {
         mutableStateOf(false)
+    }
+    /**
+     * 设置页内部二级页选择状态。
+     *
+     * 用途说明：
+     * - 这里刻意使用普通 `remember`，不使用 `rememberSaveable`。
+     * - 底部导航离开设置页后，NavHost 会尝试恢复可保存状态；如果这里可保存，就会回到旧二级页。
+     * - 当前产品预期是“重新点击底部设置 = 回到设置总页”，因此二级页状态只在设置页当前可见期间保留。
+     */
+    var selectedDetailName by remember(homeResetKey) { mutableStateOf<String?>(null) }
+    val selectedDetail = SettingsDetailDestination.entries.firstOrNull { detail ->
+        detail.name == selectedDetailName
     }
     /**
      * 统一打开“应用通知”系统设置入口。
@@ -164,230 +193,402 @@ fun SettingsWorkspaceScreen(
         }
     }
 
-    LaunchedEffect(context) {
-        permissionSnapshot = readSettingsPermissionSnapshot(context)
-    }
-
-    DisposableEffect(lifecycleOwner, context) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                // 从系统设置页返回后异步刷新权限状态，避免系统设置读取阻塞设置页恢复动画。
-                permissionRefreshScope.launch {
-                    permissionSnapshot = readSettingsPermissionSnapshot(context)
-                }
-                appNotificationSettingsLaunching = false
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
-
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item(key = "ability_section") {
-            SettingsSectionTitle(
-                title = "记账能力",
-                summary = "自动记账相关开关。",
-                modifier = Modifier.padding(top = mainPageTopInset()),
-            )
-        }
-        item(key = "ability_card") {
-            Card(
-                shape = AutobookUiTokens.panelShape,
-                border = autobookCardBorder(),
-                colors = autobookCardColors(),
-            ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    AutoAccountingToggleSection(
-                        autoAccountingEnabled = state.autoAccountingEnabled,
-                        hasNotificationAccess = hasNotificationAccess,
-                        onCheckedChange = onAutoAccountingChanged,
-                        onOpenNotificationSettings = {
-                            context.startActivity(
-                                SettingsIntents.notificationAccess().apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                },
-                            )
-                        },
-                    )
-                    AppNotificationToggleSection(
-                        appNotificationsEnabled = hasAppNotificationsEnabled,
-                        onOpenAppNotificationSettings = openAppNotificationSettings,
-                    )
-                    ToggleRow(
-                        title = "云端 AI 分析",
-                        summary = "开启后，允许图片导入与相关分析链路走云端模型。",
-                        checked = state.cloudAnalysisEnabled,
-                        onCheckedChange = onCloudAnalysisChanged,
-                    )
-                }
-            }
+    if (selectedDetail == SettingsDetailDestination.PERMISSIONS) {
+        LaunchedEffect(context, selectedDetail) {
+            // 只有进入权限二级页时才读取系统权限，设置首页不再为了隐藏内容访问系统服务。
+            permissionSnapshot = readSettingsPermissionSnapshot(context)
         }
 
-        item(key = "auth_section") {
-            SettingsSectionTitle(
-                title = "账号",
-                summary = "手机号登录后，会员状态由服务器确认。",
-            )
-        }
-        item(key = "auth_card") {
-            PhoneAuthCard(
-                state = state,
-                onAuthPhoneChanged = onAuthPhoneChanged,
-                onAuthCodeChanged = onAuthCodeChanged,
-                onRequestLoginCode = onRequestLoginCode,
-                onLoginOrRegister = onLoginOrRegister,
-                onLogout = onLogout,
-            )
-        }
-
-        item(key = "membership_section") {
-            SettingsSectionTitle(
-                title = "会员与云端学习",
-                summary = "会员可拉取服务器全局模型；通知原文上传用于改进下一版全局模型。",
-            )
-        }
-        item(key = "membership_card") {
-            MembershipCloudLearningCard(
-                state = state,
-                onCloudLearningChanged = onCloudLearningChanged,
-                onRefreshMembership = onRefreshMembership,
-                onStartMonthlyMembership = onStartMonthlyMembership,
-                onStartYearlyMembership = onStartYearlyMembership,
-                onSyncCloudLearning = onSyncCloudLearning,
-            )
-        }
-
-        item(key = "capture_section") {
-            SettingsSectionTitle(
-                title = "截图能力",
-                summary = "当前页面截图记账的权限入口与启停控制。",
-            )
-        }
-        item(key = "capture_card") {
-            CapturePermissionCard(
-                captureEnabled = state.captureEnabled,
-                appNotificationsEnabled = hasAppNotificationsEnabled,
-                accessibilityEnabled = hasAccessibilityAccess,
-                onEnableCapture = {
-                    enableCaptureShortcut(
-                        context = context,
-                        onCaptureEnabledChanged = onCaptureEnabledChanged,
-                        requestNotificationPermission = {
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        },
-                    )
-                },
-                onDisableCapture = {
-                    disableCaptureShortcut(
-                        context = context,
-                        onCaptureEnabledChanged = onCaptureEnabledChanged,
-                    )
-                },
-                onOpenAccessibilitySettings = {
-                    context.startActivity(
-                        SettingsIntents.accessibilityAccess().apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        },
-                    )
-                },
-                onOpenAppNotificationSettings = openAppNotificationSettings,
-            )
-        }
-
-        item(key = "source_section") {
-            SettingsSectionTitle(
-                title = "来源管理",
-                summary = "控制要监听的通知来源。",
-            )
-        }
-        item(key = "source_card") {
-            Card(
-                shape = AutobookUiTokens.panelShape,
-                border = autobookCardBorder(),
-                colors = autobookCardColors(),
-            ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    SETTINGS_VISIBLE_SOURCES.forEach { source ->
-                        ToggleRow(
-                            title = source.toDisplayLabel(),
-                            summary = "控制 ${source.toDisplayLabel()} 的自动记账入口。",
-                            checked = source in state.enabledSources,
-                            onCheckedChange = { enabled -> onSourceEnabledChanged(source, enabled) },
-                        )
+        DisposableEffect(lifecycleOwner, context, selectedDetail) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    // 从系统设置页返回后异步刷新权限状态，避免系统设置读取阻塞页面恢复动画。
+                    permissionRefreshScope.launch {
+                        permissionSnapshot = readSettingsPermissionSnapshot(context)
                     }
+                    appNotificationSettingsLaunching = false
                 }
             }
-        }
-
-        item(key = "retention_section") {
-            SettingsSectionTitle(
-                title = "数据留存",
-                summary = "控制通知原文与截图保留时长。",
-            )
-        }
-        item(key = "retention_card") {
-            Card(
-                shape = AutobookUiTokens.panelShape,
-                border = autobookCardBorder(),
-                colors = autobookCardColors(),
-            ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    RetentionSlider(
-                        title = "通知原文保留天数",
-                        value = state.notificationRetentionDays,
-                        range = 1..90,
-                        onValueChange = onNotificationRetentionChanged,
-                    )
-                    RetentionSlider(
-                        title = "截图保留天数",
-                        value = state.screenshotRetentionDays,
-                        range = 1..30,
-                        onValueChange = onScreenshotRetentionChanged,
-                    )
-                }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
             }
         }
     }
+
+    if (selectedDetail != null) {
+        SettingsDetailScreen(
+            destination = selectedDetail,
+            state = state,
+            hasNotificationAccess = hasNotificationAccess,
+            hasAppNotificationsEnabled = hasAppNotificationsEnabled,
+            hasAccessibilityAccess = hasAccessibilityAccess,
+            onBack = { selectedDetailName = null },
+            onAutoAccountingChanged = onAutoAccountingChanged,
+            onCloudAnalysisChanged = onCloudAnalysisChanged,
+            onOpenNotificationSettings = {
+                context.startActivity(
+                    SettingsIntents.notificationAccess().apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    },
+                )
+            },
+            onOpenAppNotificationSettings = openAppNotificationSettings,
+            onCaptureEnabledChanged = onCaptureEnabledChanged,
+            onRequestNotificationPermission = {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            },
+            onOpenAccessibilitySettings = {
+                context.startActivity(
+                    SettingsIntents.accessibilityAccess().apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    },
+                )
+            },
+            onCloudLearningChanged = onCloudLearningChanged,
+            onRefreshMembership = onRefreshMembership,
+            onStartMonthlyMembership = onStartMonthlyMembership,
+            onStartYearlyMembership = onStartYearlyMembership,
+            onSyncCloudLearning = onSyncCloudLearning,
+            onNotificationRetentionChanged = onNotificationRetentionChanged,
+            onScreenshotRetentionChanged = onScreenshotRetentionChanged,
+            onSourceEnabledChanged = onSourceEnabledChanged,
+            modifier = modifier,
+        )
+        return
+    }
+
+    SettingsHomeContent(
+        state = state,
+        onAuthPhoneChanged = onAuthPhoneChanged,
+        onAuthCodeChanged = onAuthCodeChanged,
+        onRequestLoginCode = onRequestLoginCode,
+        onLoginOrRegister = onLoginOrRegister,
+        onLogout = onLogout,
+        onPullCloudModel = onPullCloudModel,
+        onOpenDetail = { detail -> selectedDetailName = detail.name },
+        modifier = modifier,
+    )
 }
 
 /**
- * 手机号账号卡。
+ * 设置页首页内容。
  *
  * 用途说明：
- * - 提供手机号验证码登录/注册入口。
- * - 当前真实账号服务器未配置，按钮会触发占位仓储并展示明确提示。
+ * - 首页只保留头像账号、顶部统计和横条入口，具体开关挪到二级页面。
  *
  * 参数说明：
  * - state：设置页 UI 状态。
- * - onAuthPhoneChanged：手机号输入回调。
- * - onAuthCodeChanged：验证码输入回调。
+ * - onAuthPhoneChanged：邮箱输入变更回调。
+ * - onAuthCodeChanged：验证码输入变更回调。
  * - onRequestLoginCode：请求验证码回调。
  * - onLoginOrRegister：登录或注册回调。
  * - onLogout：退出登录回调。
+ * - onPullCloudModel：点击模型状态时拉取最新模型。
+ * - onOpenDetail：打开二级设置页面。
+ * - modifier：外层修饰符。
  */
 @Composable
-private fun PhoneAuthCard(
+private fun SettingsHomeContent(
     state: SettingsUiState,
     onAuthPhoneChanged: (String) -> Unit,
     onAuthCodeChanged: (String) -> Unit,
     onRequestLoginCode: () -> Unit,
     onLoginOrRegister: () -> Unit,
     onLogout: () -> Unit,
+    onPullCloudModel: () -> Unit,
+    onOpenDetail: (SettingsDetailDestination) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            // 设置页是长列表，直接铺不透明背景可以减少底层内容参与绘制。
+            .background(MaterialTheme.colorScheme.background)
+            // 设置页内容规模固定，使用普通滚动列可以避免 LazyColumn 在快速滑动时反复组合大卡片。
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        SettingsProfileHero(
+            state = state,
+            onAuthPhoneChanged = onAuthPhoneChanged,
+            onAuthCodeChanged = onAuthCodeChanged,
+            onRequestLoginCode = onRequestLoginCode,
+            onLoginOrRegister = onLoginOrRegister,
+            onLogout = onLogout,
+            onPullCloudModel = onPullCloudModel,
+            modifier = Modifier.padding(top = mainPageTopInset()),
+        )
+
+        SettingsMenuCard {
+            SettingsMenuRow(
+                // 权限设置使用盾牌图标，避免用户把入口误解成音量或普通通知设置。
+                icon = AutobookIconAsset.Permissions,
+                title = "权限设置",
+                summary = "通知监听、应用通知、截图入口",
+                onClick = { onOpenDetail(SettingsDetailDestination.PERMISSIONS) },
+            )
+            SettingsMenuDivider()
+            SettingsMenuRow(
+                icon = AutobookIconAsset.Crown,
+                title = "会员中心",
+                summary = state.membershipSummary,
+                onClick = { onOpenDetail(SettingsDetailDestination.MEMBERSHIP) },
+            )
+            SettingsMenuDivider()
+            SettingsMenuRow(
+                // 来源管理处理的是微信、支付宝、银行短信这类消息来源，因此统一使用消息图标。
+                icon = AutobookIconAsset.Message,
+                title = "来源管理",
+                summary = "微信、支付宝、银行短信等来源开关",
+                onClick = { onOpenDetail(SettingsDetailDestination.SOURCES) },
+            )
+            SettingsMenuDivider()
+            SettingsMenuRow(
+                icon = AutobookIconAsset.Storage,
+                title = "数据留存",
+                summary = "通知原文和截图保留时间",
+                onClick = { onOpenDetail(SettingsDetailDestination.RETENTION) },
+            )
+        }
+    }
+}
+
+/**
+ * 设置二级页目的地。
+ *
+ * 用途说明：
+ * - 首页只展示横条入口，具体设置项按目的地拆到二级页，减少设置首页的组合和绘制压力。
+ *
+ * 参数说明：
+ * - title：二级页标题。
+ * - summary：二级页短说明。
+ * - icon：首页横条和二级页头部使用的图标。
+ */
+private enum class SettingsDetailDestination(
+    val title: String,
+    val summary: String,
+    val icon: AutobookIconAsset,
+) {
+    PERMISSIONS(
+        title = "权限设置",
+        summary = "通知监听、应用通知和截图入口",
+        icon = AutobookIconAsset.Permissions,
+    ),
+    MEMBERSHIP(
+        title = "会员中心",
+        summary = "会员状态、模型权限和云端学习",
+        icon = AutobookIconAsset.Crown,
+    ),
+    SOURCES(
+        title = "来源管理",
+        summary = "选择参与自动解析的通知来源",
+        icon = AutobookIconAsset.Message,
+    ),
+    RETENTION(
+        title = "数据留存",
+        summary = "控制原始通知和截图保留时间",
+        icon = AutobookIconAsset.Storage,
+    ),
+}
+
+/**
+ * 设置二级页容器。
+ *
+ * 用途说明：
+ * - 把首页不需要直接展示的开关和表单按组放到二级页，首页快速滑动时不再组合这些重控件。
+ *
+ * 参数说明：
+ * - destination：当前二级页目的地。
+ * - state：设置页 UI 状态。
+ * - hasNotificationAccess：通知监听权限是否开启。
+ * - hasAppNotificationsEnabled：应用通知是否开启。
+ * - hasAccessibilityAccess：无障碍权限是否开启。
+ * - onBack：返回设置首页回调。
+ * - onAutoAccountingChanged：自动记账开关变更回调。
+ * - onCloudAnalysisChanged：旧云端分析开关回调；当前设置页不再暴露旧入口。
+ * - onOpenNotificationSettings：打开通知监听系统设置回调。
+ * - onOpenAppNotificationSettings：打开应用通知系统设置回调。
+ * - onCaptureEnabledChanged：截图入口启停回调。
+ * - onRequestNotificationPermission：申请运行时通知权限回调。
+ * - onOpenAccessibilitySettings：打开无障碍系统设置回调。
+ * - onCloudLearningChanged：云端学习开关变更回调。
+ * - onRefreshMembership：刷新会员状态回调。
+ * - onStartMonthlyMembership：开通月卡回调。
+ * - onStartYearlyMembership：开通年卡回调。
+ * - onSyncCloudLearning：立即同步云端学习回调。
+ * - onNotificationRetentionChanged：通知保留天数变更回调。
+ * - onScreenshotRetentionChanged：截图保留天数变更回调。
+ * - onSourceEnabledChanged：来源开关变更回调。
+ * - modifier：外层修饰符。
+ */
+@Composable
+private fun SettingsDetailScreen(
+    destination: SettingsDetailDestination,
+    state: SettingsUiState,
+    hasNotificationAccess: Boolean,
+    hasAppNotificationsEnabled: Boolean,
+    hasAccessibilityAccess: Boolean,
+    onBack: () -> Unit,
+    onAutoAccountingChanged: (Boolean) -> Unit,
+    onCloudAnalysisChanged: (Boolean) -> Unit,
+    onOpenNotificationSettings: () -> Unit,
+    onOpenAppNotificationSettings: () -> Unit,
+    onCaptureEnabledChanged: (Boolean) -> Unit,
+    onRequestNotificationPermission: () -> Unit,
+    onOpenAccessibilitySettings: () -> Unit,
+    onCloudLearningChanged: (Boolean) -> Unit,
+    onRefreshMembership: () -> Unit,
+    onStartMonthlyMembership: () -> Unit,
+    onStartYearlyMembership: () -> Unit,
+    onSyncCloudLearning: () -> Unit,
+    onNotificationRetentionChanged: (Int) -> Unit,
+    onScreenshotRetentionChanged: (Int) -> Unit,
+    onSourceEnabledChanged: (SettingsNotificationSource, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, top = mainPageTopInset(), bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        SettingsDetailHeader(
+            destination = destination,
+            onBack = onBack,
+        )
+        when (destination) {
+            SettingsDetailDestination.PERMISSIONS -> {
+                SettingsGroupCard(
+                    title = "记账能力",
+                    summary = "控制通知监听自动记账和应用通知状态。",
+                ) {
+                    AutoAccountingToggleSection(
+                        autoAccountingEnabled = state.autoAccountingEnabled,
+                        hasNotificationAccess = hasNotificationAccess,
+                        onCheckedChange = onAutoAccountingChanged,
+                        onOpenNotificationSettings = onOpenNotificationSettings,
+                    )
+                    AppNotificationToggleSection(
+                        appNotificationsEnabled = hasAppNotificationsEnabled,
+                        onOpenAppNotificationSettings = onOpenAppNotificationSettings,
+                    )
+                }
+                CapturePermissionCard(
+                    captureEnabled = state.captureEnabled,
+                    appNotificationsEnabled = hasAppNotificationsEnabled,
+                    accessibilityEnabled = hasAccessibilityAccess,
+                    onEnableCapture = {
+                        enableCaptureShortcut(
+                            context = context,
+                            onCaptureEnabledChanged = onCaptureEnabledChanged,
+                            requestNotificationPermission = onRequestNotificationPermission,
+                        )
+                    },
+                    onDisableCapture = {
+                        disableCaptureShortcut(
+                            context = context,
+                            onCaptureEnabledChanged = onCaptureEnabledChanged,
+                        )
+                    },
+                    onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+                    onOpenAppNotificationSettings = onOpenAppNotificationSettings,
+                )
+            }
+            SettingsDetailDestination.MEMBERSHIP -> {
+                MembershipCloudLearningCard(
+                    state = state,
+                    onCloudLearningChanged = onCloudLearningChanged,
+                    onRefreshMembership = onRefreshMembership,
+                    onStartMonthlyMembership = onStartMonthlyMembership,
+                    onStartYearlyMembership = onStartYearlyMembership,
+                    onSyncCloudLearning = onSyncCloudLearning,
+                )
+            }
+            SettingsDetailDestination.SOURCES -> {
+                SettingsSourceManagementCard(
+                    enabledSources = state.enabledSources,
+                    onSourceEnabledChanged = onSourceEnabledChanged,
+                )
+            }
+            SettingsDetailDestination.RETENTION -> {
+                SettingsRetentionCard(
+                    notificationRetentionDays = state.notificationRetentionDays,
+                    screenshotRetentionDays = state.screenshotRetentionDays,
+                    onNotificationRetentionChanged = onNotificationRetentionChanged,
+                    onScreenshotRetentionChanged = onScreenshotRetentionChanged,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 二级页标题栏。
+ *
+ * 参数说明：
+ * - destination：当前二级页目的地。
+ * - onBack：返回首页回调。
+ */
+@Composable
+private fun SettingsDetailHeader(
+    destination: SettingsDetailDestination,
+    onBack: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onBack) {
+            AutobookIcon(
+                asset = AutobookIconAsset.Back,
+                contentDescription = "返回",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.62f), RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            AutobookIcon(
+                asset = destination.icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = destination.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = destination.summary,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * 设置首页横条列表容器。
+ *
+ * 参数说明：
+ * - content：横条内容。
+ */
+@Composable
+private fun SettingsMenuCard(
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
         shape = AutobookUiTokens.panelShape,
@@ -395,53 +596,622 @@ private fun PhoneAuthCard(
         colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            content = content,
+        )
+    }
+}
+
+/**
+ * 设置首页横条入口。
+ *
+ * 参数说明：
+ * - icon：左侧图标。
+ * - title：入口标题。
+ * - summary：入口摘要。
+ * - onClick：点击跳转回调。
+ */
+@Composable
+private fun SettingsMenuRow(
+    icon: AutobookIconAsset,
+    title: String,
+    summary: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .autobookClippedClickable(
+                shape = AutobookUiTokens.innerPanelShape,
+                onClick = onClick,
+            )
+            .padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.58f), RoundedCornerShape(9.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            AutobookIcon(
+                asset = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                text = state.authSummary,
-                style = MaterialTheme.typography.titleMedium,
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            OutlinedTextField(
-                value = state.authPhoneInput,
-                onValueChange = onAuthPhoneChanged,
-                label = { Text("手机号") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                modifier = Modifier.fillMaxWidth(),
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
+        }
+        AutobookIcon(
+            asset = AutobookIconAsset.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+/**
+ * 设置首页横条分割线。
+ *
+ * 用途说明：
+ * - 用很浅的线条分隔入口，保持参考截图那种轻列表感。
+ */
+@Composable
+private fun SettingsMenuDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 52.dp),
+        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.36f),
+    )
+}
+
+/**
+ * 来源管理二级页内容。
+ *
+ * 参数说明：
+ * - enabledSources：当前已启用来源集合。
+ * - onSourceEnabledChanged：来源启停回调。
+ */
+@Composable
+private fun SettingsSourceManagementCard(
+    enabledSources: Set<SettingsNotificationSource>,
+    onSourceEnabledChanged: (SettingsNotificationSource, Boolean) -> Unit,
+) {
+    SettingsGroupCard(
+        title = "来源管理",
+        summary = "关闭某个来源后，它的通知不会进入自动解析流程。",
+    ) {
+        SETTINGS_VISIBLE_SOURCES.forEachIndexed { index, source ->
+            ToggleRow(
+                title = source.toDisplayLabel(),
+                summary = source.toSourceSummary(),
+                // 每个来源本质都是一类消息入口，和首页来源管理保持同一图标语义。
+                leadingIcon = AutobookIconAsset.Message,
+                checked = source in enabledSources,
+                onCheckedChange = { enabled -> onSourceEnabledChanged(source, enabled) },
+            )
+            if (index != SETTINGS_VISIBLE_SOURCES.lastIndex) {
+                SettingsMenuDivider()
+            }
+        }
+    }
+}
+
+/**
+ * 数据留存二级页内容。
+ *
+ * 参数说明：
+ * - notificationRetentionDays：通知原文保留天数。
+ * - screenshotRetentionDays：截图保留天数。
+ * - onNotificationRetentionChanged：通知保留天数变更回调。
+ * - onScreenshotRetentionChanged：截图保留天数变更回调。
+ */
+@Composable
+private fun SettingsRetentionCard(
+    notificationRetentionDays: Int,
+    screenshotRetentionDays: Int,
+    onNotificationRetentionChanged: (Int) -> Unit,
+    onScreenshotRetentionChanged: (Int) -> Unit,
+) {
+    SettingsGroupCard(
+        title = "数据留存",
+        summary = "保留时间越短，本地占用越低；需要追溯时可以适当调长。",
+    ) {
+        RetentionSlider(
+            title = "通知原文",
+            value = notificationRetentionDays,
+            range = 7..180,
+            onValueChange = onNotificationRetentionChanged,
+        )
+        RetentionSlider(
+            title = "截图",
+            value = screenshotRetentionDays,
+            range = 1..30,
+            onValueChange = onScreenshotRetentionChanged,
+        )
+    }
+}
+
+/**
+ * 设置页顶部身份区。
+ *
+ * 用途说明：
+ * - 借鉴参考图里“先给用户身份和关键状态，再进入设置列表”的结构。
+ * - 顶部只使用浅米白和白色，不做大面积深色块，让页面第一眼更轻。
+ *
+ * 参数说明：
+ * - state：设置页 UI 状态，用于展示登录、会员、统计和模型状态。
+ * - onAuthPhoneChanged：邮箱输入变更回调。
+ * - onAuthCodeChanged：验证码输入变更回调。
+ * - onRequestLoginCode：请求邮箱验证码回调。
+ * - onLoginOrRegister：提交登录或注册回调。
+ * - onLogout：退出登录回调。
+ * - onPullCloudModel：点击模型状态时手动拉取最新模型。
+ * - modifier：外层修饰符，主要承接顶部安全间距。
+ */
+@Composable
+private fun SettingsProfileHero(
+    state: SettingsUiState,
+    onAuthPhoneChanged: (String) -> Unit,
+    onAuthCodeChanged: (String) -> Unit,
+    onRequestLoginCode: () -> Unit,
+    onLoginOrRegister: () -> Unit,
+    onLogout: () -> Unit,
+    onPullCloudModel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = AutobookUiTokens.panelShape,
+        border = autobookCardBorder(),
+        colors = autobookCardColors(highlighted = true),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SettingsHeroAvatar()
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text(
+                        text = state.authAccountDisplayText(),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (state.authLoggedIn) {
+                    OutlinedButton(onClick = onLogout) {
+                        Text("退出")
+                    }
+                } else {
+                    SettingsStatusPill(
+                        text = if (state.cloudLearningEffectiveEnabled) "会员" else "免费版",
+                        emphasized = state.cloudLearningEffectiveEnabled,
+                    )
+                }
+            }
+            if (!state.authLoggedIn) {
+                SettingsHeroAuthForm(
+                    state = state,
+                    onAuthPhoneChanged = onAuthPhoneChanged,
+                    onAuthCodeChanged = onAuthCodeChanged,
+                    onRequestLoginCode = onRequestLoginCode,
+                    onLoginOrRegister = onLoginOrRegister,
+                )
+            } else if (state.membershipActionMessage.isNotBlank()) {
+                Text(
+                    text = state.membershipActionMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            SettingsHeroStatsRow(
+                state = state,
+                onPullCloudModel = onPullCloudModel,
+            )
+        }
+    }
+}
+
+/**
+ * 设置页默认头像。
+ *
+ * 用途说明：
+ * - 先提供稳定的本地默认头像，后续接头像上传时只需要替换这里的展示来源。
+ */
+@Composable
+private fun SettingsHeroAvatar() {
+    Box(
+        modifier = Modifier
+            .size(52.dp)
+            .background(MaterialTheme.colorScheme.surface, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        AutobookIcon(
+            asset = AutobookIconAsset.Account,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(34.dp),
+        )
+    }
+}
+
+/**
+ * 顶部登录注册表单。
+ *
+ * 参数说明：
+ * - state：设置页 UI 状态，用于读取邮箱、验证码和倒计时。
+ * - onAuthPhoneChanged：邮箱输入变更回调。
+ * - onAuthCodeChanged：验证码输入变更回调。
+ * - onRequestLoginCode：请求验证码回调。
+ * - onLoginOrRegister：登录或注册回调。
+ */
+@Composable
+private fun SettingsHeroAuthForm(
+    state: SettingsUiState,
+    onAuthPhoneChanged: (String) -> Unit,
+    onAuthCodeChanged: (String) -> Unit,
+    onRequestLoginCode: () -> Unit,
+    onLoginOrRegister: () -> Unit,
+) {
+    val authEmail = state.authPhoneInput.trim()
+    val normalizedCode = state.authCodeInput.filter(Char::isDigit)
+    val codeButtonText = when {
+        state.authCodeCooldownSeconds > 0 -> "${state.authCodeCooldownSeconds}秒"
+        state.authCodeRequesting -> "发送中"
+        else -> "验证码"
+    }
+    val canRequestCode = AUTH_EMAIL_REGEX.matches(authEmail) &&
+        !state.authCodeRequesting &&
+        state.authCodeCooldownSeconds <= 0
+    val canLogin = AUTH_EMAIL_REGEX.matches(authEmail) &&
+        normalizedCode.length == SMS_CODE_LENGTH &&
+        !state.authLoginInProgress
+
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        OutlinedTextField(
+            value = state.authPhoneInput,
+            onValueChange = onAuthPhoneChanged,
+            label = { Text("邮箱") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(
                 value = state.authCodeInput,
                 onValueChange = onAuthCodeChanged,
-                label = { Text("短信验证码") },
+                label = { Text("验证码") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(
-                    onClick = onRequestLoginCode,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("获取验证码")
-                }
-                Button(
-                    onClick = onLoginOrRegister,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("登录/注册")
-                }
-            }
-            if (state.authLoggedIn) {
-                OutlinedButton(
-                    onClick = onLogout,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("退出登录")
-                }
+            OutlinedButton(
+                onClick = onRequestLoginCode,
+                enabled = canRequestCode,
+                modifier = Modifier.height(56.dp),
+            ) {
+                Text(codeButtonText)
             }
         }
+        Button(
+            onClick = onLoginOrRegister,
+            enabled = canLogin,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (state.authLoginInProgress) "登录中" else "登录/注册")
+        }
+        if (state.membershipActionMessage.isNotBlank()) {
+            Text(
+                text = state.membershipActionMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * 顶部三项核心统计。
+ *
+ * 参数说明：
+ * - state：设置页 UI 状态，用于读取记账统计和模型状态。
+ * - onPullCloudModel：点击模型状态时手动拉取服务器模型。
+ */
+@Composable
+private fun SettingsHeroStatsRow(
+    state: SettingsUiState,
+    onPullCloudModel: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SettingsHeroStatItem(
+            label = "记账天数",
+            value = state.bookkeepingDayCount.toString(),
+            modifier = Modifier.weight(1f),
+        )
+        SettingsHeroStatItem(
+            label = "记账笔数",
+            value = state.bookkeepingEntryCount.toString(),
+            modifier = Modifier.weight(1f),
+        )
+        SettingsHeroModelStatusItem(
+            state = state,
+            onClick = onPullCloudModel,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/**
+ * 顶部模型状态单元。
+ *
+ * 用途说明：
+ * - 模型状态不是普通数字，所以单独排版：非会员说明不可用，会员说明最近更新时间。
+ *
+ * 参数说明：
+ * - state：设置页 UI 状态，用于判断会员与模型更新时间。
+ * - onClick：点击后拉取服务器最新模型。
+ * - modifier：外层布局修饰符。
+ */
+@Composable
+private fun SettingsHeroModelStatusItem(
+    state: SettingsUiState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val statShape = AutobookUiTokens.innerPanelShape
+    Column(
+        modifier = modifier
+            .height(66.dp)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f), statShape)
+            .autobookClippedClickable(shape = statShape, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 7.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = "模型状态",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (state.membershipActive) {
+            Text(
+                text = "最近更新时间：",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = state.modelLastPulledLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Text(
+                text = "非会员无法使用",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
+ * 顶部统计单元。
+ *
+ * 参数说明：
+ * - label：指标名称。
+ * - value：指标主值。
+ * - caption：指标副标题，可为空。
+ * - onClick：点击回调；为空时仅展示。
+ * - modifier：外层布局修饰符。
+ */
+@Composable
+private fun SettingsHeroStatItem(
+    label: String,
+    value: String,
+    caption: String? = null,
+    onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val statShape = AutobookUiTokens.innerPanelShape
+    val statBaseModifier = modifier
+        .height(66.dp)
+        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f), statShape)
+    val statModifier = if (onClick != null) {
+        statBaseModifier.autobookClippedClickable(shape = statShape, onClick = onClick)
+    } else {
+        statBaseModifier
+    }
+    Column(
+        modifier = statModifier
+            .padding(horizontal = 6.dp, vertical = 7.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (caption != null) {
+            Text(
+                text = caption,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
+ * 顶部胶囊状态。
+ *
+ * 参数说明：
+ * - text：状态文案。
+ * - emphasized：是否使用主色强调。
+ */
+@Composable
+private fun SettingsStatusPill(
+    text: String,
+    emphasized: Boolean,
+) {
+    Surface(
+        shape = AutobookUiTokens.chipShape,
+        color = if (emphasized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+        border = autobookCardBorder(emphasized = emphasized),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (emphasized) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+/**
+ * 设置页通用分组卡片。
+ *
+ * 用途说明：
+ * - 把原先“标题在外 + 大卡片”的结构压缩成白色分组列表，降低视觉重量。
+ * - 每组内部只保留必要说明，减少用户滑动时的阅读负担。
+ *
+ * 参数说明：
+ * - title：分组标题。
+ * - summary：分组说明。
+ * - content：分组内的真实设置项。
+ */
+@Composable
+private fun SettingsGroupCard(
+    title: String,
+    summary: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(
+        shape = AutobookUiTokens.panelShape,
+        border = autobookCardBorder(),
+        colors = autobookCardColors(),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            SettingsGroupHeader(title = title, summary = summary)
+            content()
+        }
+    }
+}
+
+/**
+ * 设置分组标题。
+ *
+ * 参数说明：
+ * - title：分组标题。
+ * - summary：分组说明。
+ */
+@Composable
+private fun SettingsGroupHeader(
+    title: String,
+    summary: String,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.62f), RoundedCornerShape(9.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            AutobookIcon(
+                asset = resolveSettingsGroupIcon(title),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(17.dp),
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * 根据分组标题选择图标。
+ *
+ * 参数说明：
+ * - title：设置分组标题。
+ */
+private fun resolveSettingsGroupIcon(title: String): AutobookIconAsset {
+    return when (title) {
+        "记账能力" -> AutobookIconAsset.Sparkle
+        "账号" -> AutobookIconAsset.Account
+        "会员与云端学习" -> AutobookIconAsset.Crown
+        "截图能力" -> AutobookIconAsset.Screenshot
+        "来源管理" -> AutobookIconAsset.Message
+        "数据留存" -> AutobookIconAsset.Storage
+        else -> AutobookIconAsset.Account
     }
 }
 
@@ -464,6 +1234,7 @@ private fun AppNotificationToggleSection(
         } else {
             "应用通知已关闭，识别结果提示和截图记账入口都无法显示。"
         },
+        leadingIcon = AutobookIconAsset.Notifications,
         checked = appNotificationsEnabled,
         readOnly = true,
         onRowClick = onOpenAppNotificationSettings,
@@ -496,6 +1267,7 @@ private fun AutoAccountingToggleSection(
         ToggleRow(
             title = "自动记账总开关",
             summary = summary,
+            leadingIcon = AutobookIconAsset.Sparkle,
             checked = hasNotificationAccess && autoAccountingEnabled,
             enabled = hasNotificationAccess,
             onCheckedChange = onCheckedChange,
@@ -541,28 +1313,62 @@ private fun MembershipCloudLearningCard(
         colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = state.membershipSummary,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+            SettingsGroupHeader(
+                title = "会员与云端学习",
+                summary = "会员可拉取服务器全局模型，并贡献样本改进解析能力。",
             )
+            Surface(
+                shape = AutobookUiTokens.innerPanelShape,
+                color = if (state.cloudLearningEffectiveEnabled) {
+                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.58f)
+                } else {
+                    autobookSoftFillColor()
+                },
+                border = autobookCardBorder(emphasized = state.cloudLearningEffectiveEnabled),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AutobookIcon(
+                        asset = AutobookIconAsset.Crown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(26.dp),
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Text(
+                            text = state.membershipSummary,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = if (state.cloudLearningEffectiveEnabled) {
+                                "云端学习与模型拉取已生效"
+                            } else {
+                                "免费版继续使用本地规则算法"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
             ToggleRow(
                 title = "云端学习增强",
                 summary = state.cloudLearningSummary,
+                leadingIcon = AutobookIconAsset.CloudSync,
                 checked = state.cloudLearningEnabled,
                 onCheckedChange = onCloudLearningChanged,
-            )
-            Text(
-                text = if (state.cloudLearningEffectiveEnabled) {
-                    "当前会上传通知原文、解析结果和反馈标签，并拉取服务器模型。"
-                } else {
-                    "当前不会上传通知原文，非会员只使用普通规则算法。"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(
@@ -605,34 +1411,6 @@ private fun MembershipCloudLearningCard(
 }
 
 /**
- * 通用小节标题。
- *
- * 参数说明：
- * - title：小节标题。
- * - summary：小节摘要。
- * - modifier：外层修饰符。
- */
-@Composable
-private fun SettingsSectionTitle(
-    title: String,
-    summary: String,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            text = summary,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-/**
  * 截图能力卡。
  *
  * 用途说明：
@@ -664,13 +1442,12 @@ private fun CapturePermissionCard(
         colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "当前页面截图记账",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+            SettingsGroupHeader(
+                title = "截图能力",
+                summary = "当前页面截图记账的权限入口与启停控制。",
             )
             Text(
                 text = when {
@@ -678,7 +1455,7 @@ private fun CapturePermissionCard(
                     captureEnabled -> "当前可以通过通知栏入口执行截图记账。"
                     else -> "当前截图记账功能已关闭。"
                 },
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             PermissionStatusRow(
@@ -982,6 +1759,7 @@ private fun startPersistentCaptureEntry(context: Context): Boolean {
  * 参数说明：
  * - title：当前设置项标题。
  * - summary：当前设置项说明。
+ * - leadingIcon：行首图标；为空时保持纯文字行。
  * - checked：当前开关状态。
  * - enabled：当前设置项是否允许交互。
  * - readOnly：是否为只读开关展示。
@@ -992,6 +1770,7 @@ private fun startPersistentCaptureEntry(context: Context): Boolean {
 private fun ToggleRow(
     title: String,
     summary: String,
+    leadingIcon: AutobookIconAsset? = null,
     checked: Boolean,
     enabled: Boolean = true,
     readOnly: Boolean = false,
@@ -1023,22 +1802,41 @@ private fun ToggleRow(
         else -> onCheckedChange
     }
     Row(
-        modifier = rowModifier.fillMaxWidth(),
+        modifier = rowModifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (leadingIcon != null) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.62f), RoundedCornerShape(9.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                AutobookIcon(
+                    asset = leadingIcon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(17.dp),
+                )
+            }
+        }
         Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = if (leadingIcon == null) 0.dp else 9.dp, end = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
                 text = summary,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1046,6 +1844,8 @@ private fun ToggleRow(
             checked = checked,
             enabled = enabled,
             onCheckedChange = effectiveOnCheckedChange,
+            // 设置页参考轻列表风格，开关稍微缩小，避免右侧控件压过文字和图标。
+            modifier = Modifier.scale(0.78f),
             // 明确约束设置页开关的禁用态与可用态底色，避免默认样式出现“可点更灰、不可点更白”的反向观感。
             colors = settingsToggleSwitchColors(),
         )
@@ -1072,6 +1872,10 @@ private fun settingsToggleSwitchColors() = run {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.26f).compositeOver(surfaceColor)
 
     SwitchDefaults.colors(
+        // 开启态使用更浅的棕色轨道，减少设置页右侧开关的视觉重量。
+        checkedThumbColor = MaterialTheme.colorScheme.surface,
+        checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.74f),
+        checkedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
         uncheckedThumbColor = MaterialTheme.colorScheme.outline,
         uncheckedTrackColor = MaterialTheme.colorScheme.surface,
         uncheckedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.58f),
@@ -1140,6 +1944,38 @@ private fun SettingsNotificationSource.toDisplayLabel(): String = when (this) {
 }
 
 /**
+ * 提取来源管理里的简短说明。
+ *
+ * 接收者说明：
+ * - 当前设置页来源分组。
+ */
+private fun SettingsNotificationSource.toSourceSummary(): String = when (this) {
+    SettingsNotificationSource.WECHAT -> "识别微信支付和微信收款相关通知"
+    SettingsNotificationSource.ALIPAY -> "识别支付宝付款、收款和账单通知"
+    SettingsNotificationSource.OTHER -> "识别银行短信等其它可解析来源"
+}
+
+/**
+ * 提取设置页账号展示文本。
+ *
+ * 用途说明：
+ * - ViewModel 当前返回的是完整说明句，这里只取邮箱主体，避免卡片里出现过长句子压坏布局。
+ *
+ * 接收者说明：
+ * - 当前设置页 UI 状态。
+ */
+private fun SettingsUiState.authAccountDisplayText(): String {
+    if (!authLoggedIn) {
+        return "未登录"
+    }
+    return authSummary
+        .removePrefix("已登录 ")
+        .substringBefore("，")
+        .ifBlank { authPhoneInput.trim() }
+        .ifBlank { "已登录" }
+}
+
+/**
  * 设置页允许展示的通知来源白名单。
  *
  * 用途说明：
@@ -1153,3 +1989,5 @@ private val SETTINGS_VISIBLE_SOURCES = listOf(
 
 private const val ACCESSIBILITY_SERVICE_CLASS_NAME =
     "com.autobook.cn.service.automation.AutobookAccessibilityService"
+private const val SMS_CODE_LENGTH = 6
+private val AUTH_EMAIL_REGEX = Regex("""^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$""", RegexOption.IGNORE_CASE)

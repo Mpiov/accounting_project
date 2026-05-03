@@ -14,6 +14,7 @@ import com.autobook.cn.core.data.CloudConfidenceModel
 import com.autobook.cn.core.data.CloudLearningRepository
 import com.autobook.cn.core.data.CloudModelStore
 import com.autobook.cn.core.data.LedgerRepository
+import com.autobook.cn.core.data.LedgerSummaryStats
 import com.autobook.cn.core.data.MembershipRepository
 import com.autobook.cn.core.data.ModelTrainingSampleRepository
 import com.autobook.cn.core.data.NotificationIngestor
@@ -28,6 +29,8 @@ import com.autobook.cn.core.data.pipeline.TransactionProcessingPipeline
 import com.autobook.cn.core.database.dao.LedgerEntryDao
 import com.autobook.cn.core.database.dao.NotificationEventDao
 import com.autobook.cn.core.database.dao.PendingEntryDao
+import com.autobook.cn.core.database.entity.LedgerStatsEntity
+import com.autobook.cn.core.database.entity.PendingStatsEntity
 import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.AuthSession
 import com.autobook.cn.core.model.AuthState
@@ -59,6 +62,9 @@ import com.autobook.cn.core.network.BackendTrainingSampleParser
 import com.autobook.cn.core.network.BackendTrainingSamplesRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.DecimalFormat
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -87,12 +93,21 @@ class LedgerRepositoryImpl @Inject constructor(
         entries.map { it.toDomain() }
     }
 
+    override fun observeSummaryStats(): Flow<LedgerSummaryStats> {
+        return ledgerEntryDao.observeStats().map { stats ->
+            // 设置页只消费两个聚合数字，直接读取缓存表，避免高频 `COUNT(*)` 或完整账本映射。
+            stats.toSummaryStats()
+        }
+    }
+
     override suspend fun add(entry: LedgerEntry): Long {
-        val id = ledgerEntryDao.insert(entry.toEntity())
+        val entryToSave = entry.withSortId()
+        val id = ledgerEntryDao.insert(entryToSave.toEntity())
+        updateStatsAfterAdd(timestamp = entryToSave.timestamp)
         // 账本主键生成后回填训练样本，方便后续编辑或删除时找到同一条样本。
         runCatching {
             modelTrainingSampleRepository.linkLedgerEntry(
-                notificationId = entry.traceNotificationId,
+                notificationId = entryToSave.traceNotificationId,
                 ledgerEntryId = id,
             )
         }
@@ -100,10 +115,18 @@ class LedgerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun update(entry: LedgerEntry) {
-        ledgerEntryDao.update(entry.toEntity())
-        if (entry.editedManually) {
+        val existingEntry = getById(entry.id)
+        val entryToSave = entry.withSortId(existingEntry?.sortId)
+        ledgerEntryDao.update(entryToSave.toEntity())
+        if (existingEntry != null) {
+            updateStatsAfterTimestampChange(
+                oldTimestamp = existingEntry.timestamp,
+                newTimestamp = entryToSave.timestamp,
+            )
+        }
+        if (entryToSave.editedManually) {
             runCatching {
-                modelTrainingSampleRepository.markLedgerEdited(entry)
+                modelTrainingSampleRepository.markLedgerEdited(entryToSave)
             }
         }
     }
@@ -112,6 +135,7 @@ class LedgerRepositoryImpl @Inject constructor(
         val existingEntry = getById(id)
         ledgerEntryDao.deleteById(id)
         if (existingEntry != null) {
+            updateStatsAfterDelete(timestamp = existingEntry.timestamp)
             runCatching {
                 modelTrainingSampleRepository.markLedgerDeleted(existingEntry)
             }
@@ -129,7 +153,6 @@ class LedgerRepositoryImpl @Inject constructor(
      */
     override suspend fun findPotentialDuplicate(candidate: TransactionCandidate): LedgerEntry? {
         val duplicate = ledgerEntryDao.findPotentialDuplicate(
-            orderId = candidate.orderId,
             amount = candidate.amount,
             direction = candidate.direction.name,
             windowStart = candidate.timestamp - DUPLICATE_WINDOW_MS,
@@ -187,18 +210,17 @@ class LedgerRepositoryImpl @Inject constructor(
     override suspend fun exportCsv(): String {
         val rows = observeEntries().first()
         return buildString {
-            appendLine("id,timestamp,direction,amount,merchant,channel,category,orderId,note,traceSource")
+            appendLine("id,sortId,timestamp,direction,amount,channel,category,note,traceSource")
             rows.forEach { entry ->
                 appendLine(
                     listOf(
                         entry.id,
+                        entry.sortId,
                         entry.timestamp,
                         entry.direction.name,
                         entry.amount,
-                        csvEscape(entry.merchant),
                         csvEscape(entry.channel),
                         csvEscape(entry.category),
-                        csvEscape(entry.orderId),
                         csvEscape(entry.note),
                         csvEscape(entry.traceSource),
                     ).joinToString(","),
@@ -206,6 +228,150 @@ class LedgerRepositoryImpl @Inject constructor(
             }
         }
     }
+
+    /**
+     * 为新账单补齐展示顺序 ID。
+     *
+     * 参数说明：
+     * - existingSortId：编辑旧账单时已经存在的顺序 ID，优先保留。
+     */
+    private fun LedgerEntry.withSortId(existingSortId: Long? = null): LedgerEntry {
+        val resolvedSortId = when {
+            sortId > 0L -> sortId
+            existingSortId != null && existingSortId > 0L -> existingSortId
+            else -> AutobookSortIdGenerator.nextId()
+        }
+        return copy(sortId = resolvedSortId)
+    }
+
+    /**
+     * 新增账单后增量维护统计缓存。
+     *
+     * 参数说明：
+     * - timestamp：新账单的交易时间。
+     */
+    private suspend fun updateStatsAfterAdd(timestamp: Long) {
+        val current = ledgerEntryDao.getStats()
+        val next = LedgerStatsEntity(
+            entryCount = (current?.entryCount ?: 0) + 1,
+            firstTimestamp = minTimestamp(current?.firstTimestamp, timestamp),
+            lastTimestamp = maxTimestamp(current?.lastTimestamp, timestamp),
+        )
+        ledgerEntryDao.upsertStats(next)
+    }
+
+    /**
+     * 删除账单后增量维护统计缓存。
+     *
+     * 参数说明：
+     * - timestamp：被删除账单原本的交易时间。
+     */
+    private suspend fun updateStatsAfterDelete(timestamp: Long) {
+        val current = ledgerEntryDao.getStats() ?: return
+        val nextCount = (current.entryCount - 1).coerceAtLeast(0)
+        if (nextCount == 0) {
+            ledgerEntryDao.upsertStats(emptyLedgerStats())
+            return
+        }
+
+        val boundaryChanged = timestamp == current.firstTimestamp || timestamp == current.lastTimestamp
+        val next = if (boundaryChanged) {
+            current.copy(
+                entryCount = nextCount,
+                firstTimestamp = ledgerEntryDao.getFirstTimestamp(),
+                lastTimestamp = ledgerEntryDao.getLastTimestamp(),
+            )
+        } else {
+            current.copy(entryCount = nextCount)
+        }
+        ledgerEntryDao.upsertStats(next)
+    }
+
+    /**
+     * 编辑账单时间后维护统计缓存。
+     *
+     * 参数说明：
+     * - oldTimestamp：编辑前交易时间。
+     * - newTimestamp：编辑后交易时间。
+     */
+    private suspend fun updateStatsAfterTimestampChange(
+        oldTimestamp: Long,
+        newTimestamp: Long,
+    ) {
+        if (oldTimestamp == newTimestamp) {
+            return
+        }
+        val current = ledgerEntryDao.getStats() ?: return
+        val boundaryChanged = oldTimestamp == current.firstTimestamp || oldTimestamp == current.lastTimestamp
+        val next = if (boundaryChanged) {
+            current.copy(
+                firstTimestamp = ledgerEntryDao.getFirstTimestamp(),
+                lastTimestamp = ledgerEntryDao.getLastTimestamp(),
+            )
+        } else {
+            current.copy(
+                firstTimestamp = minTimestamp(current.firstTimestamp, newTimestamp),
+                lastTimestamp = maxTimestamp(current.lastTimestamp, newTimestamp),
+            )
+        }
+        ledgerEntryDao.upsertStats(next)
+    }
+}
+
+/**
+ * 把统计缓存映射成设置页需要的轻量统计。
+ *
+ * 接收者说明：
+ * - 当前账本统计缓存，数据库尚未初始化时为空。
+ */
+private fun LedgerStatsEntity?.toSummaryStats(): LedgerSummaryStats {
+    val stats = this
+    val first = stats?.firstTimestamp
+    val last = stats?.lastTimestamp
+    if (stats == null || stats.entryCount <= 0 || first == null || last == null) {
+        return LedgerSummaryStats(dayCount = 0, entryCount = 0)
+    }
+    val firstDate = Instant.ofEpochMilli(first).atZone(ZoneId.systemDefault()).toLocalDate()
+    val lastDate = Instant.ofEpochMilli(last).atZone(ZoneId.systemDefault()).toLocalDate()
+    val dayCount = ChronoUnit.DAYS.between(firstDate, lastDate).toInt().coerceAtLeast(0) + 1
+    return LedgerSummaryStats(
+        dayCount = dayCount,
+        entryCount = stats.entryCount,
+    )
+}
+
+/**
+ * 生成空账本统计缓存。
+ *
+ * 用途说明：
+ * - 删除最后一笔账单后用固定空值覆盖缓存，避免设置页继续显示旧数据。
+ */
+private fun emptyLedgerStats(): LedgerStatsEntity = LedgerStatsEntity(
+    entryCount = 0,
+    firstTimestamp = null,
+    lastTimestamp = null,
+)
+
+/**
+ * 取较早时间戳。
+ *
+ * 参数说明：
+ * - current：当前缓存时间，可能为空。
+ * - candidate：候选时间。
+ */
+private fun minTimestamp(current: Long?, candidate: Long): Long {
+    return current?.let { minOf(it, candidate) } ?: candidate
+}
+
+/**
+ * 取较晚时间戳。
+ *
+ * 参数说明：
+ * - current：当前缓存时间，可能为空。
+ * - candidate：候选时间。
+ */
+private fun maxTimestamp(current: Long?, candidate: Long): Long {
+    return current?.let { maxOf(it, candidate) } ?: candidate
 }
 
 /**
@@ -224,12 +390,27 @@ class PendingRepositoryImpl @Inject constructor(
         entries.map { it.toDomain() }
     }
 
-    override fun observeActiveCount(): Flow<Int> = pendingEntryDao.observeActiveCount()
+    override fun observeActiveCount(): Flow<Int> = pendingEntryDao.observeStats().map { stats ->
+        // 底部徽标只需要有效待确认数量，直接读取缓存，避免常驻 `COUNT(*)`。
+        stats?.activeCount ?: 0
+    }
 
-    override suspend fun add(entry: PendingEntry): Long = pendingEntryDao.insert(entry.toEntity())
+    override suspend fun add(entry: PendingEntry): Long {
+        val entryToSave = entry.withSortId()
+        val id = pendingEntryDao.insert(entryToSave.toEntity())
+        if (!entryToSave.isFalsePositive) {
+            updatePendingStats(delta = 1)
+        }
+        return id
+    }
 
     override suspend fun update(entry: PendingEntry) {
-        pendingEntryDao.update(entry.toEntity())
+        val existingEntry = getById(entry.id)
+        val entryToSave = entry.withSortId(existingEntry?.sortId)
+        pendingEntryDao.update(entryToSave.toEntity())
+        if (existingEntry != null && existingEntry.isFalsePositive != entryToSave.isFalsePositive) {
+            updatePendingStats(delta = if (entryToSave.isFalsePositive) -1 else 1)
+        }
     }
 
     override suspend fun getById(id: Long): PendingEntry? = pendingEntryDao.getById(id)?.toDomain()
@@ -237,6 +418,9 @@ class PendingRepositoryImpl @Inject constructor(
     override suspend fun confirm(id: Long): PendingEntry? {
         val item = getById(id) ?: return null
         pendingEntryDao.deleteById(id)
+        if (!item.isFalsePositive) {
+            updatePendingStats(delta = -1)
+        }
         runCatching {
             modelTrainingSampleRepository.markPendingConfirmed(
                 pendingEntryId = id,
@@ -252,6 +436,9 @@ class PendingRepositoryImpl @Inject constructor(
     ): PendingEntry? {
         val item = getById(id) ?: return null
         pendingEntryDao.deleteById(id)
+        if (!item.isFalsePositive) {
+            updatePendingStats(delta = -1)
+        }
         runCatching {
             modelTrainingSampleRepository.markPendingConfirmed(
                 pendingEntryId = id,
@@ -265,6 +452,9 @@ class PendingRepositoryImpl @Inject constructor(
     override suspend fun ignore(id: Long) {
         val item = getById(id) ?: return
         pendingEntryDao.deleteById(id)
+        if (!item.isFalsePositive) {
+            updatePendingStats(delta = -1)
+        }
         runCatching {
             modelTrainingSampleRepository.markPendingIgnored(pendingEntryId = item.id)
         }
@@ -273,9 +463,43 @@ class PendingRepositoryImpl @Inject constructor(
     override suspend fun markFalsePositive(id: Long) {
         val item = getById(id) ?: return
         pendingEntryDao.update(item.copy(isFalsePositive = true).toEntity())
+        if (!item.isFalsePositive) {
+            updatePendingStats(delta = -1)
+        }
         runCatching {
             modelTrainingSampleRepository.markPendingFalsePositive(pendingEntryId = id)
         }
+    }
+
+    override suspend fun purgeUploadedFalsePositives(): Int {
+        return pendingEntryDao.purgeUploadedFalsePositives(uploadedState = TRAINING_SAMPLE_UPLOAD_STATE_UPLOADED)
+    }
+
+    /**
+     * 为待确认记录补齐展示顺序 ID。
+     *
+     * 参数说明：
+     * - existingSortId：更新旧待确认时已经存在的顺序 ID，优先保留。
+     */
+    private fun PendingEntry.withSortId(existingSortId: Long? = null): PendingEntry {
+        val resolvedSortId = when {
+            sortId > 0L -> sortId
+            existingSortId != null && existingSortId > 0L -> existingSortId
+            else -> AutobookSortIdGenerator.nextId()
+        }
+        return copy(sortId = resolvedSortId)
+    }
+
+    /**
+     * 增量维护待确认数量缓存。
+     *
+     * 参数说明：
+     * - delta：有效待确认数量变化量，新增为 `+1`，确认/忽略/误识别为 `-1`。
+     */
+    private suspend fun updatePendingStats(delta: Int) {
+        val current = pendingEntryDao.getStats()
+        val nextCount = ((current?.activeCount ?: 0) + delta).coerceAtLeast(0)
+        pendingEntryDao.upsertStats(PendingStatsEntity(activeCount = nextCount))
     }
 }
 
@@ -303,8 +527,8 @@ class NotificationTraceRepositoryImpl @Inject constructor(
 
 /**
  * 用途说明：
- * - 手机号账号仓储实现。
- * - 负责对接 `/v1/auth/sms-code`、`/v1/auth/login` 并持久化服务器返回的令牌。
+ * - 邮箱账号仓储实现。
+ * - 负责对接验证码创建、登录接口，并持久化服务器返回的令牌。
  *
  * 参数说明：
  * - context：应用级上下文，用于保存登录会话快照。
@@ -336,17 +560,17 @@ class AuthRepositoryImpl @Inject constructor(
 
     /**
      * 用途说明：
-     * - 请求短信验证码，对齐 `POST /v1/auth/sms-code`。
+     * - 请求邮箱验证码，对齐 `POST /v1/auth/sms-code`。
      *
      * 参数说明：
-     * - phone：用户输入的手机号。
+     * - phone：用户输入的邮箱；字段名沿用仓库契约，后续统一重命名为 email。
      */
     override suspend fun requestLoginCode(phone: String): OperationResult<Unit> {
-        val normalizedPhone = normalizeMainlandPhone(phone)
-            ?: return OperationResult.TerminalFailure("请输入 11 位手机号")
+        val normalizedEmail = normalizeEmailAddress(phone)
+            ?: return OperationResult.TerminalFailure("请输入正确的邮箱地址")
         return when (
             val result = callBackend(AUTH_SMS_CODE_ENDPOINT) {
-                backendApi.requestSmsCode(BackendSmsCodeRequest(phone = normalizedPhone))
+                backendApi.requestSmsCode(BackendSmsCodeRequest(phone = normalizedEmail))
             }
         ) {
             is OperationResult.Success -> OperationResult.Success(Unit)
@@ -357,26 +581,26 @@ class AuthRepositoryImpl @Inject constructor(
 
     /**
      * 用途说明：
-     * - 手机号验证码登录/注册，对齐 `POST /v1/auth/login`。
+     * - 邮箱验证码登录/注册，对齐 `POST /v1/auth/login`。
      *
      * 参数说明：
-     * - phone：用户输入的手机号。
-     * - code：短信验证码。
+     * - phone：用户输入的邮箱；字段名沿用仓库契约，后续统一重命名为 email。
+     * - code：邮箱验证码。
      */
     override suspend fun loginOrRegisterWithCode(
         phone: String,
         code: String,
     ): OperationResult<AuthSession> {
-        val normalizedPhone = normalizeMainlandPhone(phone)
-            ?: return OperationResult.TerminalFailure("请输入 11 位手机号")
+        val normalizedEmail = normalizeEmailAddress(phone)
+            ?: return OperationResult.TerminalFailure("请输入正确的邮箱地址")
         if (!SMS_CODE_REGEX.matches(code.trim())) {
-            return OperationResult.TerminalFailure("请输入 6 位短信验证码")
+            return OperationResult.TerminalFailure("请输入 6 位邮箱验证码")
         }
         return when (
             val result = callBackend(AUTH_LOGIN_ENDPOINT) {
                 backendApi.login(
                     BackendLoginRequest(
-                        phone = normalizedPhone,
+                        phone = normalizedEmail,
                         code = code.trim(),
                         deviceId = context.resolveDeviceId(),
                         appVersion = context.resolveAppVersion(),
@@ -449,7 +673,7 @@ class AuthRepositoryImpl @Inject constructor(
  * - 会员状态必须通过 `GET /v1/membership/status` 由服务器确认；本地未登录或后端未配置时都不会授予会员能力。
  *
  * 参数说明：
- * - authRepository：读取当前手机号登录会话。
+ * - authRepository：读取当前邮箱登录会话；内部会话字段名暂沿用 `phone`。
  * - backendApi：AutoBook 后端 API。
  */
 @Singleton
@@ -520,7 +744,7 @@ class MembershipRepositoryImpl @Inject constructor(
      * - 构造未登录时的免费状态，避免任何本地缓存误开会员能力。
      */
     private fun loggedOutMembershipStatus(): MembershipStatus {
-        return MembershipStatus(message = "未登录，会员状态需要手机号登录后从服务器确认。")
+        return MembershipStatus(message = "未登录，会员状态需要邮箱登录后从服务器确认。")
     }
 }
 
@@ -543,7 +767,7 @@ class PaymentRepositoryImpl @Inject constructor(
      */
     override suspend fun createMembershipOrder(plan: MembershipPlan): OperationResult<MembershipPaymentOrder> {
         val session = authRepository.authState.first().session
-            ?: return OperationResult.TerminalFailure("请先使用手机号登录/注册，再开通会员")
+            ?: return OperationResult.TerminalFailure("请先使用邮箱登录/注册，再开通会员")
         return when (
             val result = callBackend(MEMBERSHIP_ORDER_CREATE_ENDPOINT) {
                 backendApi.createMembershipOrder(
@@ -567,7 +791,7 @@ class PaymentRepositoryImpl @Inject constructor(
      */
     override suspend fun queryPaymentState(orderId: String): OperationResult<MembershipPaymentState> {
         val session = authRepository.authState.first().session
-            ?: return OperationResult.TerminalFailure("请先使用手机号登录/注册，再查询会员订单")
+            ?: return OperationResult.TerminalFailure("请先使用邮箱登录/注册，再查询会员订单")
         return when (
             val result = callBackend(MEMBERSHIP_ORDER_QUERY_ENDPOINT) {
                 backendApi.queryMembershipOrder(
@@ -591,7 +815,7 @@ class PaymentRepositoryImpl @Inject constructor(
  * 参数说明：
  * - context：应用级上下文，用于生成设备与版本信息。
  * - settingsRepository：读取和写入云端学习开关。
- * - authRepository：读取当前手机号登录会话。
+ * - authRepository：读取当前邮箱登录会话；内部会话字段名暂沿用 `phone`。
  * - membershipRepository：判断当前用户是否具备会员能力。
  * - modelTrainingSampleRepository：导出待上传训练样本。
  * - cloudModelStore：持久化服务器发布的全局模型，并为解析器提供本地可用版本。
@@ -604,6 +828,7 @@ class CloudLearningRepositoryImpl @Inject constructor(
     private val authRepository: AuthRepository,
     private val membershipRepository: MembershipRepository,
     private val modelTrainingSampleRepository: ModelTrainingSampleRepository,
+    private val pendingRepository: PendingRepository,
     private val cloudModelStore: CloudModelStore,
     private val backendApi: AutobookBackendApi,
 ) : CloudLearningRepository {
@@ -655,7 +880,7 @@ class CloudLearningRepositoryImpl @Inject constructor(
      */
     override suspend fun uploadTrainingSamples(): OperationResult<Unit> {
         val session = authRepository.authState.first().session
-            ?: return OperationResult.TerminalFailure("请先使用手机号登录/注册，再上传训练样本")
+            ?: return OperationResult.TerminalFailure("请先使用邮箱登录/注册，再上传训练样本")
         val membership = membershipRepository.refresh()
         val settings = settingsRepository.settings.first()
         if (!membership.canUseCloudLearning || !settings.cloudLearningEnabled) {
@@ -697,6 +922,8 @@ class CloudLearningRepositoryImpl @Inject constructor(
                         sampleIds = uploadBatch.sampleIds,
                         uploadedAt = uploadedAt,
                     )
+                    // 误识别待确认项只为上传负样本而本地保留；服务端确认接收后即可清理隐藏残留。
+                    pendingRepository.purgeUploadedFalsePositives()
                 }
                 syncSnapshot.value = syncSnapshot.value.copy(lastUploadAt = uploadedAt)
                 OperationResult.Success(Unit)
@@ -713,7 +940,7 @@ class CloudLearningRepositoryImpl @Inject constructor(
      */
     override suspend fun pullCloudModel(): OperationResult<Unit> {
         val session = authRepository.authState.first().session
-            ?: return OperationResult.TerminalFailure("请先使用手机号登录/注册，再拉取全局模型")
+            ?: return OperationResult.TerminalFailure("请先使用邮箱登录/注册，再拉取全局模型")
         val membership = membershipRepository.refresh()
         if (!membership.canUseMachineLearning) {
             return OperationResult.TerminalFailure("当前账号不是会员或未开启机器学习，继续使用普通规则算法")
@@ -868,23 +1095,23 @@ private fun Context.resolveAppVersion(): String {
 
 /**
  * 用途说明：
- * - 归一化中国大陆手机号。
+ * - 归一化登录邮箱。
  *
  * 参数说明：
- * - rawPhone：用户输入的手机号文本。
+ * - rawEmail：用户输入的邮箱文本。
  */
-private fun normalizeMainlandPhone(rawPhone: String): String? {
-    val normalized = rawPhone.filter(Char::isDigit)
-    return normalized.takeIf { PHONE_REGEX.matches(it) }
+private fun normalizeEmailAddress(rawEmail: String): String? {
+    val normalized = rawEmail.trim().lowercase()
+    return normalized.takeIf { EMAIL_REGEX.matches(it) }
 }
 
-private val PHONE_REGEX = Regex("""1\d{10}""")
+private val EMAIL_REGEX = Regex("""^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$""", RegexOption.IGNORE_CASE)
 private val SMS_CODE_REGEX = Regex("""\d{6}""")
 
-/** 用途说明：发送短信验证码的后端接口路径。 */
+/** 用途说明：发送邮箱验证码的后端接口路径，路径名后续再统一调整。 */
 private const val AUTH_SMS_CODE_ENDPOINT = "POST /v1/auth/sms-code"
 
-/** 用途说明：手机号验证码登录或注册的后端接口路径。 */
+/** 用途说明：邮箱验证码登录或注册的后端接口路径。 */
 private const val AUTH_LOGIN_ENDPOINT = "POST /v1/auth/login"
 
 /** 用途说明：查询服务器权威会员状态的后端接口路径。 */
@@ -901,6 +1128,9 @@ private const val TRAINING_SAMPLE_UPLOAD_ENDPOINT = "POST /v1/cloud-learning/tra
 
 /** 用途说明：单次上传训练样本的最大条数，和后端请求体上限保持一致。 */
 private const val TRAINING_SAMPLE_UPLOAD_BATCH_LIMIT = 200
+
+/** 用途说明：训练样本已被服务器确认接收后的本地状态值。 */
+private const val TRAINING_SAMPLE_UPLOAD_STATE_UPLOADED = "UPLOADED"
 
 /** 用途说明：拉取会员机器学习全局模型数据的后端接口路径。 */
 private const val GLOBAL_MODEL_ENDPOINT = "GET /v1/cloud-learning/global-model"

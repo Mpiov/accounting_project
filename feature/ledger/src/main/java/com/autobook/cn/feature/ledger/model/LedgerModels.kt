@@ -54,7 +54,7 @@ data class LedgerCalendarDayUiModel(
  *
  * 参数说明：
  * - id：流水主键。
- * - merchant：商户或对方名称。
+ * - title：列表主标题，优先展示备注首行，没有备注时展示分类。
  * - amount：已经格式化好的金额文案。
  * - subtitle：列表副标题，通常包含渠道和时间。
  * - category：分类名称。
@@ -62,7 +62,7 @@ data class LedgerCalendarDayUiModel(
  */
 data class LedgerItemUiModel(
     val id: Long,
-    val merchant: String,
+    val title: String,
     val amount: String,
     val subtitle: String,
     val category: String,

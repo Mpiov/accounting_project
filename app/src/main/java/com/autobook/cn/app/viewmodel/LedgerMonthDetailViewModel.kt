@@ -168,7 +168,7 @@ private fun buildLedgerMonthDetailUiState(
     }
     val filteredEntries = sourceEntries
         .filterByQuery(snapshot.query)
-        .sortedByDescending { it.timestamp }
+        .sortNewestForDisplay()
 
     return LedgerUiState(
         periodTitle = if (snapshot.selectedRange == LedgerRangeFilter.CALENDAR) {
@@ -232,7 +232,7 @@ private fun List<LedgerEntry>.filterWithinMonth(
 private fun LedgerEntry.toLedgerItemUiModel(): LedgerItemUiModel {
     return LedgerItemUiModel(
         id = id,
-        merchant = merchant,
+        title = buildLedgerTitle(),
         amount = buildSignedAmountLabel(),
         subtitle = "${channel} · ${TimeFormatter.format(timestamp)}",
         category = category,

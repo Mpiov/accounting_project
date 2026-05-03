@@ -16,8 +16,19 @@ class PendingViewModelSupportTest {
             .toPendingItemUiModel(rawNotificationText = null)
 
         assertTrue(item.canDirectConfirm)
+        assertTrue(item.isDirectionKnown)
+        assertTrue(item.amount.startsWith("-"))
         assertEquals("确认入账", item.primaryActionLabel)
         assertNull(item.directionHint)
+    }
+
+    @Test
+    fun toPendingItemUiModelPrefixesIncomeAmountWithPlusSign() {
+        val item = testPendingEntry(direction = MoneyDirection.INCOME)
+            .toPendingItemUiModel(rawNotificationText = null)
+
+        assertTrue(item.isIncome)
+        assertTrue(item.amount.startsWith("+"))
     }
 
     @Test
@@ -26,6 +37,8 @@ class PendingViewModelSupportTest {
             .toPendingItemUiModel(rawNotificationText = null)
 
         assertFalse(item.canDirectConfirm)
+        assertFalse(item.isDirectionKnown)
+        assertTrue(item.amount.startsWith("±"))
         assertEquals("先补方向", item.primaryActionLabel)
         assertTrue(item.directionHint!!.contains("不会计入预算和收支汇总"))
     }
@@ -41,12 +54,11 @@ class PendingViewModelSupportTest {
             id = 1L,
             amount = 18.8,
             direction = direction,
-            merchant = "测试商户",
             channel = "测试渠道",
             timestamp = 1_760_000_000_000L,
             confidence = ParseConfidence(0.75f),
-            orderId = "TEST-ORDER-001",
             categoryHint = "餐饮",
+            note = "测试商户",
             rawSource = "notification",
             parsePath = "local-parser",
             modelVersion = "test-v1",

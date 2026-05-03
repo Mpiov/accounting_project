@@ -16,13 +16,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
@@ -72,8 +68,8 @@ fun LedgerBoardScreen(
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 112.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item(key = "controls") {
             LedgerBoardControls(
@@ -129,7 +125,7 @@ private fun LedgerBoardControls(
 
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(modifier = Modifier.width(ledgerBoardYearSelectorWidth)) {
@@ -142,7 +138,7 @@ private fun LedgerBoardControls(
                 color = MaterialTheme.colorScheme.surface,
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -159,9 +155,11 @@ private fun LedgerBoardControls(
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                     )
-                    Icon(
-                        imageVector = Icons.Outlined.KeyboardArrowDown,
+                    AutobookIcon(
+                        asset = AutobookIconAsset.Down,
                         contentDescription = "选择年份",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
@@ -275,7 +273,8 @@ private fun LedgerBoardModeSwitch(
                             },
                         )
                         .background(
-                            color = if (selected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                            // 分段按钮的选中态改用浅棕容器，不再用近黑色块，整体会更贴近白色主视觉。
+                            color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                         )
                         .clickable { onSelectMode(mode) }
                         .padding(vertical = 12.dp),
@@ -285,7 +284,7 @@ private fun LedgerBoardModeSwitch(
                         text = if (mode == LedgerBoardMode.MONTH) "月账单" else "年账单",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = if (selected) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurface,
+                        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                     )
                 }
@@ -309,13 +308,14 @@ private fun LedgerBoardSummaryCard(
     val summaryPrefix = if (state.mode == LedgerBoardMode.MONTH) "年" else "总"
     val warmBrush = Brush.linearGradient(
         colors = listOf(
-            Color(0xFFFFD347),
-            Color(0xFFFFE27A),
+            // 汇总卡面积较大，改成白到米白的轻渐变，把金额信息交给文字和收支语义色表达。
+            MaterialTheme.colorScheme.surface,
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
         ),
     )
 
     Card(
-        shape = RoundedCornerShape(24.dp),
+        shape = AutobookUiTokens.panelShape,
         border = autobookCardBorder(),
         colors = autobookCardColors(),
     ) {
@@ -323,21 +323,21 @@ private fun LedgerBoardSummaryCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(warmBrush)
-                .padding(horizontal = 18.dp, vertical = 16.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
         ) {
             Text(
                 text = "¥",
                 modifier = Modifier.align(Alignment.CenterEnd),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White.copy(alpha = 0.28f),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
             )
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "${summaryPrefix}结余",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2C241C),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
                     text = state.summaryNetLabel,
@@ -345,7 +345,7 @@ private fun LedgerBoardSummaryCard(
                         fontSize = ledgerBoardSummaryFontSize(state.summaryNetLabel),
                     ),
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1F1B16),
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -395,7 +395,7 @@ private fun LedgerBoardTableHeader(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             LedgerTableHeaderCell(
@@ -471,7 +471,7 @@ private fun LedgerMonthRowCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 14.dp),
+                .padding(horizontal = 10.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
@@ -496,10 +496,11 @@ private fun LedgerMonthRowCard(
                 modifier = Modifier.weight(1f),
                 highlight = item.netLabel.startsWith("+"),
             )
-            Icon(
-                imageVector = Icons.Outlined.ChevronRight,
+            AutobookIcon(
+                asset = AutobookIconAsset.ChevronRight,
                 contentDescription = "打开月份详情",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
         }
     }
@@ -532,7 +533,7 @@ private fun LedgerYearRowCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 14.dp),
+                .padding(horizontal = 10.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
@@ -645,8 +646,8 @@ private val ledgerBoardYearSelectorWidth = 112.dp
  */
 private val ledgerBoardTopRightBadgeWidth = 92.dp
 
-/** 黄色汇总卡里的收入色。 */
-private val ledgerBoardIncomeColor = Color(0xFFD1495B)
+/** 年/月汇总卡里的收入色，统一保持“收入=绿色”。 */
+private val ledgerBoardIncomeColor = AutobookIncomeColor
 
-/** 黄色汇总卡里的支出色。 */
-private val ledgerBoardExpenseColor = Color(0xFF2E8B57)
+/** 年/月汇总卡里的支出色，统一保持“支出=红色”。 */
+private val ledgerBoardExpenseColor = AutobookExpenseColor

@@ -39,16 +39,21 @@ data class NotificationEventEntity(
  * - 保存最终确认后的账本记录。
  * - 保留链路追踪字段，方便从账本反查通知来源和解析路径。
  */
-@Entity(tableName = "ledger_entries")
+@Entity(
+    tableName = "ledger_entries",
+    indices = [
+        Index("sortId", unique = true),
+        Index("timestamp"),
+    ],
+)
 data class LedgerEntryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val sortId: Long,
     val amount: Double,
     val direction: String,
-    val merchant: String,
     val channel: String,
     val timestamp: Long,
     val category: String,
-    val orderId: String?,
     val note: String?,
     val traceSource: String,
     val tracePath: String,
@@ -64,17 +69,23 @@ data class LedgerEntryEntity(
  * - 保存仍需人工确认的候选交易。
  * - 允许后续把误报标记为 false positive，持续优化规则效果。
  */
-@Entity(tableName = "pending_entries")
+@Entity(
+    tableName = "pending_entries",
+    indices = [
+        Index("sortId", unique = true),
+        Index("isFalsePositive"),
+    ],
+)
 data class PendingEntryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val sortId: Long,
     val amount: Double,
     val direction: String,
-    val merchant: String,
     val channel: String,
     val timestamp: Long,
     val confidenceScore: Float,
-    val orderId: String?,
     val categoryHint: String,
+    val note: String?,
     val rawSource: String,
     val parsePath: String,
     val modelVersion: String,
@@ -82,6 +93,33 @@ data class PendingEntryEntity(
     val traceNotificationId: Long?,
     val isFalsePositive: Boolean,
     val editedManually: Boolean,
+)
+
+/**
+ * 待确认轻量统计缓存。
+ *
+ * 用途说明：
+ * - 底部徽标和首页提醒只需要有效待确认数量，用缓存避免频繁执行 `COUNT(*)`。
+ */
+@Entity(tableName = "pending_stats")
+data class PendingStatsEntity(
+    @PrimaryKey val id: Int = 1,
+    val activeCount: Int,
+)
+
+/**
+ * 账本轻量统计缓存。
+ *
+ * 用途说明：
+ * - 避免设置页频繁执行 `COUNT(*)` 或整表加载。
+ * - 记录总笔数、第一笔交易时间和最后一笔交易时间，设置页可直接换算记账天数。
+ */
+@Entity(tableName = "ledger_stats")
+data class LedgerStatsEntity(
+    @PrimaryKey val id: Int = 1,
+    val entryCount: Int,
+    val firstTimestamp: Long?,
+    val lastTimestamp: Long?,
 )
 
 /**
@@ -117,11 +155,10 @@ data class ModelTrainingSampleEntity(
     val parsePath: String,
     val amount: Double,
     val direction: String,
-    val merchant: String,
     val channel: String,
     val candidateTimestamp: Long,
     val candidateCategory: String,
-    val candidateOrderId: String?,
+    val candidateNote: String?,
     val confidenceScore: Float,
     val confidenceLevel: String,
     val confidenceReason: String,
@@ -135,11 +172,9 @@ data class ModelTrainingSampleEntity(
     val feedbackNote: String?,
     val correctedAmount: Double?,
     val correctedDirection: String?,
-    val correctedMerchant: String?,
     val correctedChannel: String?,
     val correctedTimestamp: Long?,
     val correctedCategory: String?,
-    val correctedOrderId: String?,
     val correctedNote: String?,
     val changedFieldsJson: String?,
     val uploadState: String,

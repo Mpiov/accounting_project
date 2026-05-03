@@ -6,6 +6,8 @@ import com.autobook.cn.core.common.CurrencyFormatter
 import com.autobook.cn.core.common.TimeFormatter
 import com.autobook.cn.core.data.AuthRepository
 import com.autobook.cn.core.data.CloudLearningRepository
+import com.autobook.cn.core.data.LedgerRepository
+import com.autobook.cn.core.data.LedgerSummaryStats
 import com.autobook.cn.core.data.MembershipRepository
 import com.autobook.cn.core.data.PaymentRepository
 import com.autobook.cn.core.data.SettingsRepository
@@ -25,6 +27,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.inject.Inject
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -42,8 +45,12 @@ data class SettingsUiState(
     val cloudAnalysisEnabled: Boolean = true,
     val authPhoneInput: String = "",
     val authCodeInput: String = "",
-    val authSummary: String = "未登录，会员状态需要手机号登录后从服务器确认。",
+    val authSummary: String = "未登录，会员状态需要邮箱登录后从服务器确认。",
     val authLoggedIn: Boolean = false,
+    val authCodeRequesting: Boolean = false,
+    val authCodeCooldownSeconds: Int = 0,
+    val authLoginInProgress: Boolean = false,
+    val membershipActive: Boolean = false,
     val cloudLearningEnabled: Boolean = true,
     val cloudLearningEffectiveEnabled: Boolean = false,
     val membershipSummary: String = "免费版",
@@ -53,6 +60,10 @@ data class SettingsUiState(
     val notificationRetentionDays: Int = 30,
     val screenshotRetentionDays: Int = 7,
     val enabledSources: Set<SettingsNotificationSource> = emptySet(),
+    val bookkeepingDayCount: Int = 0,
+    val bookkeepingEntryCount: Int = 0,
+    val modelStatusLabel: String = "规则模型",
+    val modelLastPulledLabel: String = "尚未拉取",
 )
 
 /**
@@ -62,10 +73,11 @@ data class SettingsUiState(
  *
  * 参数说明：
  * - settingsRepository：设置仓储。
- * - authRepository：手机号登录/注册仓储。
+ * - authRepository：邮箱登录/注册仓储；内部字段名暂沿用旧契约。
  * - membershipRepository：会员状态仓储。
  * - paymentRepository：会员支付仓储。
  * - cloudLearningRepository：云端学习仓储。
+ * - ledgerRepository：账本仓储，仅用于设置页顶部轻量统计。
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -74,10 +86,14 @@ class SettingsViewModel @Inject constructor(
     private val membershipRepository: MembershipRepository,
     private val paymentRepository: PaymentRepository,
     private val cloudLearningRepository: CloudLearningRepository,
+    ledgerRepository: LedgerRepository,
 ) : ViewModel() {
     private val membershipActionMessage = MutableStateFlow("")
     private val authPhoneInput = MutableStateFlow("")
     private val authCodeInput = MutableStateFlow("")
+    private val authCodeRequesting = MutableStateFlow(false)
+    private val authCodeCooldownSeconds = MutableStateFlow(0)
+    private val authLoginInProgress = MutableStateFlow(false)
     private val authForm: Flow<SettingsAuthForm> = combine(
         authPhoneInput,
         authCodeInput,
@@ -98,6 +114,18 @@ class SettingsViewModel @Inject constructor(
             form = form,
         )
     }
+    private val authInteractionState: Flow<SettingsAuthInteractionState> = combine(
+        authCodeRequesting,
+        authCodeCooldownSeconds,
+        authLoginInProgress,
+    ) { codeRequesting, cooldownSeconds, loginInProgress ->
+        SettingsAuthInteractionState(
+            codeRequesting = codeRequesting,
+            cooldownSeconds = cooldownSeconds,
+            loginInProgress = loginInProgress,
+        )
+    }
+    private val bookkeepingStats: Flow<LedgerSummaryStats> = ledgerRepository.observeSummaryStats()
 
     /**
      * 用途说明：
@@ -108,7 +136,9 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.settings,
         accountState,
         membershipActionMessage,
-    ) { settings, account, actionMessage ->
+        authInteractionState,
+        bookkeepingStats,
+    ) { settings, account, actionMessage, authInteraction, stats ->
         val cloudLearning = account.cloudLearning
         val authState = account.authState
         SettingsUiState(
@@ -118,6 +148,10 @@ class SettingsViewModel @Inject constructor(
             authCodeInput = account.form.code,
             authSummary = authState.toSummary(),
             authLoggedIn = authState.isLoggedIn,
+            authCodeRequesting = authInteraction.codeRequesting,
+            authCodeCooldownSeconds = authInteraction.cooldownSeconds,
+            authLoginInProgress = authInteraction.loginInProgress,
+            membershipActive = cloudLearning.isMember,
             cloudLearningEnabled = cloudLearning.enabledByUser,
             cloudLearningEffectiveEnabled = cloudLearning.effectiveEnabled,
             membershipSummary = if (cloudLearning.isMember) {
@@ -133,6 +167,10 @@ class SettingsViewModel @Inject constructor(
             notificationRetentionDays = settings.notificationRetentionDays,
             screenshotRetentionDays = settings.screenshotRetentionDays,
             enabledSources = settings.enabledSources.toSettingsNotificationSources(),
+            bookkeepingDayCount = stats.dayCount,
+            bookkeepingEntryCount = stats.entryCount,
+            modelStatusLabel = cloudLearning.toModelStatusLabel(),
+            modelLastPulledLabel = cloudLearning.toModelLastPulledLabel(),
         )
     }.stateIn(
         scope = viewModelScope,
@@ -150,10 +188,10 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * 用途说明：
-     * - 更新手机号输入框状态。
+     * - 更新邮箱输入框状态。
      *
      * 参数说明：
-     * - phone：用户输入的手机号。
+     * - phone：用户输入的邮箱；参数名沿用旧接口，后续统一重命名。
      */
     fun setAuthPhoneInput(phone: String) {
         authPhoneInput.value = phone
@@ -164,7 +202,7 @@ class SettingsViewModel @Inject constructor(
      * - 更新验证码输入框状态。
      *
      * 参数说明：
-     * - code：用户输入的短信验证码。
+     * - code：用户输入的邮箱验证码。
      */
     fun setAuthCodeInput(code: String) {
         authCodeInput.value = code
@@ -172,27 +210,57 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * 用途说明：
-     * - 请求手机号验证码；后端未配置时会返回占位提示。
+     * - 请求邮箱验证码，并在客户端本地执行 60 秒限流，避免用户快速重复点击把压力打到后端。
      */
     fun requestLoginCode() {
+        val phone = authPhoneInput.value
+        if (!isValidAuthEmail(phone)) {
+            membershipActionMessage.value = "请输入正确的邮箱地址"
+            return
+        }
+        if (authCodeRequesting.value || authCodeCooldownSeconds.value > 0) {
+            return
+        }
+        authCodeRequesting.value = true
+        membershipActionMessage.value = "验证码发送中，请稍候。"
+        startAuthCodeCooldown()
         viewModelScope.launch {
-            membershipActionMessage.value = authRepository.requestLoginCode(authPhoneInput.value).toMessage()
+            try {
+                membershipActionMessage.value = when (val result = authRepository.requestLoginCode(phone)) {
+                    is OperationResult.Success -> "验证码已发送，请到邮箱查看。"
+                    is OperationResult.RetryableFailure -> "${result.message}，请等待倒计时结束后重试。"
+                    is OperationResult.TerminalFailure -> result.message
+                }
+            } finally {
+                // 无论网络调用结果如何，都结束“发送中”；倒计时由本地限流协程继续维护。
+                authCodeRequesting.value = false
+            }
         }
     }
 
     /**
      * 用途说明：
-     * - 使用手机号验证码登录或注册，成功后立即刷新服务器会员状态。
+     * - 使用邮箱验证码登录或注册，成功后立即刷新服务器会员状态。
      */
     fun loginOrRegisterWithCode() {
+        if (authLoginInProgress.value) {
+            return
+        }
+        authLoginInProgress.value = true
+        membershipActionMessage.value = "登录中，请稍候。"
         viewModelScope.launch {
-            val result = authRepository.loginOrRegisterWithCode(
-                phone = authPhoneInput.value,
-                code = authCodeInput.value,
-            )
-            membershipActionMessage.value = result.toMessage()
-            if (result is OperationResult.Success) {
-                membershipRepository.refresh()
+            try {
+                val result = authRepository.loginOrRegisterWithCode(
+                    phone = authPhoneInput.value,
+                    code = authCodeInput.value,
+                )
+                membershipActionMessage.value = result.toMessage()
+                if (result is OperationResult.Success) {
+                    membershipRepository.refresh()
+                }
+            } finally {
+                // 防止登录请求异常中断后按钮一直停留在“登录中”。
+                authLoginInProgress.value = false
             }
         }
     }
@@ -264,6 +332,20 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 用途说明：
+     * - 只拉取服务器最新全局模型，供设置页顶部“模型状态”指标点击使用。
+     */
+    fun pullCloudModelNow() {
+        viewModelScope.launch {
+            membershipActionMessage.value = when (val result = cloudLearningRepository.pullCloudModel()) {
+                is OperationResult.Success -> "模型已拉取，后续通知解析会使用最新会员模型。"
+                is OperationResult.RetryableFailure -> result.message
+                is OperationResult.TerminalFailure -> result.message
+            }
+        }
+    }
+
     fun setCaptureEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setCaptureEnabled(enabled) }
     }
@@ -312,6 +394,24 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * 用途说明：
+     * - 在客户端本地启动验证码倒计时，倒计时期间按钮禁用，不再向后端重复发验证码请求。
+     *
+     * 参数说明：
+     * - 无。
+     */
+    private fun startAuthCodeCooldown() {
+        viewModelScope.launch {
+            for (remainingSeconds in AUTH_CODE_LOCAL_COOLDOWN_SECONDS downTo 1) {
+                // 每秒刷新一次 UI 状态，让按钮持续显示剩余等待时间。
+                authCodeCooldownSeconds.value = remainingSeconds
+                delay(1_000)
+            }
+            authCodeCooldownSeconds.value = 0
+        }
+    }
 }
 
 /**
@@ -332,6 +432,49 @@ private data class SettingsAccountState(
     val authState: AuthState,
     val form: SettingsAuthForm,
 )
+
+/**
+ * 用途说明：
+ * - 保存账号区临时交互状态，避免验证码发送、倒计时和登录中状态散落在 UI 层自行推导。
+ *
+ * 参数说明：
+ * - codeRequesting：当前是否正在请求验证码。
+ * - cooldownSeconds：验证码按钮本地限流剩余秒数。
+ * - loginInProgress：当前是否正在提交登录或注册。
+ */
+private data class SettingsAuthInteractionState(
+    val codeRequesting: Boolean,
+    val cooldownSeconds: Int,
+    val loginInProgress: Boolean,
+)
+
+/**
+ * 用途说明：
+ * - 把云端学习状态转换为顶部模型指标的主文案。
+ *
+ * 接收者说明：
+ * - 当前云端学习与模型状态。
+ */
+private fun CloudLearningState.toModelStatusLabel(): String {
+    return when {
+        effectiveEnabled && activeModelVersion != "local-rules-v1" -> "云端模型"
+        isMember -> "会员模型"
+        else -> "规则模型"
+    }
+}
+
+/**
+ * 用途说明：
+ * - 把最近模型拉取时间转换为顶部模型指标的副文案。
+ *
+ * 接收者说明：
+ * - 当前云端学习与模型状态。
+ */
+private fun CloudLearningState.toModelLastPulledLabel(): String {
+    return lastModelPullAt?.let { pulledAt ->
+        TimeFormatter.format(pulledAt)
+    } ?: "尚未拉取"
+}
 
 internal data class SettingsLedgerOverview(
     val totalEntries: Int,
@@ -382,7 +525,8 @@ internal fun buildSettingsOverview(
     } else {
         (currentMonthExpense / currentMonthBudget).coerceIn(0.0, 1.0).toFloat()
     }
-    val latestEntry = entries.maxByOrNull { it.timestamp }
+    // 设置页只展示最近一笔摘要，按最终入账顺序取第一条，和首页最近记录保持一致。
+    val latestEntry = entries.sortNewestForDisplay().firstOrNull()
     return SettingsLedgerOverview(
         totalEntries = entries.size,
         manualEntries = manualEntries,
@@ -408,7 +552,7 @@ internal fun buildSettingsOverview(
         currentMonthIncome = CurrencyFormatter.format(currentMonthIncome),
         currentMonthExpense = CurrencyFormatter.format(currentMonthExpense),
         latestEntrySummary = latestEntry?.let { entry ->
-            "${entry.merchant} · ${CurrencyFormatter.format(entry.amount)} · ${TimeFormatter.format(entry.timestamp)}"
+            "${entry.buildLedgerTitle()} · ${CurrencyFormatter.format(entry.amount)} · ${TimeFormatter.format(entry.timestamp)}"
         } ?: "暂无记账记录",
     )
 }
@@ -443,6 +587,17 @@ private fun formatBudgetInput(amount: Double?): String {
 
 /**
  * 用途说明：
+ * - 在 ViewModel 层提前校验邮箱，避免明显无效输入触发后端验证码接口。
+ *
+ * 参数说明：
+ * - rawEmail：用户在设置页账号卡片中输入的邮箱文本。
+ */
+private fun isValidAuthEmail(rawEmail: String): Boolean {
+    return AUTH_EMAIL_REGEX.matches(rawEmail.trim())
+}
+
+/**
+ * 用途说明：
  * - 把后台操作结果转换成设置页短提示。
  *
  * 参数说明：
@@ -462,8 +617,10 @@ private fun OperationResult<*>.toMessage(): String = when (this) {
  * - 接收者：当前账号状态。
  */
 private fun AuthState.toSummary(): String {
-    val session = session ?: return "未登录，会员状态需要手机号登录后从服务器确认。"
+    val session = session ?: return "未登录，会员状态需要邮箱登录后从服务器确认。"
     return "已登录 ${session.phone}，会员状态以服务器刷新结果为准。"
 }
 
 private val MONTH_LABEL_FORMATTER = DateTimeFormatter.ofPattern("yyyy 年 M 月", Locale.CHINA)
+private val AUTH_EMAIL_REGEX = Regex("""^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$""", RegexOption.IGNORE_CASE)
+private const val AUTH_CODE_LOCAL_COOLDOWN_SECONDS = 60

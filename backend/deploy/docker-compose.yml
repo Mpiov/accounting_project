@@ -11,8 +11,17 @@ services:
       AUTOBOOK_DB_PATH: /data/autobook.sqlite3
       # 令牌签名密钥必须由服务器 .env 注入。
       AUTOBOOK_TOKEN_SECRET: ${AUTOBOOK_TOKEN_SECRET}
-      # 开发阶段固定验证码，接入短信服务后删除。
+      # 开发阶段固定验证码，启用 SMTP 后不会再下发给真实用户。
       AUTOBOOK_DEV_SMS_CODE: ${AUTOBOOK_DEV_SMS_CODE:-123456}
+      # 验证码发送通道：dev 使用固定验证码，smtp 通过邮箱真实发送。
+      AUTOBOOK_AUTH_CODE_DELIVERY: ${AUTOBOOK_AUTH_CODE_DELIVERY:-dev}
+      AUTOBOOK_SMTP_HOST: ${AUTOBOOK_SMTP_HOST:-}
+      AUTOBOOK_SMTP_PORT: ${AUTOBOOK_SMTP_PORT:-465}
+      AUTOBOOK_SMTP_USERNAME: ${AUTOBOOK_SMTP_USERNAME:-}
+      AUTOBOOK_SMTP_PASSWORD: ${AUTOBOOK_SMTP_PASSWORD:-}
+      AUTOBOOK_SMTP_FROM: ${AUTOBOOK_SMTP_FROM:-}
+      AUTOBOOK_SMTP_USE_SSL: ${AUTOBOOK_SMTP_USE_SSL:-true}
+      AUTOBOOK_SMTP_USE_STARTTLS: ${AUTOBOOK_SMTP_USE_STARTTLS:-false}
       # 管理后台密码只通过服务器 .env 注入，后台端口仅绑定 127.0.0.1。
       AUTOBOOK_ADMIN_PASSWORD: ${AUTOBOOK_ADMIN_PASSWORD}
     volumes:

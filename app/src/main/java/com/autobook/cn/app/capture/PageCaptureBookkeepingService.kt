@@ -198,7 +198,6 @@ class PageCaptureBookkeepingService : Service() {
 
         validCandidates.forEach { candidate ->
             val shouldAutoLedger = settings.autoAccountingEnabled &&
-                candidate.merchant.isNotBlank() &&
                 candidate.confidence.score >= HIGH_CONFIDENCE_THRESHOLD &&
                 candidate.confidence.level == ConfidenceLevel.HIGH
             if (shouldAutoLedger) {
@@ -448,12 +447,10 @@ private fun ImageImportCandidate.toLedgerEntry(
     return LedgerEntry(
         amount = amount ?: 0.0,
         direction = direction,
-        merchant = merchant.ifBlank { "待确认对象" },
         channel = "当前页面截图",
         // 优先落识别出的交易时间，只有当前候选没有稳定时间时才回退到创建时刻。
         timestamp = timestamp ?: System.currentTimeMillis(),
         category = category.ifBlank { "待分类" },
-        orderId = orderId,
         note = buildCaptureCandidateNote(note = note, evidence = evidence),
         traceSource = "page-capture",
         tracePath = "page-capture:${analysisPath.name.lowercase()}",
@@ -476,13 +473,12 @@ private fun ImageImportCandidate.toPendingEntry(
     return PendingEntry(
         amount = amount ?: 0.0,
         direction = direction,
-        merchant = merchant.ifBlank { "待确认对象" },
         channel = "当前页面截图",
         // 待确认也要保留截图里识别出的交易时间，避免用户后续确认时丢失账单原始时间。
         timestamp = timestamp ?: System.currentTimeMillis(),
         confidence = confidence,
-        orderId = orderId,
         categoryHint = category.ifBlank { "待分类" },
+        note = buildCaptureCandidateNote(note = note, evidence = evidence),
         rawSource = "page-capture",
         parsePath = "page-capture:${analysisPath.name.lowercase()}",
         modelVersion = "page-capture-v1",

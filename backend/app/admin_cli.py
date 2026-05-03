@@ -131,8 +131,8 @@ def build_parser() -> ArgumentParser:
     parser = ArgumentParser(description="AutoBook 服务器本地管理工具")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    grant_parser = subparsers.add_parser("grant-member", help="按手机号临时开通会员")
-    grant_parser.add_argument("--phone", required=True, help="手机号")
+    grant_parser = subparsers.add_parser("grant-member", help="按邮箱或旧手机号临时开通会员")
+    grant_parser.add_argument("--phone", required=True, help="邮箱或旧手机号，参数名暂沿用 --phone")
     grant_parser.add_argument("--days", type=int, default=30, help="会员有效天数，默认 30 天")
     grant_parser.add_argument(
         "--disable-model-confidence",
@@ -146,12 +146,12 @@ def build_parser() -> ArgumentParser:
     )
     grant_parser.set_defaults(handler=grant_member)
 
-    revoke_parser = subparsers.add_parser("revoke-member", help="按手机号撤销会员")
-    revoke_parser.add_argument("--phone", required=True, help="手机号")
+    revoke_parser = subparsers.add_parser("revoke-member", help="按邮箱或旧手机号撤销会员")
+    revoke_parser.add_argument("--phone", required=True, help="邮箱或旧手机号，参数名暂沿用 --phone")
     revoke_parser.set_defaults(handler=revoke_member)
 
-    show_parser = subparsers.add_parser("show-member", help="按手机号查看会员状态")
-    show_parser.add_argument("--phone", required=True, help="手机号")
+    show_parser = subparsers.add_parser("show-member", help="按邮箱或旧手机号查看会员状态")
+    show_parser.add_argument("--phone", required=True, help="邮箱或旧手机号，参数名暂沿用 --phone")
     show_parser.set_defaults(handler=show_member)
 
     model_parser = subparsers.add_parser("show-global-model", help="查看当前发布给会员客户端的全局模型")

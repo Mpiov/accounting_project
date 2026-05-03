@@ -96,7 +96,7 @@ def init_database(database_path: str) -> None:
     """
 
     with transaction(database_path) as db:
-        # 用户表以手机号为唯一账号，后续可追加注销状态和风控字段。
+        # 用户表继续复用 phone 字段存放登录账号，当前新账号实际写入邮箱。
         db.executescript(
             """
             CREATE TABLE IF NOT EXISTS users (

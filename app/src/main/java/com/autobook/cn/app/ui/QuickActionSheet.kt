@@ -9,12 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowCircleDown
-import androidx.compose.material.icons.outlined.ArrowCircleUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -22,7 +18,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -59,14 +54,14 @@ fun QuickActionSheet(
                 ActionCard(
                     title = "记支出",
                     summary = "直接进入支出表单",
-                    icon = Icons.Outlined.ArrowCircleDown,
+                    icon = AutobookIconAsset.Expense,
                     onClick = onExpenseClick,
                     modifier = Modifier.weight(1f),
                 )
                 ActionCard(
                     title = "记收入",
                     summary = "直接进入收入表单",
-                    icon = Icons.Outlined.ArrowCircleUp,
+                    icon = AutobookIconAsset.Income,
                     onClick = onIncomeClick,
                     modifier = Modifier.weight(1f),
                 )
@@ -82,7 +77,7 @@ fun QuickActionSheet(
  * 参数说明：
  * - title：动作标题。
  * - summary：动作说明。
- * - icon：动作图标。
+ * - icon：动作图标，统一使用 IconPark 资源，避免旧弹层和主页面图标风格不一致。
  * - onClick：点击卡片后的回调。
  * - modifier：外层修饰符，便于在父布局中分配宽度。
  */
@@ -90,7 +85,7 @@ fun QuickActionSheet(
 private fun ActionCard(
     title: String,
     summary: String,
-    icon: ImageVector,
+    icon: AutobookIconAsset,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -111,8 +106,8 @@ private fun ActionCard(
                 color = autobookSoftFillColor(),
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = icon,
+                    AutobookIcon(
+                        asset = icon,
                         contentDescription = title,
                         tint = MaterialTheme.colorScheme.primary,
                     )

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    用途说明：
+    - 来源管理入口图标，使用消息气泡表达“通知/短信/支付消息来源”。
+    - 底部小尾巴保留消息语义，避免被误读为普通文件或代码来源。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M8 10H40C42.2091 10 44 11.7909 44 14V30C44 32.2091 42.2091 34 40 34H24L13 42V34H8C5.7909 34 4 32.2091 4 30V14C4 11.7909 5.7909 10 8 10Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeWidth="4"
+        android:pathData="M14 20H34" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeWidth="4"
+        android:pathData="M14 27H28" />
+</vector>

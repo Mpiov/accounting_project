@@ -27,7 +27,7 @@ class PendingBadgeViewModel @Inject constructor(
      * 当前待确认数量。
      *
      * 用途说明：
-     * - 使用 `COUNT(*)` 查询驱动徽标展示，避免主壳层常驻完整 `PendingViewModel`。
+ * - 使用待确认数量缓存驱动徽标展示，避免主壳层常驻完整 `PendingViewModel` 或频繁扫表。
      */
     val pendingCount: StateFlow<Int> = pendingRepository.observeActiveCount()
         .stateIn(

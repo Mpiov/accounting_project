@@ -9,28 +9,28 @@ from pydantic import BaseModel, Field
 
 
 class SmsCodeRequest(BaseModel):
-    """短信验证码请求。
+    """登录验证码请求。
 
     参数：
-        phone: 中国大陆手机号。
+        phone: 登录邮箱；字段名暂沿用旧客户端契约，后续统一重命名为 email。
         scene: 验证码场景，当前只支持 login。
     """
 
-    phone: str = Field(min_length=5, max_length=32)
+    phone: str = Field(min_length=5, max_length=254)
     scene: Literal["login"] = "login"
 
 
 class LoginRequest(BaseModel):
-    """验证码登录或注册请求。
+    """邮箱验证码登录或注册请求。
 
     参数：
-        phone: 手机号。
+        phone: 登录邮箱；字段名暂沿用旧客户端契约，后续统一重命名为 email。
         code: 用户输入的验证码。
         deviceId: 客户端设备标识。
         appVersion: 客户端版本号。
     """
 
-    phone: str = Field(min_length=5, max_length=32)
+    phone: str = Field(min_length=5, max_length=254)
     code: str = Field(min_length=4, max_length=12)
     deviceId: str | None = None
     appVersion: str | None = None

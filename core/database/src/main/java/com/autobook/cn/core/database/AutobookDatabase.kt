@@ -7,9 +7,11 @@ import com.autobook.cn.core.database.dao.ModelTrainingSampleDao
 import com.autobook.cn.core.database.dao.NotificationEventDao
 import com.autobook.cn.core.database.dao.PendingEntryDao
 import com.autobook.cn.core.database.entity.LedgerEntryEntity
+import com.autobook.cn.core.database.entity.LedgerStatsEntity
 import com.autobook.cn.core.database.entity.ModelTrainingSampleEntity
 import com.autobook.cn.core.database.entity.NotificationEventEntity
 import com.autobook.cn.core.database.entity.PendingEntryEntity
+import com.autobook.cn.core.database.entity.PendingStatsEntity
 
 /**
  * 保存通知原文、账本记录和待确认记录的 Room 数据库。
@@ -22,10 +24,12 @@ import com.autobook.cn.core.database.entity.PendingEntryEntity
     entities = [
         NotificationEventEntity::class,
         LedgerEntryEntity::class,
+        LedgerStatsEntity::class,
         PendingEntryEntity::class,
+        PendingStatsEntity::class,
         ModelTrainingSampleEntity::class,
     ],
-    version = 7,
+    version = 9,
     exportSchema = false,
 )
 abstract class AutobookDatabase : RoomDatabase() {

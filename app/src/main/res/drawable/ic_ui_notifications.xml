@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    用途说明：
+    - 应用通知图标，使用铃铛表达系统通知开关。
+    - 原音量图标容易被误解为声音设置，这里改成更贴合通知语义的图形。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M24 7C18.4772 7 14 11.4772 14 17V25C14 28 12.5 31 10 33H38C35.5 31 34 28 34 25V17C34 11.4772 29.5228 7 24 7Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M20 39C20.9 40.8 22.2 42 24 42C25.8 42 27.1 40.8 28 39" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeWidth="4"
+        android:pathData="M24 4V7" />
+</vector>

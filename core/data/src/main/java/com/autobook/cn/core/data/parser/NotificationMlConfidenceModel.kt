@@ -221,7 +221,7 @@ private fun buildFeatureSnapshotJson(
     append(",")
     appendJsonBoolean("hasCounterpartyKeyword", features.hasCounterpartyKeyword)
     append(",")
-    appendJsonBoolean("hasExtractedMerchant", features.hasExtractedMerchant)
+    appendJsonBoolean("hasExtractedCounterparty", features.hasExtractedCounterparty)
     append(",")
     appendJsonBoolean("hasCurrencyKeyword", features.hasCurrencyKeyword)
     append(",")
@@ -390,10 +390,10 @@ private data class MlConfidenceFeatureVector(
                     modelConfig = modelConfig,
                 )
                 addBinary(
-                    key = KEY_EXTRACTED_MERCHANT,
-                    label = "已抽取商户",
-                    enabled = features.hasExtractedMerchant,
-                    defaultWeight = EXTRACTED_MERCHANT_WEIGHT,
+                    key = KEY_EXTRACTED_COUNTERPARTY,
+                    label = "已提取备注线索",
+                    enabled = features.hasExtractedCounterparty,
+                    defaultWeight = EXTRACTED_COUNTERPARTY_WEIGHT,
                     modelConfig = modelConfig,
                 )
                 addBinary(
@@ -701,7 +701,7 @@ private fun legacyWeightAliases(key: String): Array<String> = when (key) {
     KEY_EXPLICIT_TIME -> arrayOf("hasExplicitTime")
     KEY_TRANSACTION_SCENE -> arrayOf("hasTransactionSceneKeyword")
     KEY_COUNTERPARTY -> arrayOf("hasCounterpartyKeyword")
-    KEY_EXTRACTED_MERCHANT -> arrayOf("hasExtractedMerchant")
+    KEY_EXTRACTED_COUNTERPARTY -> arrayOf("hasExtractedCounterparty")
     KEY_CURRENCY_KEYWORD -> arrayOf("hasCurrencyKeyword")
     KEY_BANK_ENTITY -> arrayOf("hasBankEntityKeyword")
     KEY_FINANCE_ENTITY -> arrayOf("hasFinanceEntityKeyword")
@@ -823,7 +823,7 @@ private const val KEY_GENERIC_ACCOUNT = "structure.generic_account_keyword"
 private const val KEY_EXPLICIT_TIME = "structure.explicit_time"
 private const val KEY_TRANSACTION_SCENE = "semantic.transaction_scene"
 private const val KEY_COUNTERPARTY = "semantic.counterparty"
-private const val KEY_EXTRACTED_MERCHANT = "semantic.extracted_merchant"
+private const val KEY_EXTRACTED_COUNTERPARTY = "semantic.extracted_counterparty"
 private const val KEY_CURRENCY_KEYWORD = "semantic.currency_keyword"
 private const val KEY_BANK_ENTITY = "semantic.bank_entity"
 private const val KEY_FINANCE_ENTITY = "semantic.finance_entity"
@@ -853,7 +853,7 @@ private const val GENERIC_ACCOUNT_WEIGHT = 0.25f
 private const val EXPLICIT_TIME_WEIGHT = 0.25f
 private const val TRANSACTION_SCENE_WEIGHT = 0.45f
 private const val COUNTERPARTY_KEYWORD_WEIGHT = 0.20f
-private const val EXTRACTED_MERCHANT_WEIGHT = 0.10f
+private const val EXTRACTED_COUNTERPARTY_WEIGHT = 0.10f
 private const val CURRENCY_KEYWORD_WEIGHT = 0.25f
 private const val BANK_ENTITY_WEIGHT = 0.35f
 private const val FINANCE_ENTITY_WEIGHT = 0.25f

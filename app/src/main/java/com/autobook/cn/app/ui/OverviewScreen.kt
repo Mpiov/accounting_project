@@ -6,13 +6,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -73,8 +74,8 @@ fun OverviewScreen(
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 112.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item(key = "hero") {
             OverviewHeroCard(
@@ -116,7 +117,7 @@ fun OverviewScreen(
         } else {
             item(key = "recent_timeline") {
                 RecentRecordsTimeline(
-                    entries = state.recentEntries.take(4),
+                    entries = state.recentEntries.take(8),
                     onOpenEntry = onOpenEntry,
                 )
             }
@@ -130,7 +131,7 @@ fun OverviewScreen(
  * - 这张卡只负责提醒与引导，不会替用户做强制跳转。
  *
  * 参数说明：
- * - pendingCount：当前待确认记录数量，用于渲染标题和副文案。
+ * - pendingCount：当前待确认记录数量，用于渲染标题。
  * - onOpenPending：点击提醒卡后进入待确认页的回调。
  */
 @Composable
@@ -150,8 +151,8 @@ private fun PendingReminderCard(
         ),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -170,11 +171,6 @@ private fun PendingReminderCard(
                     text = "有 $pendingCount 条待确认记录",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-                Text(
-                    text = buildPendingReminderSummary(pendingCount),
-                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
@@ -208,7 +204,8 @@ private fun OverviewHeroCard(
 ) {
     val backgroundBrush = Brush.linearGradient(
         colors = listOf(
-            MaterialTheme.colorScheme.tertiaryContainer,
+            // 总览卡占据首页首屏大面积区域，因此只使用极浅米白渐变，不再使用明显色块。
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.46f),
             MaterialTheme.colorScheme.surface,
         ),
     )
@@ -222,8 +219,8 @@ private fun OverviewHeroCard(
         Column(
             modifier = Modifier
                 .background(backgroundBrush)
-                .padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
                 text = "总览",
@@ -239,13 +236,13 @@ private fun OverviewHeroCard(
                 SummaryMetricCard(
                     label = "收入",
                     value = state.incomeSummary,
-                    valueColor = Color(0xFFD1495B),
+                    valueColor = AutobookIncomeColor,
                     modifier = Modifier.weight(1f),
                 )
                 SummaryMetricCard(
                     label = "支出",
                     value = state.expenseSummary,
-                    valueColor = Color(0xFF2E8B57),
+                    valueColor = AutobookExpenseColor,
                     modifier = Modifier.weight(1f),
                 )
                 SummaryMetricCard(
@@ -321,8 +318,8 @@ private fun BudgetOverviewCard(
         colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -337,18 +334,19 @@ private fun BudgetOverviewCard(
                 Surface(
                     modifier = Modifier.autobookClippedClickable(shape = settingsButtonShape, onClick = onOpenSettings),
                     shape = settingsButtonShape,
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    // 预算设置入口统一使用浅棕主题填充，避免绿色按钮破坏总览页的整体风格。
+                    color = autobookSoftFillColor(),
                 ) {
                     Text(
                         text = "去设置",
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
             Row(
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 BudgetRingChart(
@@ -361,7 +359,7 @@ private fun BudgetOverviewCard(
                 )
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     BudgetInfoRow(label = "剩余预算", value = state.budgetRemainingLabel)
                     BudgetInfoRow(label = "本月预算", value = state.budgetAmountLabel ?: "未设置")
@@ -504,12 +502,33 @@ private fun RecentRecordsTimeline(
     entries: List<LedgerItemUiModel>,
     onOpenEntry: (Long) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-        entries.forEachIndexed { index, entry ->
+    val connectorColor = autobookTimelineConnectorColor()
+    val timelineModifier = if (entries.size > 1) {
+        Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                val railX = overviewTimelineRailCenterX.toPx()
+                val railInset = overviewTimelineRailVerticalInset.toPx().coerceAtMost(size.height / 2f)
+
+                // 长链改为由父容器一次性绘制，避免每条记录各画一段时在卡片间距处断开。
+                drawLine(
+                    color = connectorColor,
+                    start = Offset(railX, railInset),
+                    end = Offset(railX, size.height - railInset),
+                    strokeWidth = 2.dp.toPx(),
+                )
+            }
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
+    Column(
+        modifier = timelineModifier,
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        entries.forEach { entry ->
             OverviewTimelineItem(
                 entry = entry,
-                showTopConnector = index != 0,
-                showBottomConnector = index != entries.lastIndex,
                 onClick = { onOpenEntry(entry.id) },
             )
         }
@@ -518,30 +537,26 @@ private fun RecentRecordsTimeline(
 
 /**
  * 用途说明：
- * - 单条最近记录项使用“节点 + 连线 + 方圆卡片”的布局，保证时间线连续、节点居中。
+ * - 单条最近记录项只负责节点和右侧卡片，连续长链由父容器统一绘制。
  *
  * 参数说明：
  * - entry：当前账单条目。
- * - showTopConnector：是否绘制圆点上方连线。
- * - showBottomConnector：是否绘制圆点下方连线。
  * - onClick：点击当前记录后的回调。
  */
 @Composable
 private fun OverviewTimelineItem(
     entry: LedgerItemUiModel,
-    showTopConnector: Boolean,
-    showBottomConnector: Boolean,
     onClick: () -> Unit,
 ) {
-    val connectorColor = autobookTimelineConnectorColor()
     val cardBorder = autobookCardBorder()
     val dotOuterColor = MaterialTheme.colorScheme.primaryContainer
     val dotInnerColor = MaterialTheme.colorScheme.primary
+    val nodeCoverColor = MaterialTheme.colorScheme.surface
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
+            .heightIn(min = 86.dp)
             .clickable(onClick = onClick)
             .padding(vertical = 1.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -554,39 +569,24 @@ private fun OverviewTimelineItem(
                 .padding(vertical = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val centerX = size.width / 2f
-                val centerY = size.height / 2f
-                val strokeWidth = 2.dp.toPx()
+            Canvas(modifier = Modifier.size(22.dp)) {
+                val center = Offset(size.width / 2f, size.height / 2f)
 
-                // 连线只从圆点中心向上下延展，这样上下卡片之间即使留一点呼吸感也不会断线。
-                if (showTopConnector) {
-                    drawLine(
-                        color = connectorColor,
-                        start = Offset(centerX, 0f),
-                        end = Offset(centerX, centerY),
-                        strokeWidth = strokeWidth,
-                    )
-                }
-                if (showBottomConnector) {
-                    drawLine(
-                        color = connectorColor,
-                        start = Offset(centerX, centerY),
-                        end = Offset(centerX, size.height),
-                        strokeWidth = strokeWidth,
-                    )
-                }
-
-                // 外圈和内芯拆开绘制，能让时间线节点更稳，也更容易看清定位点。
+                // 节点只负责遮住父级长链并提供定位点，连线本身由父容器统一绘制。
+                drawCircle(
+                    color = nodeCoverColor,
+                    radius = 10.dp.toPx(),
+                    center = center,
+                )
                 drawCircle(
                     color = dotOuterColor,
                     radius = 8.dp.toPx(),
-                    center = Offset(centerX, centerY),
+                    center = center,
                 )
                 drawCircle(
                     color = dotInnerColor,
                     radius = 3.5.dp.toPx(),
-                    center = Offset(centerX, centerY),
+                    center = center,
                 )
             }
         }
@@ -608,17 +608,19 @@ private fun OverviewTimelineItem(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = entry.merchant,
+                        text = entry.title,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                        text = entry.category,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (entry.title != entry.category) {
+                        Text(
+                            text = entry.category,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Text(
                         text = entry.subtitle,
                         style = MaterialTheme.typography.bodySmall,
@@ -632,9 +634,9 @@ private fun OverviewTimelineItem(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = if (entry.direction == MoneyDirection.INCOME) {
-                        MaterialTheme.colorScheme.primary
+                        AutobookIncomeColor
                     } else {
-                        MaterialTheme.colorScheme.tertiary
+                        AutobookExpenseColor
                     },
                 )
             }
@@ -687,6 +689,22 @@ private fun SummaryMetricCard(
 }
 
 /**
+ * 最近记录时间线轨道的横向中心。
+ *
+ * 用途说明：
+ * - 左侧节点列固定 22dp 宽，因此长链中心固定在 11dp，父级画线和子节点才能严丝合缝。
+ */
+private val overviewTimelineRailCenterX = 11.dp
+
+/**
+ * 最近记录时间线首尾留白。
+ *
+ * 用途说明：
+ * - 长链从第一枚节点附近开始，到最后一枚节点附近结束，避免线条顶到整块列表外沿。
+ */
+private val overviewTimelineRailVerticalInset = 43.dp
+
+/**
  * 用途说明：
  * - 空账本时给用户一个直接的起步入口，不展示多余说明。
  *
@@ -707,7 +725,7 @@ private fun EmptyOverviewCard(
         colors = autobookCardColors(),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
@@ -721,21 +739,6 @@ private fun EmptyOverviewCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-    }
-}
-
-/**
- * 用途说明：
- * - 根据待确认数量生成首页提醒卡的副文案，让用户知道“不强跳，但值得尽快处理”。
- *
- * 参数说明：
- * - pendingCount：当前待确认记录数量。
- */
-private fun buildPendingReminderSummary(pendingCount: Int): String {
-    return if (pendingCount == 1) {
-        "打开待确认页补充核对后，这条记录才会正式进入账本统计。"
-    } else {
-        "这些记录还没正式入账，建议稍后集中确认，避免总览统计出现偏差。"
     }
 }
 

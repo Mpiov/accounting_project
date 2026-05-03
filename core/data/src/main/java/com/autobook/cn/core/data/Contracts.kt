@@ -114,10 +114,29 @@ interface ModelRouter {
 
 /**
  * 用途说明：
+ * - 设置页等轻量入口只需要展示账本规模，不应该为了两个数字订阅整本账本。
+ *
+ * 参数说明：
+ * - dayCount：有正式记账记录的自然日数量。
+ * - entryCount：正式账本记录总笔数。
+ */
+data class LedgerSummaryStats(
+    val dayCount: Int,
+    val entryCount: Int,
+)
+
+/**
+ * 用途说明：
  * - 账本仓储抽象。
  */
 interface LedgerRepository {
     fun observeEntries(): Flow<List<LedgerEntry>>
+
+    /**
+     * 用途说明：
+     * - 观察账本轻量统计，供设置页头像区展示，避免加载完整账本列表造成卡顿。
+     */
+    fun observeSummaryStats(): Flow<LedgerSummaryStats>
 
     /**
      * 参数说明：
@@ -232,6 +251,12 @@ interface PendingRepository {
      * - id：待确认记录主键。
      */
     suspend fun markFalsePositive(id: Long)
+
+    /**
+     * 用途说明：
+     * - 云端已经确认接收误识别反馈后，清理本地隐藏的误识别待确认残留。
+     */
+    suspend fun purgeUploadedFalsePositives(): Int
 }
 
 /**
@@ -272,7 +297,7 @@ interface ModelTrainingSampleRepository {
     /**
      * 参数说明：
      * - pendingEntryId：待确认记录主键。
-     * - editedManually：确认前是否手动编辑过金额、方向、商户等字段。
+     * - editedManually：确认前是否手动编辑过金额、方向、分类、备注等字段。
      * - correctedEntry：用户最终确认入账的记录；为空表示直接确认，字段与候选一致。
      */
     suspend fun markPendingConfirmed(
@@ -356,7 +381,7 @@ data class ModelTrainingSampleUploadBatch(
 
 /**
  * 用途说明：
- * - 手机号登录/注册仓储。
+ * - 邮箱验证码登录/注册仓储。
  * - 当前只定义客户端骨架，真实验证码和令牌均应由服务器返回。
  */
 interface AuthRepository {
@@ -367,7 +392,7 @@ interface AuthRepository {
      * - 对齐后端 `POST /v1/auth/sms-code`。
      *
      * 参数说明：
-     * - phone：用户输入的手机号。
+     * - phone：用户输入的邮箱；字段名沿用旧契约，后续统一重命名为 email。
      */
     suspend fun requestLoginCode(phone: String): OperationResult<Unit>
 
@@ -376,8 +401,8 @@ interface AuthRepository {
      * - 对齐后端 `POST /v1/auth/login`。
      *
      * 参数说明：
-     * - phone：用户输入的手机号。
-     * - code：短信验证码。
+     * - phone：用户输入的邮箱；字段名沿用旧契约，后续统一重命名为 email。
+     * - code：邮箱验证码。
      */
     suspend fun loginOrRegisterWithCode(
         phone: String,
