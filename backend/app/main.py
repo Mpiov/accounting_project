@@ -21,6 +21,8 @@ from .database import init_database, transaction
 from .global_model_service import GLOBAL_MODEL_SCOPE
 from .global_model_service import ensure_bootstrap_global_model
 from .global_model_service import get_active_global_model
+from .payment_service import create_membership_payment_order
+from .payment_service import query_membership_payment_order
 from .response import exception_response, fail, now_millis, ok
 from .schemas import (
     CreateOrderRequest,
@@ -34,6 +36,7 @@ CONFIG = load_config()
 app = FastAPI(title="AutoBook API", version="0.1.0")
 app.include_router(admin_router)
 EMAIL_PATTERN = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$", re.IGNORECASE)
+AUTO_LEDGER_FREE_TRIAL_LIMIT = 10
 
 
 @app.on_event("startup")
@@ -92,7 +95,8 @@ def current_membership(user_id: str) -> dict[str, object]:
         row = db.execute(
             """
             SELECT u.id AS user_id, u.phone, m.tier, m.expires_at,
-                   m.model_confidence_enabled, m.cloud_learning_enabled
+                   m.model_confidence_enabled, m.cloud_learning_enabled,
+                   m.auto_ledger_trial_used
             FROM users u
             LEFT JOIN memberships m ON m.user_id = u.id
             WHERE u.id = ?
@@ -105,6 +109,7 @@ def current_membership(user_id: str) -> dict[str, object]:
 
     tier = row["tier"] or "FREE"
     expires_at = row["expires_at"]
+    trial_used = max(0, min(int(row["auto_ledger_trial_used"] or 0), AUTO_LEDGER_FREE_TRIAL_LIMIT))
     # 会员过期时服务端直接降级，客户端不能凭本地缓存继续使用模型能力。
     active_member = tier == "MEMBER" and expires_at is not None and int(expires_at) > now_millis()
     return {
@@ -114,6 +119,9 @@ def current_membership(user_id: str) -> dict[str, object]:
         "expiresAt": expires_at if active_member else None,
         "modelConfidenceEnabled": bool(row["model_confidence_enabled"]) if active_member else False,
         "cloudLearningEnabled": bool(row["cloud_learning_enabled"]) if active_member else False,
+        "autoLedgerTrialLimit": AUTO_LEDGER_FREE_TRIAL_LIMIT,
+        "autoLedgerTrialUsed": trial_used,
+        "autoLedgerTrialRemaining": max(0, AUTO_LEDGER_FREE_TRIAL_LIMIT - trial_used),
         "serverVerified": True,
     }
 
@@ -300,13 +308,73 @@ def membership_status(authorization: str | None = Header(default=None)) -> dict[
     """查询会员状态。
 
     参数：
-        authorization: Bearer 访问令牌。
+        authorization: Bearer 访问令牌；免费登录用户也可提交用户改善计划样本。
 
     返回：
         dict[str, object]: 服务端权威会员状态。
     """
 
     user = require_user(CONFIG, authorization)
+    return ok(current_membership(user["id"]))
+
+
+@app.post("/v1/auto-ledger/trial-success")
+def record_auto_ledger_trial_success(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    """扣减免费自动记账体验次数。
+
+    参数：
+        authorization: Bearer 访问令牌，服务端通过用户 ID 维护已用次数。
+
+    返回：
+        dict[str, object]: 扣减后的服务端权威会员状态。
+    """
+
+    user = require_user(CONFIG, authorization)
+    current_time = now_millis()
+
+    with transaction(CONFIG.database_path) as db:
+        row = db.execute(
+            """
+            SELECT u.id AS user_id, u.phone, m.tier, m.expires_at,
+                   m.auto_ledger_trial_used
+            FROM users u
+            LEFT JOIN memberships m ON m.user_id = u.id
+            WHERE u.id = ?
+            """,
+            (user["id"],),
+        ).fetchone()
+        if row is None:
+            raise fail(401, "AUTH_TOKEN_EXPIRED", "登录已过期，请重新登录")
+
+        tier = row["tier"] or "FREE"
+        expires_at = row["expires_at"]
+        active_member = tier == "MEMBER" and expires_at is not None and int(expires_at) > current_time
+        if not active_member:
+            db.execute(
+                """
+                INSERT INTO memberships(
+                    user_id, tier, expires_at, model_confidence_enabled,
+                    cloud_learning_enabled, auto_ledger_trial_used, updated_at
+                )
+                VALUES (?, 'FREE', NULL, 0, 0, 0, ?)
+                ON CONFLICT(user_id) DO NOTHING
+                """,
+                (row["user_id"], current_time),
+            )
+            # 使用带条件的 UPDATE 原子递增，避免多设备同时自动入账时把同一次额度重复消耗或漏记。
+            updated = db.execute(
+                """
+                UPDATE memberships
+                SET auto_ledger_trial_used = auto_ledger_trial_used + 1,
+                    updated_at = ?
+                WHERE user_id = ?
+                  AND auto_ledger_trial_used < ?
+                """,
+                (current_time, row["user_id"], AUTO_LEDGER_FREE_TRIAL_LIMIT),
+            ).rowcount
+            if updated <= 0:
+                raise fail(403, "AUTO_LEDGER_TRIAL_EXHAUSTED", "免费自动入账体验已用完，开通会员后可继续使用")
+
     return ok(current_membership(user["id"]))
 
 
@@ -326,24 +394,24 @@ def create_membership_order(
     """
 
     user = require_user(CONFIG, authorization)
-    amount_cents = 1900 if body.plan == "MONTHLY" else 19800
-    order_id = f"order_{uuid4().hex}"
-
-    with transaction(CONFIG.database_path) as db:
-        db.execute(
-            """
-            INSERT INTO payment_orders(order_id, user_id, plan, amount_cents, payment_state, paid_at, created_at)
-            VALUES (?, ?, ?, ?, 'CREATED', NULL, ?)
-            """,
-            (order_id, user["id"], body.plan, amount_cents, now_millis()),
+    try:
+        order = create_membership_payment_order(
+            database_path=CONFIG.database_path,
+            user_id=user["id"],
+            plan=body.plan,
+            expire_minutes=CONFIG.payment_order_expire_minutes,
         )
+    except ValueError as exc:
+        # 套餐非法或限时活动过期都属于业务输入问题，用统一错误外壳返回给客户端展示。
+        raise fail(400, "BAD_REQUEST", str(exc)) from exc
 
     return ok(
         {
-            "orderId": order_id,
-            "plan": body.plan,
-            "amountCents": amount_cents,
-            "paymentState": "CREATED",
+            "orderId": order["orderId"],
+            "plan": order["plan"],
+            "amountCents": order["amountCents"],
+            "paymentState": order["paymentState"],
+            "expiresAt": order["expiresAt"],
             "wechatAppPayParams": None,
         }
     )
@@ -362,15 +430,14 @@ def query_membership_order(order_id: str, authorization: str | None = Header(def
     """
 
     user = require_user(CONFIG, authorization)
-    with transaction(CONFIG.database_path) as db:
-        row = db.execute(
-            "SELECT order_id, payment_state, paid_at FROM payment_orders WHERE order_id = ? AND user_id = ?",
-            (order_id, user["id"]),
-        ).fetchone()
-
-    if row is None:
+    order = query_membership_payment_order(
+        database_path=CONFIG.database_path,
+        user_id=user["id"],
+        order_id=order_id,
+    )
+    if order is None:
         raise fail(404, "BAD_REQUEST", "订单不存在")
-    return ok({"orderId": row["order_id"], "paymentState": row["payment_state"], "paidAt": row["paid_at"]})
+    return ok(order)
 
 
 def _coerce_optional_int(value: object) -> int | None:
@@ -425,7 +492,6 @@ def upload_training_samples(
     """
 
     user = require_user(CONFIG, authorization)
-    ensure_member_feature(user["id"], "cloudLearningEnabled")
     accepted = 0
     updated = 0
     duplicated = 0

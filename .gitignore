@@ -1,6 +1,7 @@
 # Gradle 相关缓存
 .gradle/
 .gradle-home/
+.gradle-user-home/
 .kotlin/
 build/
 app/build/
@@ -27,6 +28,7 @@ build_log.txt
 .vendor/
 pydeps/
 temp/
+.tmp/
 models/
 third_party/
 

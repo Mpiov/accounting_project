@@ -24,6 +24,8 @@ services:
       AUTOBOOK_SMTP_USE_STARTTLS: ${AUTOBOOK_SMTP_USE_STARTTLS:-false}
       # 管理后台密码只通过服务器 .env 注入，后台端口仅绑定 127.0.0.1。
       AUTOBOOK_ADMIN_PASSWORD: ${AUTOBOOK_ADMIN_PASSWORD}
+      # 会员支付订单默认 30 分钟内有效，超时后后台和查询接口会自动标记为过期。
+      AUTOBOOK_PAYMENT_ORDER_EXPIRE_MINUTES: ${AUTOBOOK_PAYMENT_ORDER_EXPIRE_MINUTES:-30}
     volumes:
       - ./data:/data
     ports:

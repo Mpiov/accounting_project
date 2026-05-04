@@ -37,6 +37,24 @@ class AutobookNotificationListenerService : NotificationListenerService() {
         NotificationListenerTraceRecorder.record(applicationContext, "onListenerConnected")
     }
 
+    /**
+     * 监听服务被系统断开时主动请求重新绑定。
+     *
+     * 用途说明：
+     * - 真机上出现过“通知使用权仍开启，但服务不在 Live listeners 中”的情况。
+     * - 系统回调断开时立即 requestRebind，可以让微信/支付宝支付通知尽快重新进入处理链路。
+     */
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        Log.w("AutobookNotifService", "Notification listener disconnected")
+        NotificationListenerTraceRecorder.record(applicationContext, "onListenerDisconnected")
+        NotificationListenerRebindHelper.requestRebindIfPermitted(
+            context = applicationContext,
+            reason = "listener_disconnected",
+            force = true,
+        )
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val extras = sbn.notification.extras
         val payloads = NotificationPayloadExtractor.extractAll(
@@ -50,6 +68,15 @@ class AutobookNotificationListenerService : NotificationListenerService() {
                 .orEmpty(),
             tickerText = sbn.notification.tickerText?.toString(),
         )
+        if (payloads.isEmpty()) {
+            // 部分厂商样式可能不给标题和正文；此时至少留下包名 trace，避免后续排查时误以为系统没有回调。
+            NotificationListenerTraceRecorder.record(
+                applicationContext,
+                "payloadEmpty package=${sbn.packageName} postedAt=${sbn.postTime}",
+            )
+            Log.d("AutobookNotifService", "Notification payload empty package=${sbn.packageName}")
+            return
+        }
         // `textLines` 聚合通知在最新方案下可能拆成两条独立 payload，这里需要逐条入库和处理。
         payloads.forEachIndexed { index, payload ->
             // 通知样式会因厂商、Android 版本、折叠/展开状态而变化，这里先做一层标准化。

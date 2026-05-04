@@ -11,8 +11,8 @@ import com.autobook.cn.R
 
 /**
  * 用途说明：
- * - 统一声明 App 内部 UI 使用的 IconPark 本地矢量图标，保证底栏、设置页、会员、快速记账等入口风格一致。
- * - 所有资源均来自 `@icon-park/svg` 的 outline SVG，并已转换为 Android VectorDrawable。
+ * - 统一声明 App 内部 UI 使用的本地线性图标，保证底栏、设置页、会员、快速记账等入口风格一致。
+ * - 大部分资源来自 `@icon-park/svg` 的 outline SVG，少量系统设置语义图标按同一线性风格补齐。
  *
  * 参数说明：
  * - resId：对应 `app/src/main/res/drawable` 下的 VectorDrawable 资源。
@@ -35,6 +35,8 @@ internal enum class AutobookIconAsset(
     Message(R.drawable.ic_ui_message),
     Screenshot(R.drawable.ic_ui_screenshot),
     Notifications(R.drawable.ic_ui_notifications),
+    Battery(R.drawable.ic_ui_battery),
+    Autostart(R.drawable.ic_ui_autostart),
     Source(R.drawable.ic_ui_source),
     Storage(R.drawable.ic_ui_storage),
     Account(R.drawable.ic_ui_account),

@@ -42,7 +42,6 @@ class ModelTrainingSampleRepositoryImplTest {
             candidate = TransactionCandidate(
                 amount = 18.8,
                 direction = MoneyDirection.EXPENSE,
-                merchant = "便利店",
                 channel = "微信",
                 timestamp = 1_746_117_600_000L,
                 confidence = ParseConfidence(0.91f),
@@ -89,7 +88,6 @@ class ModelTrainingSampleRepositoryImplTest {
             candidate = TransactionCandidate(
                 amount = 88.0,
                 direction = MoneyDirection.INCOME,
-                merchant = "微信支付",
                 channel = "微信",
                 timestamp = 1_746_117_600_000L,
                 confidence = ParseConfidence(0.7f),
@@ -113,11 +111,9 @@ class ModelTrainingSampleRepositoryImplTest {
                 id = 3L,
                 amount = 18.8,
                 direction = MoneyDirection.EXPENSE,
-                merchant = "便利店",
                 channel = "微信",
                 timestamp = 1_746_117_900_000L,
                 category = "餐饮",
-                orderId = "A001",
                 note = "用户修正",
                 traceSource = "notification",
                 tracePath = "local-parser",
@@ -129,9 +125,9 @@ class ModelTrainingSampleRepositoryImplTest {
 
         val jsonl = repository.exportJsonl()
 
-        assertTrue(jsonl.contains(""""corrected":{"amount":18.80,"direction":"EXPENSE","merchant":"便利店""""))
-        assertTrue(jsonl.contains(""""changedFields":["amount","direction","merchant","timestamp","category","orderId","note"]"""))
-        assertTrue(jsonl.contains(""""parsed":{"amount":88.00,"direction":"INCOME","merchant":"微信支付""""))
+        assertTrue(jsonl.contains(""""corrected":{"amount":18.80,"direction":"EXPENSE","channel":"微信""""))
+        assertTrue(jsonl.contains(""""changedFields":["amount","direction","timestamp","category","note"]"""))
+        assertTrue(jsonl.contains(""""parsed":{"amount":88.00,"direction":"INCOME","channel":"微信""""))
     }
 
     /**
@@ -156,7 +152,6 @@ class ModelTrainingSampleRepositoryImplTest {
             candidate = TransactionCandidate(
                 amount = 18.8,
                 direction = MoneyDirection.EXPENSE,
-                merchant = "便利店",
                 channel = "微信",
                 timestamp = 1_746_117_600_000L,
                 confidence = ParseConfidence(0.91f),
@@ -189,6 +184,127 @@ class ModelTrainingSampleRepositoryImplTest {
         assertEquals(emptyList<Long>(), secondBatch.sampleIds)
         assertEquals("", secondBatch.jsonl)
     }
+
+    /**
+     * 用途说明：
+     * - 验证上传批次只包含服务器训练会使用的标签。
+     * - 待确认样本在用户确认前不上传，确认后会重新进入上传批次。
+     */
+    @Test
+    fun `upload batch skips samples without trainable feedback labels`() = runTest {
+        val dao = RecordingModelTrainingSampleDao()
+        val repository = ModelTrainingSampleRepositoryImpl(dao)
+
+        repository.recordRawNotification(
+            notificationId = 101L,
+            event = NotificationEvent(
+                id = 101L,
+                packageName = "com.tencent.mm",
+                title = "微信支付",
+                text = "普通通知，尚未形成账单候选",
+                postedAt = 1_746_117_600_000L,
+                sourceApp = NotificationSourceApp.WECHAT,
+            ),
+            status = NotificationProcessStatus.FILTERED_OUT,
+            reason = "未形成交易候选",
+        )
+        repository.recordPipelineDecision(
+            notificationId = 102L,
+            event = NotificationEvent(
+                id = 102L,
+                packageName = "com.tencent.mm",
+                title = "微信支付",
+                text = "向便利店支付 18.80 元",
+                postedAt = 1_746_117_610_000L,
+                sourceApp = NotificationSourceApp.WECHAT,
+            ),
+            candidate = TransactionCandidate(
+                amount = 18.8,
+                direction = MoneyDirection.EXPENSE,
+                channel = "微信",
+                timestamp = 1_746_117_610_000L,
+                confidence = ParseConfidence(0.7f),
+                confidenceReason = "待用户确认",
+                rawSource = "notification",
+                parsePath = "local-parser",
+                modelVersion = "local-linear-confidence-v1",
+                sourceApp = NotificationSourceApp.WECHAT,
+            ),
+            destination = ProcessDestination.PENDING,
+            status = NotificationProcessStatus.PENDING_REVIEW,
+            pendingEntryId = 22L,
+            ledgerEntryId = null,
+        )
+        repository.recordPipelineDecision(
+            notificationId = 103L,
+            event = NotificationEvent(
+                id = 103L,
+                packageName = "com.tencent.mm",
+                title = "微信支付",
+                text = "重复通知",
+                postedAt = 1_746_117_620_000L,
+                sourceApp = NotificationSourceApp.WECHAT,
+            ),
+            candidate = TransactionCandidate(
+                amount = 18.8,
+                direction = MoneyDirection.EXPENSE,
+                channel = "微信",
+                timestamp = 1_746_117_620_000L,
+                confidence = ParseConfidence(0.91f),
+                confidenceReason = "重复候选",
+                rawSource = "notification",
+                parsePath = "local-parser",
+                modelVersion = "local-linear-confidence-v1",
+                sourceApp = NotificationSourceApp.WECHAT,
+            ),
+            destination = ProcessDestination.DUPLICATE,
+            status = NotificationProcessStatus.DUPLICATE_SKIPPED,
+            pendingEntryId = null,
+            ledgerEntryId = null,
+        )
+        repository.recordPipelineDecision(
+            notificationId = 104L,
+            event = NotificationEvent(
+                id = 104L,
+                packageName = "com.tencent.mm",
+                title = "微信支付",
+                text = "低置信度过滤通知",
+                postedAt = 1_746_117_630_000L,
+                sourceApp = NotificationSourceApp.WECHAT,
+            ),
+            candidate = TransactionCandidate(
+                amount = 18.8,
+                direction = MoneyDirection.EXPENSE,
+                channel = "微信",
+                timestamp = 1_746_117_630_000L,
+                confidence = ParseConfidence(0.2f),
+                confidenceReason = "低置信度过滤",
+                rawSource = "notification",
+                parsePath = "local-parser",
+                modelVersion = "local-linear-confidence-v1",
+                sourceApp = NotificationSourceApp.WECHAT,
+            ),
+            destination = ProcessDestination.FILTERED,
+            status = NotificationProcessStatus.FILTERED_OUT,
+            pendingEntryId = null,
+            ledgerEntryId = null,
+        )
+        val filteredTemplate = dao.allSamples().last()
+        dao.insert(filteredTemplate.copy(id = 0L, notificationId = 105L, feedbackLabel = "", rawText = "空标签通知"))
+        dao.insert(filteredTemplate.copy(id = 0L, notificationId = 106L, feedbackLabel = "UNKNOWN_LABEL", rawText = "未知标签通知"))
+
+        val initialBatch = repository.loadUploadBatch(limit = 200)
+        assertEquals(listOf(4L), initialBatch.sampleIds)
+
+        repository.markPendingConfirmed(
+            pendingEntryId = 22L,
+            editedManually = false,
+            correctedEntry = null,
+        )
+
+        val confirmedBatch = repository.loadUploadBatch(limit = 200)
+        assertEquals(setOf(2L, 4L), confirmedBatch.sampleIds.toSet())
+    }
 }
 
 /**
@@ -220,18 +336,26 @@ private class RecordingModelTrainingSampleDao : ModelTrainingSampleDao {
 
     /**
      * 用途说明：
+     * - 给测试用例读取当前内存样本快照，便于构造空标签和未知标签样本。
+     */
+    fun allSamples(): List<ModelTrainingSampleEntity> = samples.toList()
+
+    /**
+     * 用途说明：
      * - 返回尚未标记为已同步的样本，模拟客户端增量上传选择逻辑。
      *
      * 参数说明：
      * - uploadedState：已同步状态值。
+     * - uploadableLabels：允许上传的有效训练标签集合。
      * - limit：本次最多读取的样本数量。
      */
     override suspend fun getPendingUploadBatch(
         uploadedState: String,
+        uploadableLabels: List<String>,
         limit: Int,
     ): List<ModelTrainingSampleEntity> {
         return samples
-            .filter { sample -> sample.uploadState != uploadedState }
+            .filter { sample -> sample.uploadState != uploadedState && sample.feedbackLabel in uploadableLabels }
             .sortedWith(compareBy<ModelTrainingSampleEntity> { sample -> sample.updatedAt }.thenBy { sample -> sample.id })
             .take(limit)
     }
@@ -295,11 +419,9 @@ private class RecordingModelTrainingSampleDao : ModelTrainingSampleDao {
         feedbackNote: String?,
         correctedAmount: Double?,
         correctedDirection: String?,
-        correctedMerchant: String?,
         correctedChannel: String?,
         correctedTimestamp: Long?,
         correctedCategory: String?,
-        correctedOrderId: String?,
         correctedNote: String?,
         changedFieldsJson: String?,
         uploadState: String,
@@ -317,11 +439,9 @@ private class RecordingModelTrainingSampleDao : ModelTrainingSampleDao {
                     feedbackNote = feedbackNote,
                     correctedAmount = correctedAmount,
                     correctedDirection = correctedDirection,
-                    correctedMerchant = correctedMerchant,
                     correctedChannel = correctedChannel,
                     correctedTimestamp = correctedTimestamp,
                     correctedCategory = correctedCategory,
-                    correctedOrderId = correctedOrderId,
                     correctedNote = correctedNote,
                     changedFieldsJson = changedFieldsJson,
                     uploadState = uploadState,
@@ -353,11 +473,9 @@ private class RecordingModelTrainingSampleDao : ModelTrainingSampleDao {
         feedbackNote: String?,
         correctedAmount: Double?,
         correctedDirection: String?,
-        correctedMerchant: String?,
         correctedChannel: String?,
         correctedTimestamp: Long?,
         correctedCategory: String?,
-        correctedOrderId: String?,
         correctedNote: String?,
         changedFieldsJson: String?,
         uploadState: String,

@@ -37,7 +37,7 @@ class AccessibilityCaptureCoordinator @Inject constructor(
      */
     override suspend fun requestAuthorization(reason: String): OperationResult<CaptureSession> {
         val runtime = AutomationRuntimeRegistry.current()
-            ?: return OperationResult.RetryableFailure("未检测到无障碍自动化服务，请先在系统设置中开启轻松计无障碍服务")
+            ?: return OperationResult.RetryableFailure("未检测到无障碍自动化服务，请先在系统设置中开启轻松记无障碍服务")
         Log.d(LOG_TAG, "requestAuthorization success reason=$reason")
         return OperationResult.Success(
             CaptureSession(
@@ -61,7 +61,7 @@ class AccessibilityCaptureCoordinator @Inject constructor(
      */
     override suspend fun capture(sessionId: String): OperationResult<String> {
         val runtime = AutomationRuntimeRegistry.current()
-            ?: return OperationResult.RetryableFailure("未检测到无障碍自动化服务，请先在系统设置中开启轻松计无障碍服务")
+            ?: return OperationResult.RetryableFailure("未检测到无障碍自动化服务，请先在系统设置中开启轻松记无障碍服务")
 
         return try {
             /**

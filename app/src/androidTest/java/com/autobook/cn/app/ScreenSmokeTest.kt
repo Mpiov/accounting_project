@@ -40,7 +40,7 @@ class ScreenSmokeTest {
             )
         }
 
-        composeRule.onNodeWithText("轻松计").assertIsDisplayed()
+        composeRule.onNodeWithText("轻松记").assertIsDisplayed()
         composeRule.onNodeWithText("进入账本").assertIsDisplayed()
     }
 
@@ -114,6 +114,7 @@ class ScreenSmokeTest {
         composeRule.setContent {
             SettingsWorkspaceScreen(
                 state = SettingsUiState(),
+                homeResetKey = 0,
                 onAutoAccountingChanged = {},
                 onCloudAnalysisChanged = {},
                 onAuthPhoneChanged = {},
@@ -121,11 +122,9 @@ class ScreenSmokeTest {
                 onRequestLoginCode = {},
                 onLoginOrRegister = {},
                 onLogout = {},
-                onCloudLearningChanged = {},
-                onRefreshMembership = {},
-                onStartMonthlyMembership = {},
                 onStartYearlyMembership = {},
-                onSyncCloudLearning = {},
+                onPullCloudModel = {},
+                onUserImprovementPlanChanged = {},
                 onCaptureEnabledChanged = {},
                 onNotificationRetentionChanged = {},
                 onScreenshotRetentionChanged = {},
@@ -134,7 +133,7 @@ class ScreenSmokeTest {
         }
 
         composeRule.onNodeWithText("记账能力").assertIsDisplayed()
-        composeRule.onNodeWithText("会员与云端学习").assertIsDisplayed()
+        composeRule.onNodeWithText("会员中心").assertIsDisplayed()
     }
 
     @Test
@@ -144,10 +143,9 @@ class ScreenSmokeTest {
                 state = EntryEditorUiState(),
                 onBack = {},
                 onAmountChange = {},
-                onMerchantChange = {},
+                onEntryTimeChange = {},
                 onCategoryChange = {},
                 onNoteChange = {},
-                onOrderIdChange = {},
                 onDirectionChange = {},
                 onApplyTemplate = {},
                 onImportFromImage = {},

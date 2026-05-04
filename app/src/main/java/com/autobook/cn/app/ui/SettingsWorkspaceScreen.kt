@@ -1,6 +1,7 @@
 package com.autobook.cn.app.ui
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,6 +11,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
@@ -56,12 +59,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.autobook.cn.R
 import com.autobook.cn.app.capture.PageCaptureBookkeepingService
 import com.autobook.cn.app.viewmodel.SettingsNotificationSource
 import com.autobook.cn.app.viewmodel.SettingsUiState
@@ -70,6 +76,10 @@ import com.autobook.cn.core.common.SettingsIntents
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 /**
  * 主壳层下的设置页。
@@ -88,12 +98,9 @@ import kotlinx.coroutines.withContext
  * - onRequestLoginCode：请求验证码回调。
  * - onLoginOrRegister：登录或注册回调。
  * - onLogout：退出登录回调。
- * - onCloudLearningChanged：会员全局云端学习开关变更回调。
- * - onRefreshMembership：刷新会员状态回调。
- * - onStartMonthlyMembership：创建月卡订单回调。
  * - onStartYearlyMembership：创建年卡订单回调。
- * - onSyncCloudLearning：立即同步云端学习回调。
  * - onPullCloudModel：只拉取服务器最新全局模型回调。
+ * - onUserImprovementPlanChanged：用户改善计划开关回调。
  * - onCaptureEnabledChanged：截图记账入口启停状态回写回调。
  * - onNotificationRetentionChanged：通知保留天数回调。
  * - onScreenshotRetentionChanged：截图保留天数回调。
@@ -111,12 +118,9 @@ fun SettingsWorkspaceScreen(
     onRequestLoginCode: () -> Unit,
     onLoginOrRegister: () -> Unit,
     onLogout: () -> Unit,
-    onCloudLearningChanged: (Boolean) -> Unit,
-    onRefreshMembership: () -> Unit,
-    onStartMonthlyMembership: () -> Unit,
     onStartYearlyMembership: () -> Unit,
-    onSyncCloudLearning: () -> Unit,
     onPullCloudModel: () -> Unit,
+    onUserImprovementPlanChanged: (Boolean) -> Unit,
     onCaptureEnabledChanged: (Boolean) -> Unit,
     onNotificationRetentionChanged: (Int) -> Unit,
     onScreenshotRetentionChanged: (Int) -> Unit,
@@ -245,11 +249,8 @@ fun SettingsWorkspaceScreen(
                     },
                 )
             },
-            onCloudLearningChanged = onCloudLearningChanged,
-            onRefreshMembership = onRefreshMembership,
-            onStartMonthlyMembership = onStartMonthlyMembership,
             onStartYearlyMembership = onStartYearlyMembership,
-            onSyncCloudLearning = onSyncCloudLearning,
+            onUserImprovementPlanChanged = onUserImprovementPlanChanged,
             onNotificationRetentionChanged = onNotificationRetentionChanged,
             onScreenshotRetentionChanged = onScreenshotRetentionChanged,
             onSourceEnabledChanged = onSourceEnabledChanged,
@@ -326,7 +327,7 @@ private fun SettingsHomeContent(
                 // 权限设置使用盾牌图标，避免用户把入口误解成音量或普通通知设置。
                 icon = AutobookIconAsset.Permissions,
                 title = "权限设置",
-                summary = "通知监听、应用通知、截图入口",
+                summary = "通知监听、后台稳定性、截图入口",
                 onClick = { onOpenDetail(SettingsDetailDestination.PERMISSIONS) },
             )
             SettingsMenuDivider()
@@ -343,6 +344,13 @@ private fun SettingsHomeContent(
                 title = "来源管理",
                 summary = "微信、支付宝、银行短信等来源开关",
                 onClick = { onOpenDetail(SettingsDetailDestination.SOURCES) },
+            )
+            SettingsMenuDivider()
+            SettingsMenuRow(
+                icon = AutobookIconAsset.CloudSync,
+                title = "用户改善计划",
+                summary = USER_IMPROVEMENT_PLAN_SUMMARY,
+                onClick = { onOpenDetail(SettingsDetailDestination.IMPROVEMENT_PLAN) },
             )
             SettingsMenuDivider()
             SettingsMenuRow(
@@ -373,18 +381,23 @@ private enum class SettingsDetailDestination(
 ) {
     PERMISSIONS(
         title = "权限设置",
-        summary = "通知监听、应用通知和截图入口",
+        summary = "通知监听、后台稳定性和截图入口",
         icon = AutobookIconAsset.Permissions,
     ),
     MEMBERSHIP(
         title = "会员中心",
-        summary = "会员状态、模型权限和云端学习",
+        summary = "会员状态、有效期和套餐",
         icon = AutobookIconAsset.Crown,
     ),
     SOURCES(
         title = "来源管理",
         summary = "选择参与自动解析的通知来源",
         icon = AutobookIconAsset.Message,
+    ),
+    IMPROVEMENT_PLAN(
+        title = "用户改善计划",
+        summary = "控制有效反馈样本是否进入全局训练样本池",
+        icon = AutobookIconAsset.CloudSync,
     ),
     RETENTION(
         title = "数据留存",
@@ -413,11 +426,8 @@ private enum class SettingsDetailDestination(
  * - onCaptureEnabledChanged：截图入口启停回调。
  * - onRequestNotificationPermission：申请运行时通知权限回调。
  * - onOpenAccessibilitySettings：打开无障碍系统设置回调。
- * - onCloudLearningChanged：云端学习开关变更回调。
- * - onRefreshMembership：刷新会员状态回调。
- * - onStartMonthlyMembership：开通月卡回调。
  * - onStartYearlyMembership：开通年卡回调。
- * - onSyncCloudLearning：立即同步云端学习回调。
+ * - onUserImprovementPlanChanged：用户改善计划启停回调。
  * - onNotificationRetentionChanged：通知保留天数变更回调。
  * - onScreenshotRetentionChanged：截图保留天数变更回调。
  * - onSourceEnabledChanged：来源开关变更回调。
@@ -438,17 +448,20 @@ private fun SettingsDetailScreen(
     onCaptureEnabledChanged: (Boolean) -> Unit,
     onRequestNotificationPermission: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
-    onCloudLearningChanged: (Boolean) -> Unit,
-    onRefreshMembership: () -> Unit,
-    onStartMonthlyMembership: () -> Unit,
     onStartYearlyMembership: () -> Unit,
-    onSyncCloudLearning: () -> Unit,
+    onUserImprovementPlanChanged: (Boolean) -> Unit,
     onNotificationRetentionChanged: (Int) -> Unit,
     onScreenshotRetentionChanged: (Int) -> Unit,
     onSourceEnabledChanged: (SettingsNotificationSource, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val membershipPlans = currentMembershipPlanOptions(today = state.membershipPromotionToday())
+    var membershipPaymentPlanId by rememberSaveable(destination) { mutableStateOf<String?>(null) }
+    val membershipPaymentPlan = membershipPlans.firstOrNull { plan ->
+        // 支付二维码页只保存套餐 id，避免二级页重组时把完整 UI 对象塞进可保存状态。
+        plan.id == membershipPaymentPlanId
+    }
 
     Column(
         modifier = modifier
@@ -460,7 +473,15 @@ private fun SettingsDetailScreen(
     ) {
         SettingsDetailHeader(
             destination = destination,
-            onBack = onBack,
+            onBack = {
+                if (membershipPaymentPlan != null) {
+                    membershipPaymentPlanId = null
+                } else {
+                    onBack()
+                }
+            },
+            titleOverride = if (membershipPaymentPlan != null) "扫码支付" else null,
+            summaryOverride = if (membershipPaymentPlan != null) "请按页面提示填写登录邮箱" else null,
         )
         when (destination) {
             SettingsDetailDestination.PERMISSIONS -> {
@@ -471,6 +492,10 @@ private fun SettingsDetailScreen(
                     AutoAccountingToggleSection(
                         autoAccountingEnabled = state.autoAccountingEnabled,
                         hasNotificationAccess = hasNotificationAccess,
+                        authLoggedIn = state.authLoggedIn,
+                        membershipActive = state.membershipActive,
+                        trialRemainingCount = state.autoLedgerTrialRemainingCount,
+                        trialLimit = state.autoLedgerTrialLimit,
                         onCheckedChange = onAutoAccountingChanged,
                         onOpenNotificationSettings = onOpenNotificationSettings,
                     )
@@ -479,6 +504,10 @@ private fun SettingsDetailScreen(
                         onOpenAppNotificationSettings = onOpenAppNotificationSettings,
                     )
                 }
+                RecommendedSystemSettingsCard(
+                    onOpenBatterySettings = { openBatteryUsageSettingsSafely(context) },
+                    onOpenAutostartSettings = { openAutostartSettingsSafely(context) },
+                )
                 CapturePermissionCard(
                     captureEnabled = state.captureEnabled,
                     appNotificationsEnabled = hasAppNotificationsEnabled,
@@ -501,19 +530,32 @@ private fun SettingsDetailScreen(
                 )
             }
             SettingsDetailDestination.MEMBERSHIP -> {
-                MembershipCloudLearningCard(
-                    state = state,
-                    onCloudLearningChanged = onCloudLearningChanged,
-                    onRefreshMembership = onRefreshMembership,
-                    onStartMonthlyMembership = onStartMonthlyMembership,
-                    onStartYearlyMembership = onStartYearlyMembership,
-                    onSyncCloudLearning = onSyncCloudLearning,
-                )
+                if (membershipPaymentPlan != null) {
+                    MembershipPaymentQrCard(
+                        plan = membershipPaymentPlan,
+                        accountEmail = state.authPaymentEmailText(),
+                    )
+                } else {
+                    MembershipCenterCard(
+                        state = state,
+                        plans = membershipPlans,
+                        onStartYearlyMembership = onStartYearlyMembership,
+                        onOpenMembershipPayment = { selectedPlan ->
+                            membershipPaymentPlanId = selectedPlan.id
+                        },
+                    )
+                }
             }
             SettingsDetailDestination.SOURCES -> {
                 SettingsSourceManagementCard(
                     enabledSources = state.enabledSources,
                     onSourceEnabledChanged = onSourceEnabledChanged,
+                )
+            }
+            SettingsDetailDestination.IMPROVEMENT_PLAN -> {
+                UserImprovementPlanCard(
+                    enabled = state.userImprovementPlanEnabled,
+                    onCheckedChange = onUserImprovementPlanChanged,
                 )
             }
             SettingsDetailDestination.RETENTION -> {
@@ -534,11 +576,15 @@ private fun SettingsDetailScreen(
  * 参数说明：
  * - destination：当前二级页目的地。
  * - onBack：返回首页回调。
+ * - titleOverride：临时子页面标题，为空时使用目的地默认标题。
+ * - summaryOverride：临时子页面说明，为空时使用目的地默认说明。
  */
 @Composable
 private fun SettingsDetailHeader(
     destination: SettingsDetailDestination,
     onBack: () -> Unit,
+    titleOverride: String? = null,
+    summaryOverride: String? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -567,12 +613,12 @@ private fun SettingsDetailHeader(
         }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = destination.title,
+                text = titleOverride ?: destination.title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = destination.summary,
+                text = summaryOverride ?: destination.summary,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -672,10 +718,10 @@ private fun SettingsMenuRow(
 }
 
 /**
- * 设置首页横条分割线。
+ * 设置横条分割线。
  *
  * 用途说明：
- * - 用很浅的线条分隔入口，保持参考截图那种轻列表感。
+ * - 用很浅的线条分隔首页入口和二级页动作项，保持参考截图那种轻列表感。
  */
 @Composable
 private fun SettingsMenuDivider() {
@@ -697,23 +743,58 @@ private fun SettingsSourceManagementCard(
     enabledSources: Set<SettingsNotificationSource>,
     onSourceEnabledChanged: (SettingsNotificationSource, Boolean) -> Unit,
 ) {
-    SettingsGroupCard(
-        title = "来源管理",
-        summary = "关闭某个来源后，它的通知不会进入自动解析流程。",
+    Card(
+        shape = AutobookUiTokens.panelShape,
+        border = autobookCardBorder(),
+        colors = autobookCardColors(),
     ) {
-        SETTINGS_VISIBLE_SOURCES.forEachIndexed { index, source ->
-            ToggleRow(
-                title = source.toDisplayLabel(),
-                summary = source.toSourceSummary(),
-                // 每个来源本质都是一类消息入口，和首页来源管理保持同一图标语义。
-                leadingIcon = AutobookIconAsset.Message,
-                checked = source in enabledSources,
-                onCheckedChange = { enabled -> onSourceEnabledChanged(source, enabled) },
-            )
-            if (index != SETTINGS_VISIBLE_SOURCES.lastIndex) {
-                SettingsMenuDivider()
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+        ) {
+            SETTINGS_VISIBLE_SOURCES.forEachIndexed { index, source ->
+                ToggleRow(
+                    title = source.toDisplayLabel(),
+                    summary = source.toSourceSummary(),
+                    // 每个来源本质都是一类消息入口，和首页来源管理保持同一图标语义。
+                    leadingIcon = AutobookIconAsset.Message,
+                    checked = source in enabledSources,
+                    onCheckedChange = { enabled -> onSourceEnabledChanged(source, enabled) },
+                )
+                if (index != SETTINGS_VISIBLE_SOURCES.lastIndex) {
+                    SettingsMenuDivider()
+                }
             }
         }
+    }
+}
+
+/**
+ * 用户改善计划二级页内容。
+ *
+ * 用途说明：
+ * - 让用户明确控制是否把通知原文贡献到全局训练样本池。
+ * - 该开关只影响样本上传，不影响会员模型能否使用。
+ *
+ * 参数说明：
+ * - enabled：当前用户改善计划是否开启。
+ * - onCheckedChange：开关变化后的持久化回调。
+ */
+@Composable
+private fun UserImprovementPlanCard(
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    SettingsGroupCard(
+        title = "用户改善计划",
+        summary = USER_IMPROVEMENT_PLAN_SUMMARY,
+    ) {
+        ToggleRow(
+            title = "用户改善计划",
+            summary = USER_IMPROVEMENT_PLAN_SUMMARY,
+            leadingIcon = AutobookIconAsset.CloudSync,
+            checked = enabled,
+            onCheckedChange = onCheckedChange,
+        )
     }
 }
 
@@ -977,7 +1058,7 @@ private fun SettingsHeroStatsRow(
  * 顶部模型状态单元。
  *
  * 用途说明：
- * - 模型状态不是普通数字，所以单独排版：非会员说明不可用，会员说明最近更新时间。
+ * - 会员展示模型更新时间；非会员展示自动记账体验剩余次数，避免把用户不理解的模型权限放在首屏。
  *
  * 参数说明：
  * - state：设置页 UI 状态，用于判断会员与模型更新时间。
@@ -991,17 +1072,26 @@ private fun SettingsHeroModelStatusItem(
     modifier: Modifier = Modifier,
 ) {
     val statShape = AutobookUiTokens.innerPanelShape
+    val clickableModifier = if (state.membershipActive) {
+        Modifier.autobookClippedClickable(shape = statShape, onClick = onClick)
+    } else {
+        Modifier
+    }
     Column(
         modifier = modifier
             .height(66.dp)
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f), statShape)
-            .autobookClippedClickable(shape = statShape, onClick = onClick)
+            .then(clickableModifier)
             .padding(horizontal = 6.dp, vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "模型状态",
+            text = if (state.membershipActive) {
+                "模型状态"
+            } else {
+                "剩余 ${state.autoLedgerTrialRemainingCount} 次"
+            },
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -1024,9 +1114,9 @@ private fun SettingsHeroModelStatusItem(
             )
         } else {
             Text(
-                text = "非会员无法使用",
+                text = "自动记账",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1207,11 +1297,125 @@ private fun resolveSettingsGroupIcon(title: String): AutobookIconAsset {
     return when (title) {
         "记账能力" -> AutobookIconAsset.Sparkle
         "账号" -> AutobookIconAsset.Account
-        "会员与云端学习" -> AutobookIconAsset.Crown
+        "会员中心" -> AutobookIconAsset.Crown
+        "会员状态" -> AutobookIconAsset.Crown
+        "限时开通" -> AutobookIconAsset.Crown
+        "扫码支付" -> AutobookIconAsset.Crown
         "截图能力" -> AutobookIconAsset.Screenshot
+        "建议开启" -> AutobookIconAsset.Sparkle
         "来源管理" -> AutobookIconAsset.Message
+        "用户改善计划" -> AutobookIconAsset.CloudSync
         "数据留存" -> AutobookIconAsset.Storage
         else -> AutobookIconAsset.Account
+    }
+}
+
+/**
+ * 权限页的系统建议设置卡。
+ *
+ * 用途说明：
+ * - 把应用耗电和自启动放到“建议开启”里，表达它们会提升稳定性，但不是自动记账的硬性权限。
+ * - 两个入口只做系统页面引导，不在本地伪造状态，因为不同 Android 厂商没有统一可读接口。
+ *
+ * 参数说明：
+ * - onOpenBatterySettings：点击应用耗电设置后的跳转回调。
+ * - onOpenAutostartSettings：点击自启动设置后的跳转回调。
+ */
+@Composable
+private fun RecommendedSystemSettingsCard(
+    onOpenBatterySettings: () -> Unit,
+    onOpenAutostartSettings: () -> Unit,
+) {
+    SettingsGroupCard(
+        title = "建议开启",
+        summary = "减少后台限制，提升自动记账稳定性。",
+    ) {
+        SettingsActionRow(
+            icon = AutobookIconAsset.Battery,
+            title = "应用耗电设置",
+            summary = "建议允许后台运行或关闭电池优化。",
+            onClick = onOpenBatterySettings,
+        )
+        SettingsMenuDivider()
+        SettingsActionRow(
+            icon = AutobookIconAsset.Autostart,
+            title = "自启动设置",
+            summary = "建议允许自启动，手机重启后更稳定。",
+            onClick = onOpenAutostartSettings,
+        )
+    }
+}
+
+/**
+ * 设置页中只负责跳转的横条设置项。
+ *
+ * 用途说明：
+ * - 用于无法可靠读取状态的系统页入口，例如耗电设置、自启动设置。
+ * - 视觉上沿用设置首页横条，但不展示开关，避免用户误以为 App 能直接控制系统开关。
+ *
+ * 参数说明：
+ * - icon：左侧语义图标。
+ * - title：设置项名称。
+ * - summary：设置项简短说明。
+ * - onClick：点击后执行的跳转动作。
+ */
+@Composable
+private fun SettingsActionRow(
+    icon: AutobookIconAsset,
+    title: String,
+    summary: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(58.dp)
+            .autobookClippedClickable(
+                shape = AutobookUiTokens.innerPanelShape,
+                onClick = onClick,
+            )
+            .padding(horizontal = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.62f), RoundedCornerShape(9.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            AutobookIcon(
+                asset = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(17.dp),
+            )
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        AutobookIcon(
+            asset = AutobookIconAsset.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(19.dp),
+        )
     }
 }
 
@@ -1242,11 +1446,15 @@ private fun AppNotificationToggleSection(
 }
 
 /**
- * 自动记账总开关按“权限状态 + 功能状态”联合展示。
+ * 自动记账总开关按“权限状态 + 登录状态 + 会员权益”联合展示。
  *
  * 参数说明：
  * - autoAccountingEnabled：当前持久化的自动记账开关状态。
  * - hasNotificationAccess：通知监听权限是否已开启。
+ * - authLoggedIn：用户是否已经登录邮箱账号。
+ * - membershipActive：服务器是否确认当前用户是会员。
+ * - trialRemainingCount：免费用户剩余的自动入账体验次数。
+ * - trialLimit：免费自动入账体验总次数。
  * - onCheckedChange：切换自动记账开关时的回调。
  * - onOpenNotificationSettings：缺少权限时跳转到系统通知监听设置页。
  */
@@ -1254,13 +1462,25 @@ private fun AppNotificationToggleSection(
 private fun AutoAccountingToggleSection(
     autoAccountingEnabled: Boolean,
     hasNotificationAccess: Boolean,
+    authLoggedIn: Boolean,
+    membershipActive: Boolean,
+    trialRemainingCount: Int,
+    trialLimit: Int,
     onCheckedChange: (Boolean) -> Unit,
     onOpenNotificationSettings: () -> Unit,
 ) {
+    val hasAutoLedgerEntitlement = membershipActive || trialRemainingCount > 0
+    val switchEnabled = hasNotificationAccess && authLoggedIn && hasAutoLedgerEntitlement
+    // 开关视觉状态必须同时反映权益门禁，避免用户在未登录或体验用完时误以为仍会自动入账。
+    val checked = autoAccountingEnabled && switchEnabled
     val summary = when {
         !hasNotificationAccess -> "需要先开启通知监听权限，自动记账才能使用。"
-        autoAccountingEnabled -> "通知监听权限已开启，自动记账功能已开启。"
-        else -> "通知监听权限已开启，自动记账功能已关闭。"
+        !authLoggedIn -> "请先登录邮箱账号，登录后可体验 $trialLimit 次自动入账。"
+        membershipActive && autoAccountingEnabled -> "会员自动入账已开启，符合规则的账单可直接写入账本。"
+        membershipActive -> "会员权益可用，打开后符合规则的账单可直接写入账本。"
+        trialRemainingCount <= 0 -> "免费自动入账体验已用完，开通会员后可继续使用。"
+        autoAccountingEnabled -> "自动记账已开启，剩余 $trialRemainingCount/$trialLimit 次自动入账体验。"
+        else -> "已登录，剩余 $trialRemainingCount/$trialLimit 次自动入账体验。"
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1268,8 +1488,8 @@ private fun AutoAccountingToggleSection(
             title = "自动记账总开关",
             summary = summary,
             leadingIcon = AutobookIconAsset.Sparkle,
-            checked = hasNotificationAccess && autoAccountingEnabled,
-            enabled = hasNotificationAccess,
+            checked = checked,
+            enabled = switchEnabled,
             onCheckedChange = onCheckedChange,
         )
         if (!hasNotificationAccess) {
@@ -1284,29 +1504,428 @@ private fun AutoAccountingToggleSection(
 }
 
 /**
- * 会员与云端学习设置卡。
+ * 会员套餐 UI 数据。
  *
  * 用途说明：
- * - 展示会员状态、云端学习开关、购买入口和手动同步入口。
- * - 当前支付和同步后端尚未配置，按钮会调用占位仓储并展示提示。
+ * - 把套餐的展示文案、价格按钮和可购买状态集中维护，避免网格卡片和支付页各写一套价格。
+ *
+ * 参数说明：
+ * - id：套餐稳定标识，用于 `rememberSaveable` 保存当前选中项。
+ * - title：套餐名称。
+ * - price：套餐价格文案。
+ * - period：套餐副文案，例如限时说明或占位说明。
+ * - badge：套餐角标文案，可为空。
+ * - payButtonText：支付按钮文案。
+ * - available：当前套餐是否开放购买。
+ * - highlightSummary：套餐区顶部摘要，便于把活动剩余时间展示成真实倒计时。
+ */
+private data class MembershipPlanUi(
+    val id: String,
+    val title: String,
+    val price: String,
+    val period: String,
+    val badge: String?,
+    val payButtonText: String,
+    val available: Boolean,
+    val highlightSummary: String,
+)
+
+private const val MEMBERSHIP_YEARLY_PLAN_ID = "yearly"
+private const val MEMBERSHIP_PROMOTION_DAYS = 30
+private val MEMBERSHIP_PROMOTION_ZONE: ZoneId = ZoneId.of("Asia/Shanghai")
+private val MEMBERSHIP_YEARLY_PROMOTION_START_DATE: LocalDate = LocalDate.of(2026, 5, 4)
+private val MEMBERSHIP_YEARLY_PROMOTION_END_DATE: LocalDate =
+    MEMBERSHIP_YEARLY_PROMOTION_START_DATE.plusDays(MEMBERSHIP_PROMOTION_DAYS.toLong())
+
+/**
+ * 当前会员套餐列表。
+ *
+ * 用途说明：
+ * - 每次组合会员中心时按真实日期重新计算限时年卡的剩余天数，避免活动结束后仍展示“限时 30 天”。
+ *
+ * 参数说明：
+ * - today：当前日期，默认取上海时区；测试或预览时可传入固定日期。
+ */
+private fun currentMembershipPlanOptions(
+    today: LocalDate = LocalDate.now(MEMBERSHIP_PROMOTION_ZONE),
+): List<MembershipPlanUi> {
+    val yearlyPromotionPlan = currentYearlyPromotionPlan(today)
+    return listOf(
+        yearlyPromotionPlan,
+        MembershipPlanUi(
+            id = "monthly",
+            title = "月卡会员",
+            price = "占位",
+            period = "敬请期待",
+            badge = null,
+            payButtonText = "暂未开放",
+            available = false,
+            highlightSummary = "月卡会员暂未开放。",
+        ),
+        MembershipPlanUi(
+            id = "quarterly",
+            title = "季卡会员",
+            price = "占位",
+            period = "敬请期待",
+            badge = null,
+            payButtonText = "暂未开放",
+            available = false,
+            highlightSummary = "季卡会员暂未开放。",
+        ),
+        MembershipPlanUi(
+            id = "two_year",
+            title = "2年VIP",
+            price = "占位",
+            period = "敬请期待",
+            badge = null,
+            payButtonText = "暂未开放",
+            available = false,
+            highlightSummary = "2 年 VIP 暂未开放。",
+        ),
+    )
+}
+
+/**
+ * 当前年卡限时活动套餐。
+ *
+ * 用途说明：
+ * - 根据上海时区的真实日期判断 19 元年卡是否仍在首发 30 天窗口内。
+ *
+ * 参数说明：
+ * - today：当前日期。
+ */
+private fun currentYearlyPromotionPlan(today: LocalDate): MembershipPlanUi {
+    val remainingDays = ChronoUnit.DAYS.between(today, MEMBERSHIP_YEARLY_PROMOTION_END_DATE)
+    val beforeStart = today.isBefore(MEMBERSHIP_YEARLY_PROMOTION_START_DATE)
+    val available = !beforeStart && remainingDays > 0
+    val period = when {
+        beforeStart -> "活动未开始"
+        remainingDays > 0 -> "剩余 ${remainingDays.coerceAtMost(MEMBERSHIP_PROMOTION_DAYS.toLong())} 天"
+        else -> "活动已结束"
+    }
+    val summary = when {
+        beforeStart -> "首发 19 元年卡活动将于 ${MEMBERSHIP_YEARLY_PROMOTION_START_DATE.toChinaDateLabel()} 开始。"
+        remainingDays > 0 -> "首发特惠剩余 $remainingDays 天，年卡会员仅需 19 元。"
+        else -> "首发 19 元年卡活动已于 ${MEMBERSHIP_YEARLY_PROMOTION_END_DATE.toChinaDateLabel()} 结束。"
+    }
+
+    return MembershipPlanUi(
+        id = MEMBERSHIP_YEARLY_PLAN_ID,
+        title = "年卡会员",
+        price = "￥19",
+        period = period,
+        badge = if (available) "新发布特惠" else null,
+        payButtonText = when {
+            available -> "立即支付￥19元"
+            beforeStart -> "活动未开始"
+            else -> "活动已结束"
+        },
+        available = available,
+        highlightSummary = summary,
+    )
+}
+
+/**
+ * 会员中心设置卡。
+ *
+ * 用途说明：
+ * - 展示当前会员状态、会员有效期和可购买的会员套餐。
+ * - 套餐点击只负责切换选中态，真正的订单创建和二维码跳转统一收敛到底部支付按钮。
  *
  * 参数说明：
  * - state：设置页 UI 状态。
- * - onCloudLearningChanged：云端学习开关回调。
- * - onRefreshMembership：刷新会员状态回调。
- * - onStartMonthlyMembership：开通月卡回调。
- * - onStartYearlyMembership：开通年卡回调。
- * - onSyncCloudLearning：立即同步云端学习回调。
+ * - plans：已按当前真实日期计算后的套餐列表。
+ * - onStartYearlyMembership：点击年卡支付按钮后的订单创建回调。
+ * - onOpenMembershipPayment：进入二维码支付页回调。
  */
 @Composable
-private fun MembershipCloudLearningCard(
+private fun MembershipCenterCard(
     state: SettingsUiState,
-    onCloudLearningChanged: (Boolean) -> Unit,
-    onRefreshMembership: () -> Unit,
-    onStartMonthlyMembership: () -> Unit,
+    plans: List<MembershipPlanUi>,
     onStartYearlyMembership: () -> Unit,
-    onSyncCloudLearning: () -> Unit,
+    onOpenMembershipPayment: (MembershipPlanUi) -> Unit,
 ) {
+    var selectedPlanId by rememberSaveable { mutableStateOf(MEMBERSHIP_YEARLY_PLAN_ID) }
+    val selectedPlan = plans.firstOrNull { plan ->
+        // 选中项只保存 id，实际渲染时再从统一套餐表反查，避免价格文案在多个状态里漂移。
+        plan.id == selectedPlanId
+    } ?: plans.first()
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Card(
+            shape = AutobookUiTokens.panelShape,
+            border = autobookCardBorder(),
+            colors = autobookCardColors(),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SettingsGroupHeader(
+                    title = "会员状态",
+                    summary = "查看当前账号是否已开通会员。",
+                )
+                MembershipStatusPanel(state = state)
+            }
+        }
+        Card(
+            shape = AutobookUiTokens.panelShape,
+            border = autobookCardBorder(),
+            colors = autobookCardColors(),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SettingsGroupHeader(
+                    title = "限时开通",
+                    summary = selectedPlan.highlightSummary,
+                )
+                MembershipPlanGrid(
+                    plans = plans,
+                    selectedPlanId = selectedPlanId,
+                    onSelectPlan = { plan ->
+                        selectedPlanId = plan.id
+                    },
+                )
+                Button(
+                    onClick = {
+                        if (selectedPlan.id == MEMBERSHIP_YEARLY_PLAN_ID) {
+                            onStartYearlyMembership()
+                        }
+                        onOpenMembershipPayment(selectedPlan)
+                    },
+                    enabled = selectedPlan.available,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                ) {
+                    Text(
+                        text = selectedPlan.payButtonText,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                if (state.membershipActionMessage.isNotBlank()) {
+                    Text(
+                        text = state.membershipActionMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 会员状态面板。
+ *
+ * 参数说明：
+ * - state：设置页 UI 状态，用于展示当前是否会员以及会员有效期。
+ */
+@Composable
+private fun MembershipStatusPanel(state: SettingsUiState) {
+    Surface(
+        shape = AutobookUiTokens.innerPanelShape,
+        color = if (state.membershipActive) {
+            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.56f)
+        } else {
+            autobookSoftFillColor()
+        },
+        border = autobookCardBorder(emphasized = state.membershipActive),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AutobookIcon(
+                asset = AutobookIconAsset.Crown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(26.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = state.membershipSummary,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = if (state.membershipActive) {
+                        "有效期至：${state.membershipExpiresAtLabel}"
+                    } else {
+                        "开通会员后自动记账不受次数限制"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 会员套餐横向展示区。
+ *
+ * 参数说明：
+ * - plans：已按当前真实日期计算后的套餐列表。
+ * - selectedPlanId：当前选中的套餐 id。
+ * - onSelectPlan：点击可购买套餐后的选中回调。
+ */
+@Composable
+private fun MembershipPlanGrid(
+    plans: List<MembershipPlanUi>,
+    selectedPlanId: String,
+    onSelectPlan: (MembershipPlanUi) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        plans.forEach { plan ->
+            MembershipPlanOption(
+                plan = plan,
+                selected = plan.id == selectedPlanId,
+                onClick = {
+                    onSelectPlan(plan)
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+/**
+ * 单个会员套餐选项。
+ *
+ * 参数说明：
+ * - plan：套餐展示数据。
+ * - selected：当前套餐是否被选中。
+ * - onClick：点击套餐后的选中回调。
+ * - modifier：外层布局修饰符。
+ */
+@Composable
+private fun MembershipPlanOption(
+    plan: MembershipPlanUi,
+    selected: Boolean,
+    onClick: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    val optionFill = when {
+        selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
+        plan.available -> MaterialTheme.colorScheme.surface
+        else -> autobookSoftFillColor()
+    }
+    Surface(
+        modifier = modifier
+            .height(86.dp)
+            // 占位套餐只展示未来能力，不给点击反馈，避免用户误以为当前可以购买。
+            .then(
+                if (plan.available) {
+                    Modifier.autobookClippedClickable(shape = shape, onClick = onClick)
+                } else {
+                    Modifier
+                },
+            ),
+        shape = shape,
+        color = optionFill,
+        border = autobookCardBorder(emphasized = selected),
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp),
+        ) {
+            if (plan.badge != null) {
+                Text(
+                    text = plan.badge,
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(5.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = if (plan.badge == null) 2.dp else 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = plan.title,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = plan.price,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (plan.available) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = plan.period,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 会员二维码支付页。
+ *
+ * 用途说明：
+ * - 在用户点击“立即支付”后展示个人收款二维码，并用醒目的红色提示绑定人工发放会员所需的登录邮箱。
+ * - 该页面只负责展示支付指引，订单创建由进入本页前的支付按钮触发。
+ *
+ * 参数说明：
+ * - plan：当前准备支付的会员套餐。
+ * - accountEmail：当前账号邮箱；未登录或无法识别时传入“未登录”。
+ */
+@Composable
+private fun MembershipPaymentQrCard(
+    plan: MembershipPlanUi,
+    accountEmail: String,
+) {
+    val hasPaymentEmail = accountEmail.contains("@")
+    val warningText = if (hasPaymentEmail) {
+        "付款备注/留言请填写：$accountEmail"
+    } else {
+        "付款前请先返回设置页登录，并在付款备注/留言中填写登录邮箱。"
+    }
+
     Card(
         shape = AutobookUiTokens.panelShape,
         border = autobookCardBorder(),
@@ -1317,94 +1936,84 @@ private fun MembershipCloudLearningCard(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             SettingsGroupHeader(
-                title = "会员与云端学习",
-                summary = "会员可拉取服务器全局模型，并贡献样本改进解析能力。",
+                title = "扫码支付",
+                summary = "${plan.title} ${plan.price}，付款后由后台人工开通。",
             )
             Surface(
+                modifier = Modifier.fillMaxWidth(),
                 shape = AutobookUiTokens.innerPanelShape,
-                color = if (state.cloudLearningEffectiveEnabled) {
-                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.58f)
-                } else {
-                    autobookSoftFillColor()
-                },
-                border = autobookCardBorder(emphasized = state.cloudLearningEffectiveEnabled),
+                color = autobookSoftFillColor(),
+                border = autobookCardBorder(),
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    AutobookIcon(
-                        asset = AutobookIconAsset.Crown,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(26.dp),
-                    )
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(3.dp),
-                    ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            text = state.membershipSummary,
+                            text = plan.title,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = if (state.cloudLearningEffectiveEnabled) {
-                                "云端学习与模型拉取已生效"
-                            } else {
-                                "免费版继续使用本地规则算法"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
+                            text = plan.period,
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    Text(
+                        text = plan.price,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
-            ToggleRow(
-                title = "云端学习增强",
-                summary = state.cloudLearningSummary,
-                leadingIcon = AutobookIconAsset.CloudSync,
-                checked = state.cloudLearningEnabled,
-                onCheckedChange = onCloudLearningChanged,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(
-                    onClick = onStartMonthlyMembership,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("开通月卡")
-                }
-                OutlinedButton(
-                    onClick = onStartYearlyMembership,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("开通年卡")
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(
-                    onClick = onRefreshMembership,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("刷新会员")
-                }
-                Button(
-                    onClick = onSyncCloudLearning,
-                    enabled = state.cloudLearningEffectiveEnabled,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("立即同步")
-                }
-            }
-            if (state.membershipActionMessage.isNotBlank()) {
-                Text(
-                    text = state.membershipActionMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = Color.White,
+                border = autobookCardBorder(),
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.membership_payment_qr),
+                    contentDescription = "会员收款二维码",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(278.dp)
+                        .padding(12.dp),
                 )
+            }
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = AutobookUiTokens.innerPanelShape,
+                color = Color(0xFFFFEBEE),
+                border = autobookCardBorder(emphasized = true),
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text(
+                        text = "重要：付款时请务必填写登录邮箱",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFD32F2F),
+                    )
+                    Text(
+                        text = warningText,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFD32F2F),
+                    )
+                    Text(
+                        text = "未填写或填写错误会导致无法人工发放会员。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFD32F2F),
+                    )
+                }
             }
         }
     }
@@ -1606,8 +2215,7 @@ private fun openAppNotificationSettingsSafely(context: Context): Boolean {
     val notificationSettingsIntent = SettingsIntents.appNotifications(context).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    val appDetailsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-        data = Uri.fromParts("package", context.packageName, null)
+    val appDetailsIntent = createAppDetailsSettingsIntent(context).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
     val targetIntent = when {
@@ -1634,6 +2242,180 @@ private fun openAppNotificationSettingsSafely(context: Context): Boolean {
         ).show()
         false
     }
+}
+
+/**
+ * 安全打开“应用耗电设置”相关系统页。
+ *
+ * 用途说明：
+ * - 优先进入系统电池优化页面，引导用户把 App 从后台限制中放出来。
+ * - Android 没有稳定的单应用耗电设置标准入口，因此最后兜底到应用详情页。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于启动系统设置页和展示失败提示。
+ *
+ * 返回值说明：
+ * - `true`：已经成功发起系统设置页跳转。
+ * - `false`：当前设备没有任何可用入口，或启动系统设置页时发生异常。
+ */
+private fun openBatteryUsageSettingsSafely(context: Context): Boolean {
+    val candidateIntents = listOf(
+        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+        Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS),
+        createAppDetailsSettingsIntent(context),
+    )
+    return openFirstAvailableSettingsIntent(
+        context = context,
+        candidateIntents = candidateIntents,
+        failureMessage = "当前设备暂时无法直接打开应用耗电设置，请手动到系统设置中查看。",
+    )
+}
+
+/**
+ * 安全打开“自启动设置”相关系统页。
+ *
+ * 用途说明：
+ * - 自启动没有 Android 标准 API，只能按常见厂商设置页逐个尝试。
+ * - 如果厂商入口不存在，就兜底打开应用详情页，让用户能继续手动查找自启动/后台运行设置。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于启动系统设置页和展示失败提示。
+ *
+ * 返回值说明：
+ * - `true`：已经成功发起系统设置页跳转。
+ * - `false`：当前设备没有任何可用入口，或启动系统设置页时发生异常。
+ */
+private fun openAutostartSettingsSafely(context: Context): Boolean {
+    val appPackageName = context.packageName
+    val candidateIntents = listOf(
+        createManufacturerSettingsIntent(
+            targetPackageName = "com.miui.securitycenter",
+            targetClassName = "com.miui.permcenter.autostart.AutoStartManagementActivity",
+            appPackageName = appPackageName,
+        ),
+        createManufacturerSettingsIntent(
+            targetPackageName = "com.huawei.systemmanager",
+            targetClassName = "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
+            appPackageName = appPackageName,
+        ),
+        createManufacturerSettingsIntent(
+            targetPackageName = "com.hihonor.systemmanager",
+            targetClassName = "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
+            appPackageName = appPackageName,
+        ),
+        createManufacturerSettingsIntent(
+            targetPackageName = "com.coloros.safecenter",
+            targetClassName = "com.coloros.safecenter.permission.startup.StartupAppListActivity",
+            appPackageName = appPackageName,
+        ),
+        createManufacturerSettingsIntent(
+            targetPackageName = "com.oplus.safecenter",
+            targetClassName = "com.oplus.athena.startup.StartupAppListActivity",
+            appPackageName = appPackageName,
+        ),
+        createManufacturerSettingsIntent(
+            targetPackageName = "com.vivo.permissionmanager",
+            targetClassName = "com.vivo.permissionmanager.activity.BgStartUpManagerActivity",
+            appPackageName = appPackageName,
+        ),
+        createManufacturerSettingsIntent(
+            targetPackageName = "com.meizu.safe",
+            targetClassName = "com.meizu.safe.permission.SmartBGActivity",
+            appPackageName = appPackageName,
+        ),
+        createManufacturerSettingsIntent(
+            targetPackageName = "com.samsung.android.sm_cn",
+            targetClassName = "com.samsung.android.sm.ui.ram.AutoRunActivity",
+            appPackageName = appPackageName,
+        ),
+        createAppDetailsSettingsIntent(context),
+    )
+    return openFirstAvailableSettingsIntent(
+        context = context,
+        candidateIntents = candidateIntents,
+        failureMessage = "当前设备暂时无法直接打开自启动设置，请手动到系统设置中查看。",
+    )
+}
+
+/**
+ * 创建单应用详情页 Intent。
+ *
+ * 用途说明：
+ * - 作为耗电、自启动、应用通知等系统页跳转失败后的统一兜底入口。
+ * - 应用详情页通常可以继续进入权限、通知、耗电等厂商二级设置。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于读取当前 App 包名。
+ */
+private fun createAppDetailsSettingsIntent(context: Context): Intent {
+    return Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+        data = Uri.fromParts("package", context.packageName, null)
+    }
+}
+
+/**
+ * 创建厂商私有设置页 Intent。
+ *
+ * 用途说明：
+ * - 厂商自启动设置页没有标准 action，只能使用明确组件名。
+ * - 同时带上当前 App 包名，部分系统会据此直接定位到本应用。
+ *
+ * 参数说明：
+ * - targetPackageName：目标系统设置模块包名。
+ * - targetClassName：目标系统设置 Activity 类名。
+ * - appPackageName：当前 App 包名，作为厂商设置页定位参数。
+ */
+private fun createManufacturerSettingsIntent(
+    targetPackageName: String,
+    targetClassName: String,
+    appPackageName: String,
+): Intent {
+    return Intent().apply {
+        component = ComponentName(targetPackageName, targetClassName)
+        // 不同厂商读取的 extra 名称不统一，因此同时写入常见命名，提升直接定位到本应用的概率。
+        putExtra("package_name", appPackageName)
+        putExtra("packageName", appPackageName)
+    }
+}
+
+/**
+ * 按顺序尝试打开系统设置页。
+ *
+ * 用途说明：
+ * - 统一收口多系统、多厂商设置入口的启动逻辑。
+ * - 每个 Intent 都单独捕获异常，前一个入口不可用时继续尝试下一个入口。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于启动系统 Activity 和展示失败提示。
+ * - candidateIntents：按优先级排列的候选系统设置页。
+ * - failureMessage：全部候选入口都失败时展示给用户的提示。
+ *
+ * 返回值说明：
+ * - `true`：至少有一个候选设置页成功打开。
+ * - `false`：所有候选设置页都无法打开。
+ */
+private fun openFirstAvailableSettingsIntent(
+    context: Context,
+    candidateIntents: List<Intent>,
+    failureMessage: String,
+): Boolean {
+    candidateIntents.forEach { candidateIntent ->
+        // 系统设置页位于应用外部，统一加新任务标记，避免从非 Activity 上下文启动时报错。
+        candidateIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val opened = runCatching {
+            context.startActivity(candidateIntent)
+            true
+        }.getOrDefault(false)
+        if (opened) {
+            return true
+        }
+    }
+    Toast.makeText(
+        context,
+        failureMessage,
+        Toast.LENGTH_LONG,
+    ).show()
+    return false
 }
 
 /**
@@ -1976,6 +2758,59 @@ private fun SettingsUiState.authAccountDisplayText(): String {
 }
 
 /**
+ * 提取支付页需要提醒用户填写的登录邮箱。
+ *
+ * 用途说明：
+ * - 支付二维码页必须明确展示人工发放会员所需的账号邮箱，这里优先使用已登录摘要里的邮箱。
+ * - 如果用户尚未登录，则退回到输入框里的邮箱草稿；仍然为空时显示“未登录”。
+ *
+ * 接收者说明：
+ * - 当前设置页 UI 状态。
+ */
+private fun SettingsUiState.authPaymentEmailText(): String {
+    val loggedInEmail = if (authLoggedIn) authAccountDisplayText() else ""
+    return loggedInEmail
+        .takeIf { email -> email.contains("@") }
+        ?: authPhoneInput.trim().takeIf { email -> email.contains("@") }
+        ?: "未登录"
+}
+
+/**
+ * 把活动日期转换为中文短日期。
+ *
+ * 用途说明：
+ * - 会员限时活动的开始和结束时间需要让用户看得懂，避免直接展示 ISO 日期显得生硬。
+ *
+ * 接收者说明：
+ * - 当前需要展示的 `LocalDate`。
+ */
+private fun LocalDate.toChinaDateLabel(): String = "${year}年${monthValue}月${dayOfMonth}日"
+
+/**
+ * 获取会员活动倒计时使用的当前日期。
+ *
+ * 用途说明：
+ * - 登录后优先使用服务端返回的时间计算剩余天数，减少手机本地时间被手动修改带来的显示误差。
+ * - 未登录或服务端时间缺失时，才使用上海时区的本机日期做临时展示。
+ *
+ * 接收者说明：
+ * - 当前设置页 UI 状态。
+ */
+private fun SettingsUiState.membershipPromotionToday(): LocalDate {
+    val alignedServerTime = membershipServerTime?.let { serverTime ->
+        val elapsedSinceRefresh = membershipServerRefreshedAt
+            ?.let { refreshedAt -> System.currentTimeMillis() - refreshedAt }
+            ?.coerceAtLeast(0L)
+            ?: 0L
+        // 用“服务端时间 + 本地流逝时间”估算当前服务端日期，避免倒计时一直停在刷新那一刻。
+        serverTime + elapsedSinceRefresh
+    }
+    return alignedServerTime
+        ?.let { serverTime -> Instant.ofEpochMilli(serverTime).atZone(MEMBERSHIP_PROMOTION_ZONE).toLocalDate() }
+        ?: LocalDate.now(MEMBERSHIP_PROMOTION_ZONE)
+}
+
+/**
  * 设置页允许展示的通知来源白名单。
  *
  * 用途说明：
@@ -1990,4 +2825,5 @@ private val SETTINGS_VISIBLE_SOURCES = listOf(
 private const val ACCESSIBILITY_SERVICE_CLASS_NAME =
     "com.autobook.cn.service.automation.AutobookAccessibilityService"
 private const val SMS_CODE_LENGTH = 6
+private const val USER_IMPROVEMENT_PLAN_SUMMARY = "开启后，有效反馈样本中的通知原文会被用于训练模型，我们保证您的数据不会泄露"
 private val AUTH_EMAIL_REGEX = Regex("""^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$""", RegexOption.IGNORE_CASE)

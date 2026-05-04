@@ -17,7 +17,13 @@ from .auth import parse_token, sign_token
 from .config import load_config
 from .global_model_service import count_global_training_samples
 from .global_model_service import get_active_global_model
+from .payment_service import list_payment_orders
+from .payment_service import mark_payment_order_paid
 from .response import now_millis
+from .training_sample_service import TRAINING_SAMPLE_LABELS
+from .training_sample_service import create_manual_training_sample
+from .training_sample_service import delete_training_sample
+from .training_sample_service import list_training_samples
 from .training_job import TrainingPolicy
 from .training_job import list_training_jobs
 from .training_job import run_global_training
@@ -54,6 +60,8 @@ def render_page(title: str, body: str) -> HTMLResponse:
       --muted: #667085;
       --line: #d7dce5;
       --accent: #0f766e;
+      --accent-soft: #eef6f5;
+      --warning: #b54708;
       --danger: #b42318;
     }}
     * {{ box-sizing: border-box; }}
@@ -77,6 +85,17 @@ def render_page(title: str, body: str) -> HTMLResponse:
       padding: 24px;
     }}
     h1 {{ margin: 0; font-size: 22px; }}
+    nav {{
+      display: flex;
+      gap: 10px;
+      margin-top: 8px;
+      font-size: 14px;
+    }}
+    nav a {{
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }}
     h2 {{ margin: 0 0 14px; font-size: 17px; }}
     section {{
       background: var(--panel);
@@ -98,15 +117,21 @@ def render_page(title: str, body: str) -> HTMLResponse:
       color: var(--muted);
       font-size: 13px;
     }}
-    input[type="text"], input[type="password"], input[type="number"] {{
+    input[type="text"], input[type="password"], input[type="number"], input[type="email"], select, textarea {{
       width: min(280px, 100%);
-      height: 38px;
       border: 1px solid var(--line);
       border-radius: 6px;
       padding: 0 10px;
       color: var(--text);
       background: #fff;
       font-size: 14px;
+    }}
+    input[type="text"], input[type="password"], input[type="number"], input[type="email"], select {{ height: 38px; }}
+    textarea {{
+      min-height: 92px;
+      padding-top: 9px;
+      line-height: 1.45;
+      resize: vertical;
     }}
     input[type="checkbox"] {{ width: 16px; height: 16px; }}
     button {{
@@ -150,17 +175,79 @@ def render_page(title: str, body: str) -> HTMLResponse:
     }}
     .muted {{ color: var(--muted); }}
     .inline-form {{ display: inline-flex; gap: 8px; }}
+    .wide-form {{ align-items: stretch; }}
+    .wide-form label.full {{ width: 100%; }}
+    .wide-form label.full input {{ width: 100%; }}
+    .wide-form label.full textarea {{ width: 100%; }}
+    .badge {{
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+      border-radius: 999px;
+      padding: 0 9px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .state-created, .state-paying {{ background: #fff7ed; color: var(--warning); }}
+    .state-paid {{ background: var(--accent-soft); color: var(--accent); }}
+    .state-expired, .state-cancelled, .state-failed {{ background: #fef3f2; color: var(--danger); }}
+    .label-positive {{ background: var(--accent-soft); color: var(--accent); }}
+    .label-negative {{ background: #fef3f2; color: var(--danger); }}
+    .label-pending {{ background: #fff7ed; color: var(--warning); }}
+    .amount {{ font-weight: 700; color: var(--text); }}
+    .section-title {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }}
+    .section-title h2 {{ margin: 0; }}
+    .sample-raw {{
+      max-width: 320px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.45;
+    }}
+    .sample-json {{
+      max-width: 960px;
+      max-height: 520px;
+      overflow: auto;
+      margin: 10px 0 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f8fafc;
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }}
+    details summary {{
+      color: var(--accent);
+      cursor: pointer;
+      font-weight: 700;
+    }}
     @media (max-width: 720px) {{
       header {{ padding: 14px 16px; }}
       main {{ padding: 16px; }}
       table {{ display: block; overflow-x: auto; }}
-      input[type="text"], input[type="password"], input[type="number"] {{ width: 100%; }}
+      input[type="text"], input[type="password"], input[type="number"], input[type="email"], select {{ width: 100%; }}
     }}
   </style>
 </head>
 <body>
   <header>
-    <h1>AutoBook Admin</h1>
+    <div>
+      <h1>AutoBook Admin</h1>
+      <nav>
+        <a href="/admin">会员与训练</a>
+        <a href="/admin/orders">订单</a>
+        <a href="/admin/samples">样本</a>
+      </nav>
+    </div>
     <form method="post" action="/admin/logout">
       <button class="secondary" type="submit">退出</button>
     </form>
@@ -340,12 +427,14 @@ def admin_index(request: Request, q: str = "", message: str = "") -> Response:
 
     config = load_config()
     members = list_member_statuses(config.database_path, query=q)
+    orders_section = render_recent_orders_section(config.database_path)
     global_model_section = render_global_model_section(config.database_path)
     training_section = render_training_section(config.database_path)
     message_html = f'<div class="message">{escape(message)}</div>' if message else ""
     rows = "\n".join(render_member_row(member) for member in members)
     body = f"""
     {message_html}
+    {orders_section}
     {global_model_section}
     {training_section}
     <section>
@@ -359,7 +448,8 @@ def admin_index(request: Request, q: str = "", message: str = "") -> Response:
       </form>
     </section>
     <section>
-      <h2>发放会员</h2>
+      <h2>手动发放会员</h2>
+      <p class="muted">主要用于补偿、测试或特殊情况；普通订单请优先在“订单”页确认收款并自动开通。</p>
       <form method="post" action="/admin/memberships/grant">
         <label>
           邮箱
@@ -388,16 +478,348 @@ def admin_index(request: Request, q: str = "", message: str = "") -> Response:
             <th>邮箱/账号</th>
             <th>等级</th>
             <th>到期</th>
+            <th>自动记账体验</th>
             <th>模型</th>
             <th>云学习</th>
             <th>操作</th>
           </tr>
         </thead>
-        <tbody>{rows or '<tr><td colspan="6" class="muted">暂无用户</td></tr>'}</tbody>
+        <tbody>{rows or '<tr><td colspan="7" class="muted">暂无用户</td></tr>'}</tbody>
       </table>
     </section>
     """
     return render_page(title="会员管理", body=body)
+
+
+@router.get("/orders")
+def admin_orders(request: Request, q: str = "", state: str = "", message: str = "") -> Response:
+    """展示订单管理页。
+
+    参数：
+        request: FastAPI 请求对象。
+        q: 邮箱或订单号搜索关键字。
+        state: 订单状态筛选。
+        message: 操作结果提示。
+
+    返回：
+        Response: 订单后台页面或登录页跳转。
+    """
+
+    if not has_admin_session(request):
+        return redirect_login()
+
+    config = load_config()
+    orders = list_payment_orders(config.database_path, query=q, state=state, limit=100)
+    rows = "\n".join(render_payment_order_row(order) for order in orders)
+    message_html = f'<div class="message">{escape(message)}</div>' if message else ""
+    body = f"""
+    {message_html}
+    <section>
+      <div class="section-title">
+        <h2>订单</h2>
+        <a class="badge" href="/admin">返回会员管理</a>
+      </div>
+      <form method="get" action="/admin/orders">
+        <label>
+          邮箱/订单号
+          <input type="text" name="q" value="{escape(q)}">
+        </label>
+        <label>
+          状态
+          <select name="state">
+            {render_payment_state_options(state)}
+          </select>
+        </label>
+        <button type="submit">查询</button>
+      </form>
+    </section>
+    <section>
+      <div class="section-title">
+        <h2>最近订单</h2>
+        <span class="muted">待支付订单超时后会自动变为过期。</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>订单号</th>
+            <th>邮箱/账号</th>
+            <th>套餐</th>
+            <th>金额</th>
+            <th>状态</th>
+            <th>创建</th>
+            <th>过期</th>
+            <th>支付</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>{rows or '<tr><td colspan="9" class="muted">暂无订单</td></tr>'}</tbody>
+      </table>
+    </section>
+    """
+    return render_page(title="订单管理", body=body)
+
+
+@router.get("/samples")
+def admin_samples(request: Request, q: str = "", label: str = "", message: str = "") -> Response:
+    """展示训练样本明细页。
+
+    参数：
+        request: FastAPI 请求对象。
+        q: 邮箱、样本 ID、通知 ID 或通知原文搜索关键字。
+        label: 反馈标签筛选。
+        message: 操作结果提示。
+
+    返回：
+        Response: 样本后台页面或登录页跳转。
+    """
+
+    if not has_admin_session(request):
+        return redirect_login()
+
+    config = load_config()
+    samples = list_training_samples(config.database_path, query=q, feedback_label=label, limit=100)
+    rows = "\n".join(render_training_sample_row(sample) for sample in samples)
+    message_html = f'<div class="message">{escape(message)}</div>' if message else ""
+    body = f"""
+    {message_html}
+    <section>
+      <div class="section-title">
+        <h2>训练样本</h2>
+        <a class="badge" href="/admin">返回会员管理</a>
+      </div>
+      <form method="get" action="/admin/samples">
+        <label>
+          邮箱/样本/通知/原文
+          <input type="text" name="q" value="{escape(q)}">
+        </label>
+        <label>
+          标签
+          <select name="label">
+            {render_training_sample_label_options(label)}
+          </select>
+        </label>
+        <button type="submit">查询</button>
+      </form>
+    </section>
+    <section>
+      <div class="section-title">
+        <h2>新增样本</h2>
+        <span class="muted">普通模式填写原文即可；高级模式可直接粘贴完整 JSON。</span>
+      </div>
+      <form class="wide-form" method="post" action="/admin/samples/create">
+        <label>
+          账号邮箱
+          <input type="email" name="phone" placeholder="user@example.com" required>
+        </label>
+        <label>
+          标签
+          <select name="feedback_label">
+            {render_training_sample_label_options("USER_CONFIRMED_POSITIVE")}
+          </select>
+        </label>
+        <label>
+          来源
+          <input type="text" name="source_app" value="OTHER">
+        </label>
+        <label>
+          包名
+          <input type="text" name="package_name" placeholder="com.example.app">
+        </label>
+        <label>
+          金额
+          <input type="number" name="amount" step="0.01" placeholder="19.90">
+        </label>
+        <label>
+          收支方向
+          <select name="direction">
+            <option value="EXPENSE" selected>支出</option>
+            <option value="INCOME">收入</option>
+          </select>
+        </label>
+        <label>
+          分类
+          <input type="text" name="category" placeholder="餐饮 / 交通 / 工资">
+        </label>
+        <label class="full">
+          通知标题
+          <input type="text" name="raw_title" placeholder="微信支付">
+        </label>
+        <label class="full">
+          通知原文
+          <textarea name="raw_text" placeholder="已支付 19.90 元，商户：..."></textarea>
+        </label>
+        <label class="full">
+          备注
+          <textarea name="note" placeholder="后台人工补充样本原因"></textarea>
+        </label>
+        <label class="full">
+          完整 JSON（可选）
+          <textarea name="raw_payload_json" placeholder='{{"rawText":"...","feedbackLabel":"USER_CONFIRMED_POSITIVE"}}'></textarea>
+        </label>
+        <button type="submit">新增样本</button>
+      </form>
+    </section>
+    <section>
+      <div class="section-title">
+        <h2>样本明细</h2>
+        <span class="muted">默认展示最近 100 条；展开“完整 JSON”可查看服务器保存的每一行原始样本。</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>账号</th>
+            <th>来源</th>
+            <th>通知原文</th>
+            <th>解析</th>
+            <th>纠错</th>
+            <th>标签</th>
+            <th>时间</th>
+            <th>详情</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>{rows or '<tr><td colspan="10" class="muted">暂无样本</td></tr>'}</tbody>
+      </table>
+    </section>
+    """
+    return render_page(title="训练样本", body=body)
+
+
+@router.post("/samples/create")
+async def create_sample(request: Request) -> Response:
+    """新增后台人工训练样本。
+
+    参数：
+        request: FastAPI 请求对象，表单中包含账号、原文、标签和可选完整 JSON。
+
+    返回：
+        Response: 操作完成后的样本页跳转。
+    """
+
+    if not has_admin_session(request):
+        return redirect_login()
+
+    config = load_config()
+    form = await read_form(request)
+    try:
+        sample = create_manual_training_sample(
+            database_path=config.database_path,
+            phone=form.get("phone", ""),
+            raw_title=form.get("raw_title", ""),
+            raw_text=form.get("raw_text", ""),
+            source_app=form.get("source_app", ""),
+            package_name=form.get("package_name", ""),
+            feedback_label=form.get("feedback_label", ""),
+            amount=form.get("amount", ""),
+            direction=form.get("direction", ""),
+            category=form.get("category", ""),
+            note=form.get("note", ""),
+            raw_payload_json=form.get("raw_payload_json", ""),
+        )
+        message = f"已新增样本 #{sample['id']}，账号 {sample['phone']}"
+        return RedirectResponse(url=f"/admin/samples?q={sample['id']}&message={quote(message)}", status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/samples?message={quote(str(exc))}", status_code=303)
+
+
+@router.post("/samples/delete")
+async def delete_sample(request: Request) -> Response:
+    """删除后台训练样本。
+
+    参数：
+        request: FastAPI 请求对象，表单中包含 sample_id。
+
+    返回：
+        Response: 操作完成后的样本页跳转。
+    """
+
+    if not has_admin_session(request):
+        return redirect_login()
+
+    config = load_config()
+    form = await read_form(request)
+    try:
+        sample = delete_training_sample(config.database_path, sample_id=form.get("sample_id", ""))
+        message = f"已删除样本 #{sample['id']}，账号 {sample['phone']}"
+        return RedirectResponse(url=f"/admin/samples?message={quote(message)}", status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/samples?message={quote(str(exc))}", status_code=303)
+
+
+@router.post("/orders/mark-paid")
+async def mark_order_paid(request: Request) -> Response:
+    """人工确认订单收款并开通会员。
+
+    参数：
+        request: FastAPI 请求对象。
+
+    返回：
+        Response: 操作完成后的订单页跳转。
+    """
+
+    if not has_admin_session(request):
+        return redirect_login()
+
+    config = load_config()
+    form = await read_form(request)
+    order_id = form.get("order_id", "")
+    try:
+        result = mark_payment_order_paid(config.database_path, order_id=order_id)
+        message = (
+            f"已确认收款：{result['phone']}，"
+            f"{result['planLabel']} 有效期至 {format_millis(result['memberExpiresAt'])}"
+        )
+        return RedirectResponse(url=f"/admin/orders?q={result['orderId']}&message={quote(message)}", status_code=303)
+    except Exception as exc:
+        return RedirectResponse(url=f"/admin/orders?message={quote(str(exc))}", status_code=303)
+
+
+def render_recent_orders_section(database_path: str) -> str:
+    """渲染首页最近订单摘要。
+
+    参数：
+        database_path: SQLite 数据库文件路径。
+
+    返回：
+        str: 后台首页订单摘要 HTML。
+    """
+
+    try:
+        orders = list_payment_orders(database_path, limit=5)
+        rows = "\n".join(render_payment_order_row(order, compact=True) for order in orders)
+        return f"""
+        <section>
+          <div class="section-title">
+            <h2>订单处理</h2>
+            <a class="badge" href="/admin/orders">查看全部</a>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>订单号</th>
+                <th>邮箱/账号</th>
+                <th>套餐</th>
+                <th>金额</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>{rows or '<tr><td colspan="6" class="muted">暂无订单</td></tr>'}</tbody>
+          </table>
+        </section>
+        """
+    except Exception as exc:
+        # 首页订单摘要失败时仍允许管理员继续发会员和触发训练。
+        return f"""
+        <section>
+          <div class="section-title">
+            <h2>订单处理</h2>
+            <a class="badge" href="/admin/orders">查看全部</a>
+          </div>
+          <p class="muted">读取失败：{escape(str(exc))}</p>
+        </section>
+        """
 
 
 def render_global_model_section(database_path: str) -> str:
@@ -452,7 +874,10 @@ def render_training_section(database_path: str) -> str:
         rows = "\n".join(render_training_job_row(job) for job in jobs)
         return f"""
         <section>
-          <h2>全局训练</h2>
+          <div class="section-title">
+            <h2>全局训练</h2>
+            <a class="badge" href="/admin/samples">查看样本</a>
+          </div>
           <table>
             <tbody>
               <tr><th>全局样本</th><td>{summary["totalSamples"]}</td></tr>
@@ -490,7 +915,10 @@ def render_training_section(database_path: str) -> str:
         # 训练摘要失败不影响会员管理主功能，直接展示错误便于排查。
         return f"""
         <section>
-          <h2>全局训练</h2>
+          <div class="section-title">
+            <h2>全局训练</h2>
+            <a class="badge" href="/admin/samples">查看样本</a>
+          </div>
           <p class="muted">读取失败：{escape(str(exc))}</p>
         </section>
         """
@@ -595,11 +1023,14 @@ def render_member_row(member: dict[str, object]) -> str:
 
     phone = str(member.get("phone", ""))
     tier = str(member.get("tier", "FREE"))
+    trial_used = int(member.get("autoLedgerTrialUsed", 0) or 0)
+    trial_limit = int(member.get("autoLedgerTrialLimit", 10) or 10)
     return f"""
     <tr>
       <td>{escape(phone)}</td>
       <td>{escape(tier)}</td>
       <td>{escape(format_millis(member.get("expiresAt")))}</td>
+      <td>{trial_used}/{trial_limit}</td>
       <td>{format_bool(member.get("modelConfidenceEnabled"))}</td>
       <td>{format_bool(member.get("cloudLearningEnabled"))}</td>
       <td>
@@ -610,6 +1041,380 @@ def render_member_row(member: dict[str, object]) -> str:
       </td>
     </tr>
     """
+
+
+def render_payment_order_row(order: dict[str, object], compact: bool = False) -> str:
+    """渲染支付订单表格行。
+
+    参数：
+        order: 单个支付订单摘要。
+        compact: 是否使用首页紧凑列布局。
+
+    返回：
+        str: 表格行 HTML。
+    """
+
+    order_id = str(order.get("orderId", ""))
+    phone = str(order.get("phone", ""))
+    plan_label = str(order.get("planLabel", order.get("plan", "-")))
+    amount = format_amount_cents(order.get("amountCents"))
+    state = str(order.get("paymentState", "-"))
+    action_html = render_payment_order_action(order)
+    if compact:
+        short_order_id = order_id[:18] + "..." if len(order_id) > 21 else order_id
+        return f"""
+        <tr>
+          <td title="{escape(order_id)}">{escape(short_order_id)}</td>
+          <td>{escape(phone)}</td>
+          <td>{escape(plan_label)}</td>
+          <td class="amount">{escape(amount)}</td>
+          <td>{format_payment_state(state)}</td>
+          <td>{action_html}</td>
+        </tr>
+        """
+
+    return f"""
+    <tr>
+      <td>{escape(order_id)}</td>
+      <td>{escape(phone)}</td>
+      <td>{escape(plan_label)}</td>
+      <td class="amount">{escape(amount)}</td>
+      <td>{format_payment_state(state)}</td>
+      <td>{escape(format_millis(order.get("createdAt")))}</td>
+      <td>{escape(format_millis(order.get("expiresAt")))}</td>
+      <td>{escape(format_millis(order.get("paidAt")))}</td>
+      <td>{action_html}</td>
+    </tr>
+    """
+
+
+def render_training_sample_row(sample: dict[str, object]) -> str:
+    """渲染训练样本表格行。
+
+    参数：
+        sample: 单条训练样本摘要和完整 JSON。
+
+    返回：
+        str: 表格行 HTML。
+    """
+
+    sample_id = str(sample.get("id", ""))
+    source_text = "\n".join(
+        value
+        for value in [
+            str(sample.get("sourceApp") or "-"),
+            str(sample.get("packageName") or ""),
+        ]
+        if value
+    )
+    raw_text = "\n".join(
+        value
+        for value in [
+            str(sample.get("rawTitle") or ""),
+            str(sample.get("rawText") or ""),
+        ]
+        if value
+    )
+    corrected = sample.get("corrected")
+    updated_at = sample.get("updatedAt")
+    inserted_at = sample.get("insertedAt")
+    update_text = ""
+    if updated_at and updated_at != inserted_at:
+        update_text = f"<br><span class=\"muted\">更新 {escape(format_millis(updated_at))}</span>"
+    return f"""
+    <tr>
+      <td>
+        <strong>{escape(sample_id)}</strong><br>
+        <span class="muted">本地 {escape(format_optional(sample.get("sampleLocalId")))}</span><br>
+        <span class="muted">通知 {escape(format_optional(sample.get("notificationId")))}</span>
+      </td>
+      <td>{escape(str(sample.get("phone") or "-"))}</td>
+      <td class="sample-raw">{escape(source_text)}</td>
+      <td class="sample-raw">{escape(truncate_text(raw_text, 260))}</td>
+      <td>{format_sample_snapshot(sample.get("parsed"))}</td>
+      <td>{format_sample_snapshot(corrected) if corrected else '<span class="muted">-</span>'}</td>
+      <td>
+        {format_training_label(str(sample.get("feedbackLabel") or ""))}<br>
+        <span class="muted">{escape(str(sample.get("feedbackSource") or "-"))}</span>
+      </td>
+      <td>
+        {escape(format_millis(inserted_at))}
+        {update_text}
+      </td>
+      <td>{render_training_sample_detail(sample)}</td>
+      <td>{render_training_sample_action(sample_id)}</td>
+    </tr>
+    """
+
+
+def render_training_sample_action(sample_id: str) -> str:
+    """渲染训练样本操作区。
+
+    参数：
+        sample_id: 当前样本 ID。
+
+    返回：
+        str: 删除按钮表单 HTML。
+    """
+
+    return f"""
+    <form class="inline-form" method="post" action="/admin/samples/delete">
+      <input type="hidden" name="sample_id" value="{escape(sample_id)}">
+      <button class="danger" type="submit" onclick="return confirm('确认删除样本 #{escape(sample_id)}？')">删除</button>
+    </form>
+    """
+
+
+def render_training_sample_detail(sample: dict[str, object]) -> str:
+    """渲染训练样本详情。
+
+    参数：
+        sample: 单条训练样本摘要和完整 JSON。
+
+    返回：
+        str: 可展开查看的详情 HTML。
+    """
+
+    detail_lines = [
+        f"批次：{format_optional(sample.get('clientBatchId'))}",
+        f"设备：{format_optional(sample.get('deviceId'))}",
+        f"App：{format_optional(sample.get('appVersion'))}",
+        f"模型：{format_optional(sample.get('modelVersion'))}",
+        f"解析路径：{format_optional(sample.get('parsePath'))}",
+        f"置信度：{format_optional(sample.get('confidenceLevel'))} / {format_optional(sample.get('confidenceScore'))}",
+        f"路由：{format_optional(sample.get('routeDestination'))} / {format_optional(sample.get('processStatus'))}",
+        f"反馈时间：{format_millis(sample.get('feedbackAt'))}",
+        f"反馈备注：{format_optional(sample.get('feedbackNote'))}",
+        f"变更字段：{format_changed_fields(sample.get('changedFields'))}",
+    ]
+    return f"""
+    <details>
+      <summary>完整 JSON</summary>
+      <p class="muted">{escape(chr(10).join(detail_lines))}</p>
+      <pre class="sample-json">{escape(str(sample.get("rawJsonPretty") or "{}"))}</pre>
+    </details>
+    """
+
+
+def render_training_sample_label_options(selected_label: str) -> str:
+    """渲染训练样本标签筛选选项。
+
+    参数：
+        selected_label: 当前筛选标签。
+
+    返回：
+        str: `<option>` HTML 文本。
+    """
+
+    normalized = selected_label.strip().upper()
+    return "\n".join(
+        f'<option value="{escape(label)}"{" selected" if label == normalized else ""}>{escape(training_label_text(label))}</option>'
+        for label in TRAINING_SAMPLE_LABELS
+    )
+
+
+def format_sample_snapshot(value: object) -> str:
+    """格式化解析或纠错字段快照。
+
+    参数：
+        value: `parsed` 或 `corrected` 字典。
+
+    返回：
+        str: 多行 HTML 文本。
+    """
+
+    if not isinstance(value, dict) or not value:
+        return '<span class="muted">-</span>'
+    lines = [
+        f"金额 {format_optional(value.get('amount'))}",
+        f"方向 {format_optional(value.get('direction'))}",
+        f"分类 {format_optional(value.get('category'))}",
+        f"时间 {format_millis(value.get('timestamp'))}",
+    ]
+    note = value.get("note")
+    if note:
+        lines.append(f"备注 {truncate_text(str(note), 80)}")
+    return "<br>".join(escape(line) for line in lines)
+
+
+def format_training_label(label: str) -> str:
+    """格式化训练样本反馈标签。
+
+    参数：
+        label: 样本反馈标签。
+
+    返回：
+        str: 带样式的标签 HTML。
+    """
+
+    normalized = label.strip().upper()
+    positive_labels = {"AUTO_LEDGER_UNREVIEWED", "USER_CONFIRMED_POSITIVE", "USER_CONFIRMED_EDITED", "USER_EDITED_LEDGER"}
+    negative_labels = {"FILTERED_UNREVIEWED", "USER_DISMISSED_NEGATIVE", "USER_MARKED_FALSE_POSITIVE", "USER_DELETED_LEDGER"}
+    css_class = "label-pending"
+    if normalized in positive_labels:
+        css_class = "label-positive"
+    if normalized in negative_labels:
+        css_class = "label-negative"
+    return f'<span class="badge {css_class}">{escape(training_label_text(normalized))}</span>'
+
+
+def training_label_text(label: str) -> str:
+    """把样本标签转换为中文。
+
+    参数：
+        label: 样本反馈标签。
+
+    返回：
+        str: 中文展示文案。
+    """
+
+    label_map = {
+        "": "全部",
+        "AUTO_LEDGER_UNREVIEWED": "自动入账",
+        "PENDING_AWAITING_USER": "待用户确认",
+        "FILTERED_UNREVIEWED": "已过滤",
+        "DUPLICATE_AWAITING_USER": "重复待确认",
+        "RAW_NOTIFICATION_UNREVIEWED": "原文样本",
+        "USER_CONFIRMED_POSITIVE": "用户确认",
+        "USER_CONFIRMED_EDITED": "用户修改确认",
+        "USER_DISMISSED_NEGATIVE": "用户忽略",
+        "USER_MARKED_FALSE_POSITIVE": "用户标误识别",
+        "USER_EDITED_LEDGER": "账本被编辑",
+        "USER_DELETED_LEDGER": "账本被删除",
+    }
+    return label_map.get(label, label or "-")
+
+
+def format_changed_fields(value: object) -> str:
+    """格式化用户纠错字段。
+
+    参数：
+        value: changedFields 数组。
+
+    返回：
+        str: 逗号分隔字段列表。
+    """
+
+    if not isinstance(value, list) or not value:
+        return "-"
+    return "，".join(str(item) for item in value)
+
+
+def truncate_text(value: str, max_length: int) -> str:
+    """截断长文本。
+
+    参数：
+        value: 原始文本。
+        max_length: 最大字符数。
+
+    返回：
+        str: 适合表格展示的文本。
+    """
+
+    if len(value) <= max_length:
+        return value
+    return value[:max_length] + "..."
+
+
+def format_optional(value: object) -> str:
+    """格式化可空值。
+
+    参数：
+        value: 任意待展示值。
+
+    返回：
+        str: 空值返回短横线。
+    """
+
+    if value is None or value == "":
+        return "-"
+    return str(value)
+
+
+def render_payment_order_action(order: dict[str, object]) -> str:
+    """渲染订单操作按钮。
+
+    参数：
+        order: 单个支付订单摘要。
+
+    返回：
+        str: 可放进表格单元格的 HTML。
+    """
+
+    if not order.get("canConfirmPaid"):
+        return '<span class="muted">-</span>'
+    order_id = str(order.get("orderId", ""))
+    # 当前阶段还没有微信支付回调，管理员确认收到款后点击该按钮自动开通会员。
+    return f"""
+    <form class="inline-form" method="post" action="/admin/orders/mark-paid">
+      <input type="hidden" name="order_id" value="{escape(order_id)}">
+      <button type="submit">确认收款并开通</button>
+    </form>
+    """
+
+
+def render_payment_state_options(selected_state: str) -> str:
+    """渲染订单状态筛选下拉选项。
+
+    参数：
+        selected_state: 当前选中的订单状态。
+
+    返回：
+        str: `<option>` HTML 文本。
+    """
+
+    normalized = selected_state.strip().upper()
+    options = [
+        ("", "全部"),
+        ("CREATED", "待支付"),
+        ("PAYING", "支付中"),
+        ("PAID", "已支付"),
+        ("EXPIRED", "已过期"),
+        ("CANCELLED", "已取消"),
+        ("FAILED", "失败"),
+    ]
+    return "\n".join(
+        f'<option value="{escape(value)}"{" selected" if value == normalized else ""}>{escape(label)}</option>'
+        for value, label in options
+    )
+
+
+def format_payment_state(state: str) -> str:
+    """格式化订单状态。
+
+    参数：
+        state: 订单状态枚举。
+
+    返回：
+        str: 带状态样式的 HTML。
+    """
+
+    label_map = {
+        "CREATED": "待支付",
+        "PAYING": "支付中",
+        "PAID": "已支付",
+        "CANCELLED": "已取消",
+        "EXPIRED": "已过期",
+        "FAILED": "失败",
+    }
+    normalized = state.strip().upper()
+    css_class = f"state-{normalized.lower()}"
+    return f'<span class="badge {escape(css_class)}">{escape(label_map.get(normalized, normalized or "-"))}</span>'
+
+
+def format_amount_cents(value: object) -> str:
+    """格式化订单金额。
+
+    参数：
+        value: 金额，单位分。
+
+    返回：
+        str: 人民币展示文本。
+    """
+
+    if value is None:
+        return "-"
+    return f"￥{int(value) / 100:.2f}"
 
 
 def render_training_job_row(job: dict[str, object]) -> str:

@@ -1,6 +1,7 @@
 package com.autobook.cn.core.data.pipeline
 
 import com.autobook.cn.core.data.LedgerRepository
+import com.autobook.cn.core.data.MembershipRepository
 import com.autobook.cn.core.data.ModelRouter
 import com.autobook.cn.core.data.ModelTrainingSampleRepository
 import com.autobook.cn.core.data.PendingRepository
@@ -9,6 +10,7 @@ import com.autobook.cn.core.data.mapper.toLedgerEntry
 import com.autobook.cn.core.data.mapper.toPendingEntry
 import com.autobook.cn.core.model.ConfidenceLevel
 import com.autobook.cn.core.model.HIGH_CONFIDENCE_THRESHOLD
+import com.autobook.cn.core.model.MembershipStatus
 import com.autobook.cn.core.model.NotificationEvent
 import com.autobook.cn.core.model.NotificationProcessOutcome
 import com.autobook.cn.core.model.NotificationProcessStatus
@@ -24,6 +26,7 @@ class TransactionProcessingPipeline @Inject constructor(
     private val ledgerRepository: LedgerRepository,
     private val pendingRepository: PendingRepository,
     private val settingsRepository: SettingsRepository,
+    private val membershipRepository: MembershipRepository,
     private val modelTrainingSampleRepository: ModelTrainingSampleRepository,
 ) {
     /**
@@ -45,6 +48,7 @@ class TransactionProcessingPipeline @Inject constructor(
             is OperationResult.Success -> {
                 val candidate = candidateResult.data
                 val settings = settingsRepository.settings.first()
+                val membership = membershipRepository.membershipStatus.first()
                 // 低置信度说明当前通知更像“非交易消息”或“结构信息严重不足”，直接过滤，不再打扰用户做待确认。
                 if (candidate.confidence.level == ConfidenceLevel.LOW) {
                     recordTrainingSampleSafely(
@@ -94,9 +98,43 @@ class TransactionProcessingPipeline @Inject constructor(
                     )
                 }
 
-                val shouldAutoLedger = settings.autoAccountingEnabled &&
-                    candidate.confidence.score >= HIGH_CONFIDENCE_THRESHOLD
+                val autoLedgerGate = resolveAutoLedgerGate(
+                    settingsAutoAccountingEnabled = settings.autoAccountingEnabled,
+                    membership = membership,
+                )
+                val isHighConfidenceCandidate = candidate.confidence.score >= HIGH_CONFIDENCE_THRESHOLD
+                val shouldAutoLedger = isHighConfidenceCandidate && autoLedgerGate.allowed
                 if (shouldAutoLedger) {
+                    if (autoLedgerGate.shouldCountTrialSuccess) {
+                        when (val trialResult = membershipRepository.recordAutoLedgerTrialSuccess()) {
+                            is OperationResult.Success -> {
+                                // 第 10 次免费自动入账会把剩余额度扣到 0，立即关闭开关，界面与后台行为保持一致。
+                                if (!trialResult.data.isMember && trialResult.data.autoLedgerTrialRemaining <= 0) {
+                                    settingsRepository.setAutoAccountingEnabled(false)
+                                }
+                            }
+                            is OperationResult.RetryableFailure -> {
+                                return routeCandidateToPending(
+                                    notificationId = notificationId,
+                                    event = event,
+                                    candidate = candidate,
+                                    reason = trialResult.message,
+                                )
+                            }
+                            is OperationResult.TerminalFailure -> {
+                                if (trialResult.code == AUTO_LEDGER_TRIAL_EXHAUSTED_CODE) {
+                                    // 服务端确认体验耗尽后立即关闭本地开关，下一条通知不会继续尝试自动入账。
+                                    settingsRepository.setAutoAccountingEnabled(false)
+                                }
+                                return routeCandidateToPending(
+                                    notificationId = notificationId,
+                                    event = event,
+                                    candidate = candidate,
+                                    reason = trialResult.message,
+                                )
+                            }
+                        }
+                    }
                     val ledgerEntryId = ledgerRepository.add(candidate.toLedgerEntry(notificationId = notificationId))
                     recordTrainingSampleSafely(
                         notificationId = notificationId,
@@ -116,7 +154,11 @@ class TransactionProcessingPipeline @Inject constructor(
                         ),
                     )
                 } else {
-                    val reason = "置信度不足：${candidate.confidenceReason}"
+                    val reason = if (isHighConfidenceCandidate) {
+                        autoLedgerGate.blockedReason ?: "置信度不足：${candidate.confidenceReason}"
+                    } else {
+                        "置信度不足：${candidate.confidenceReason}"
+                    }
                     val pendingEntryId = pendingRepository.add(
                         candidate.toPendingEntry(
                             reason = reason,
@@ -182,4 +224,109 @@ class TransactionProcessingPipeline @Inject constructor(
             )
         }
     }
+
+    /**
+     * 用途说明：
+     * - 把候选交易写入待确认，并补齐训练样本分流记录。
+     * - 免费自动记账扣次数接口失败时复用这条路径，保证不会在服务器未确认额度时直接落账。
+     *
+     * 参数说明：
+     * - notificationId：来源通知主键。
+     * - event：当前原始通知事件。
+     * - candidate：已经解析出的交易候选。
+     * - reason：进入待确认的用户可读原因。
+     */
+    private suspend fun routeCandidateToPending(
+        notificationId: Long,
+        event: NotificationEvent,
+        candidate: TransactionCandidate,
+        reason: String,
+    ): OperationResult<NotificationProcessOutcome> {
+        val pendingEntryId = pendingRepository.add(
+            candidate.toPendingEntry(
+                reason = reason,
+                notificationId = notificationId,
+            ),
+        )
+        recordTrainingSampleSafely(
+            notificationId = notificationId,
+            event = event,
+            candidate = candidate,
+            destination = ProcessDestination.PENDING,
+            status = NotificationProcessStatus.PENDING_REVIEW,
+            pendingEntryId = pendingEntryId,
+        )
+        return OperationResult.Success(
+            NotificationProcessOutcome(
+                notificationId = notificationId,
+                destination = ProcessDestination.PENDING,
+                status = NotificationProcessStatus.PENDING_REVIEW,
+                screenshotRef = candidate.screenshotRef,
+                message = reason,
+            ),
+        )
+    }
 }
+
+/**
+ * 自动入账门禁结果。
+ *
+ * 参数说明：
+ * - allowed：当前高置信候选是否允许直接自动入账。
+ * - blockedReason：不允许直接入账时写入待确认的解释。
+ * - shouldCountTrialSuccess：本次成功自动入账后是否需要扣减免费体验次数。
+ */
+private data class AutoLedgerGate(
+    val allowed: Boolean,
+    val blockedReason: String?,
+    val shouldCountTrialSuccess: Boolean,
+)
+
+/**
+ * 解析高置信自动入账权益门槛。
+ *
+ * 参数说明：
+ * - settingsAutoAccountingEnabled：用户是否打开自动记账开关。
+ * - membership：服务器会员状态快照。
+ */
+private fun resolveAutoLedgerGate(
+    settingsAutoAccountingEnabled: Boolean,
+    membership: MembershipStatus,
+): AutoLedgerGate {
+    if (!settingsAutoAccountingEnabled) {
+        return AutoLedgerGate(
+            allowed = false,
+            blockedReason = "自动记账已关闭，需要人工确认",
+            shouldCountTrialSuccess = false,
+        )
+    }
+    if (membership.isMember) {
+        return AutoLedgerGate(
+            allowed = true,
+            blockedReason = null,
+            shouldCountTrialSuccess = false,
+        )
+    }
+    if (!membership.hasLoggedInAccount) {
+        return AutoLedgerGate(
+            allowed = false,
+            blockedReason = "自动入账需要先登录邮箱账号，已转入待确认",
+            shouldCountTrialSuccess = false,
+        )
+    }
+    if (membership.autoLedgerTrialRemaining <= 0) {
+        return AutoLedgerGate(
+            allowed = false,
+            blockedReason = "免费自动入账体验已用完，开通会员后可继续自动入账",
+            shouldCountTrialSuccess = false,
+        )
+    }
+    return AutoLedgerGate(
+        allowed = true,
+        blockedReason = null,
+        shouldCountTrialSuccess = true,
+    )
+}
+
+/** 用途说明：服务端表示免费自动记账体验已经耗尽的稳定错误码。 */
+private const val AUTO_LEDGER_TRIAL_EXHAUSTED_CODE = "AUTO_LEDGER_TRIAL_EXHAUSTED"

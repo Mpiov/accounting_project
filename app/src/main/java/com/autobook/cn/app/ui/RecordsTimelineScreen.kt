@@ -1,6 +1,5 @@
 package com.autobook.cn.app.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -34,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.autobook.cn.app.viewmodel.RecordTimelineItemUiModel
+import com.autobook.cn.core.model.MoneyDirection
 
 /**
  * 用途说明：
@@ -151,9 +150,7 @@ private fun TimelineEntryCard(
     onClick: () -> Unit,
 ) {
     val connectorColor = autobookTimelineConnectorColor()
-    val dotOuterColor = MaterialTheme.colorScheme.primaryContainer
-    val dotInnerColor = MaterialTheme.colorScheme.primary
-    val nodeCoverColor = MaterialTheme.colorScheme.surface
+    val itemDirection = if (item.isIncome) MoneyDirection.INCOME else MoneyDirection.EXPENSE
     val timelineModifier = if (showTopConnector || showBottomConnector) {
         Modifier
             .fillMaxWidth()
@@ -183,7 +180,7 @@ private fun TimelineEntryCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(recordTimelineDateHeaderHeight)
-                        .padding(start = 34.dp),
+                        .padding(start = 50.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     Text(
@@ -204,31 +201,16 @@ private fun TimelineEntryCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .width(22.dp)
+                        .width(40.dp)
                         .fillMaxHeight()
                         .padding(vertical = 4.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Canvas(modifier = Modifier.size(22.dp)) {
-                        val center = Offset(size.width / 2f, size.height / 2f)
-
-                        // 节点只覆盖长链并提供视觉锚点，避免每条记录独立画线造成断点。
-                        drawCircle(
-                            color = nodeCoverColor,
-                            radius = 10.dp.toPx(),
-                            center = center,
-                        )
-                        drawCircle(
-                            color = dotOuterColor,
-                            radius = 8.dp.toPx(),
-                            center = center,
-                        )
-                        drawCircle(
-                            color = dotInnerColor,
-                            radius = 3.4.dp.toPx(),
-                            center = center,
-                        )
-                    }
+                    // 详细记录页复用全局分类图标节点，让它和总览页最近记录保持同一套视觉语言。
+                    LedgerCategoryIconNode(
+                        category = item.category,
+                        direction = itemDirection,
+                    )
                 }
                 Card(
                     modifier = Modifier
@@ -298,9 +280,9 @@ private fun TimelineEntryCard(
  * 详细记录时间线轨道的横向中心。
  *
  * 用途说明：
- * - 节点列与首页最近记录一致固定为 22dp，因此长链横向中心保持 11dp。
+ * - 节点列与首页最近记录一致固定为 40dp，因此长链横向中心保持 20dp。
  */
-private val recordTimelineRailCenterX = 11.dp
+private val recordTimelineRailCenterX = 20.dp
 
 /**
  * 详细记录日期标题区高度。

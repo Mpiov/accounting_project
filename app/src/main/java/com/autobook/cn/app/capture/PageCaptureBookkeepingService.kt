@@ -20,6 +20,7 @@ import com.autobook.cn.core.model.HIGH_CONFIDENCE_THRESHOLD
 import com.autobook.cn.core.model.ImageImportAnalysisPath
 import com.autobook.cn.core.model.ImageImportCandidate
 import com.autobook.cn.core.model.LedgerEntry
+import com.autobook.cn.core.model.MembershipStatus
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.OperationResult
 import com.autobook.cn.core.model.PendingEntry
@@ -193,14 +194,62 @@ class PageCaptureBookkeepingService : Service() {
         }
 
         val settings = entryPoint.settingsRepository().settings.first()
+        var membership = entryPoint.membershipRepository().membershipStatus.first()
         var autoLedgerCount = 0
         var pendingCount = 0
 
-        validCandidates.forEach { candidate ->
-            val shouldAutoLedger = settings.autoAccountingEnabled &&
-                candidate.confidence.score >= HIGH_CONFIDENCE_THRESHOLD &&
+        for (candidate in validCandidates) {
+            val autoLedgerGate = resolveCaptureAutoLedgerGate(
+                settingsAutoAccountingEnabled = settings.autoAccountingEnabled,
+                membership = membership,
+            )
+            val isHighConfidenceCandidate = candidate.confidence.score >= HIGH_CONFIDENCE_THRESHOLD &&
                 candidate.confidence.level == ConfidenceLevel.HIGH
+            val shouldAutoLedger = isHighConfidenceCandidate && autoLedgerGate.allowed
             if (shouldAutoLedger) {
+                if (autoLedgerGate.shouldCountTrialSuccess) {
+                    when (val trialResult = entryPoint.membershipRepository().recordAutoLedgerTrialSuccess()) {
+                        is OperationResult.Success -> {
+                            membership = trialResult.data
+                            // 截图记账同样消耗自动入账体验，第 10 次成功后立即关闭总开关。
+                            if (!trialResult.data.isMember && trialResult.data.autoLedgerTrialRemaining <= 0) {
+                                entryPoint.settingsRepository().setAutoAccountingEnabled(false)
+                            }
+                        }
+                        is OperationResult.RetryableFailure -> {
+                            entryPoint.pendingRepository().add(
+                                candidate.toPendingEntry(
+                                    analysisPath = suggestion.tracePath,
+                                    reason = buildPendingReason(
+                                        suggestionMessage = suggestion.message,
+                                        autoAccountingEnabled = settings.autoAccountingEnabled,
+                                        autoLedgerBlockedReason = trialResult.message,
+                                    ),
+                                ),
+                            )
+                            pendingCount += 1
+                            continue
+                        }
+                        is OperationResult.TerminalFailure -> {
+                            if (trialResult.code == AUTO_LEDGER_TRIAL_EXHAUSTED_CODE) {
+                                // 服务端确认免费体验耗尽后关闭本地总开关，避免后续截图继续尝试自动落账。
+                                entryPoint.settingsRepository().setAutoAccountingEnabled(false)
+                            }
+                            entryPoint.pendingRepository().add(
+                                candidate.toPendingEntry(
+                                    analysisPath = suggestion.tracePath,
+                                    reason = buildPendingReason(
+                                        suggestionMessage = suggestion.message,
+                                        autoAccountingEnabled = settings.autoAccountingEnabled,
+                                        autoLedgerBlockedReason = trialResult.message,
+                                    ),
+                                ),
+                            )
+                            pendingCount += 1
+                            continue
+                        }
+                    }
+                }
                 entryPoint.ledgerRepository().add(candidate.toLedgerEntry(suggestion.tracePath))
                 autoLedgerCount += 1
             } else if (candidate.confidence.level != ConfidenceLevel.LOW) {
@@ -210,6 +259,9 @@ class PageCaptureBookkeepingService : Service() {
                         reason = buildPendingReason(
                             suggestionMessage = suggestion.message,
                             autoAccountingEnabled = settings.autoAccountingEnabled,
+                            autoLedgerBlockedReason = autoLedgerGate.blockedReason.takeIf {
+                                isHighConfidenceCandidate
+                            },
                         ),
                     ),
                 )
@@ -496,11 +548,73 @@ private fun ImageImportCandidate.toPendingEntry(
 private fun buildPendingReason(
     suggestionMessage: String,
     autoAccountingEnabled: Boolean,
+    autoLedgerBlockedReason: String? = null,
 ): String {
     return when {
         !autoAccountingEnabled -> "自动记账已关闭；$suggestionMessage"
+        !autoLedgerBlockedReason.isNullOrBlank() -> "$autoLedgerBlockedReason；$suggestionMessage"
         else -> "置信度不足，需要人工确认；$suggestionMessage"
     }
+}
+
+/**
+ * 截图自动入账门禁结果。
+ *
+ * 参数解释：
+ * - `allowed`：当前高置信截图候选是否允许直接入账。
+ * - `blockedReason`：不能直接入账时转入待确认的解释。
+ * - `shouldCountTrialSuccess`：本次成功自动入账后是否需要计入免费体验次数。
+ */
+private data class CaptureAutoLedgerGate(
+    val allowed: Boolean,
+    val blockedReason: String?,
+    val shouldCountTrialSuccess: Boolean,
+)
+
+/**
+ * 解析截图候选的自动入账权益门槛。
+ *
+ * 参数解释：
+ * - `settingsAutoAccountingEnabled`：用户是否打开自动记账开关。
+ * - `membership`：服务器会员状态快照。
+ */
+private fun resolveCaptureAutoLedgerGate(
+    settingsAutoAccountingEnabled: Boolean,
+    membership: MembershipStatus,
+): CaptureAutoLedgerGate {
+    if (!settingsAutoAccountingEnabled) {
+        return CaptureAutoLedgerGate(
+            allowed = false,
+            blockedReason = "自动记账已关闭",
+            shouldCountTrialSuccess = false,
+        )
+    }
+    if (membership.isMember) {
+        return CaptureAutoLedgerGate(
+            allowed = true,
+            blockedReason = null,
+            shouldCountTrialSuccess = false,
+        )
+    }
+    if (!membership.hasLoggedInAccount) {
+        return CaptureAutoLedgerGate(
+            allowed = false,
+            blockedReason = "自动入账需要先登录邮箱账号",
+            shouldCountTrialSuccess = false,
+        )
+    }
+    if (membership.autoLedgerTrialRemaining <= 0) {
+        return CaptureAutoLedgerGate(
+            allowed = false,
+            blockedReason = "免费自动入账体验已用完，开通会员后可继续自动入账",
+            shouldCountTrialSuccess = false,
+        )
+    }
+    return CaptureAutoLedgerGate(
+        allowed = true,
+        blockedReason = null,
+        shouldCountTrialSuccess = true,
+    )
 }
 
 /**
@@ -611,3 +725,6 @@ private fun ImageImportAnalysisPath.toStatusLabel(): String {
         ImageImportAnalysisPath.MANUAL_CONFIRMATION_REQUIRED -> "手动确认草稿"
     }
 }
+
+/** 用途说明：服务端表示免费自动记账体验已经耗尽的稳定错误码。 */
+private const val AUTO_LEDGER_TRIAL_EXHAUSTED_CODE = "AUTO_LEDGER_TRIAL_EXHAUSTED"

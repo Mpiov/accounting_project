@@ -30,7 +30,6 @@ import com.autobook.cn.core.database.dao.LedgerEntryDao
 import com.autobook.cn.core.database.dao.NotificationEventDao
 import com.autobook.cn.core.database.dao.PendingEntryDao
 import com.autobook.cn.core.database.entity.LedgerStatsEntity
-import com.autobook.cn.core.database.entity.PendingStatsEntity
 import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.AuthSession
 import com.autobook.cn.core.model.AuthState
@@ -57,6 +56,7 @@ import com.autobook.cn.core.network.BackendLoginRequest
 import com.autobook.cn.core.network.BackendMembershipOrderResponse
 import com.autobook.cn.core.network.BackendMembershipOrderStateResponse
 import com.autobook.cn.core.network.BackendMembershipStatusResponse
+import com.autobook.cn.core.network.BackendRefreshTokenRequest
 import com.autobook.cn.core.network.BackendSmsCodeRequest
 import com.autobook.cn.core.network.BackendTrainingSampleParser
 import com.autobook.cn.core.network.BackendTrainingSamplesRequest
@@ -73,6 +73,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private val Context.settingsDataStore by preferencesDataStore(name = "autobook_settings")
 private val Context.authDataStore by preferencesDataStore(name = "autobook_auth")
@@ -497,9 +499,7 @@ class PendingRepositoryImpl @Inject constructor(
      * - delta：有效待确认数量变化量，新增为 `+1`，确认/忽略/误识别为 `-1`。
      */
     private suspend fun updatePendingStats(delta: Int) {
-        val current = pendingEntryDao.getStats()
-        val nextCount = ((current?.activeCount ?: 0) + delta).coerceAtLeast(0)
-        pendingEntryDao.upsertStats(PendingStatsEntity(activeCount = nextCount))
+        pendingEntryDao.applyActiveCountDelta(delta = delta)
     }
 }
 
@@ -539,6 +539,9 @@ class AuthRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val backendApi: AutobookBackendApi,
 ) : AuthRepository {
+    /** 用途说明：串行化 refresh token 轮换，避免多个并发请求同时刷新导致刷新令牌互相撤销。 */
+    private val refreshMutex = Mutex()
+
     /**
      * 用途说明：
      * - DataStore 键定义集中收口，后续换加密存储时只需要替换本仓储。
@@ -615,23 +618,71 @@ class AuthRepositoryImpl @Inject constructor(
                     phone = data.phone,
                     accessToken = data.accessToken,
                     refreshToken = data.refreshToken,
+                    accessTokenExpiresAt = data.accessTokenExpiresAt,
+                    refreshTokenExpiresAt = data.refreshTokenExpiresAt,
                     loggedInAt = System.currentTimeMillis(),
                     source = "server",
                 )
-                context.authDataStore.edit { preferences ->
-                    // 登录态只保存服务器返回值，本地不伪造会员或模型权限。
-                    preferences[Keys.userId] = session.userId
-                    preferences[Keys.phone] = session.phone
-                    preferences[Keys.accessToken] = session.accessToken
-                    preferences[Keys.refreshToken] = session.refreshToken
-                    preferences[Keys.accessTokenExpiresAt] = data.accessTokenExpiresAt
-                    preferences[Keys.refreshTokenExpiresAt] = data.refreshTokenExpiresAt
-                    preferences[Keys.loggedInAt] = session.loggedInAt
-                }
+                persistSession(session)
                 OperationResult.Success(session)
             }
             is OperationResult.RetryableFailure -> result
             is OperationResult.TerminalFailure -> result
+        }
+    }
+
+    /**
+     * 用途说明：
+     * - 在业务接口被后端判定 access token 过期后，使用 refresh token 换取新会话。
+     * - 刷新成功后会写回 DataStore，后续所有接口都会使用新 access token。
+     *
+     * 参数说明：
+     * - expiredAccessToken：刚刚失败的 access token，用于判断是否已经被其它协程刷新过。
+     */
+    override suspend fun refreshSession(expiredAccessToken: String?): OperationResult<AuthSession> {
+        return refreshMutex.withLock {
+            val currentSession = buildSessionFromPreferences(context.authDataStore.data.first())
+                ?: return@withLock OperationResult.TerminalFailure(
+                    message = "请先使用邮箱登录/注册",
+                    code = AUTH_TOKEN_EXPIRED_CODE,
+                )
+            if (expiredAccessToken != null && currentSession.accessToken != expiredAccessToken) {
+                // 其它并发请求已经完成刷新，本次直接复用最新会话，避免多刷新一次。
+                return@withLock OperationResult.Success(currentSession)
+            }
+            val now = System.currentTimeMillis()
+            if (currentSession.refreshTokenExpiresAt > 0L && currentSession.refreshTokenExpiresAt <= now) {
+                logout()
+                return@withLock OperationResult.TerminalFailure(
+                    message = "登录已过期，请重新登录",
+                    code = AUTH_TOKEN_EXPIRED_CODE,
+                )
+            }
+            when (
+                val result = callBackend(AUTH_REFRESH_ENDPOINT) {
+                    backendApi.refreshToken(BackendRefreshTokenRequest(refreshToken = currentSession.refreshToken))
+                }
+            ) {
+                is OperationResult.Success -> {
+                    val data = result.data.data
+                    val refreshedSession = currentSession.copy(
+                        accessToken = data.accessToken,
+                        refreshToken = data.refreshToken,
+                        accessTokenExpiresAt = data.accessTokenExpiresAt,
+                        refreshTokenExpiresAt = data.refreshTokenExpiresAt,
+                    )
+                    persistSession(refreshedSession)
+                    OperationResult.Success(refreshedSession)
+                }
+                is OperationResult.RetryableFailure -> result
+                is OperationResult.TerminalFailure -> {
+                    if (result.code == AUTH_TOKEN_EXPIRED_CODE) {
+                        // refresh token 也失效时清除本地会话，避免界面继续展示“已登录”。
+                        logout()
+                    }
+                    result
+                }
+            }
         }
     }
 
@@ -662,8 +713,30 @@ class AuthRepositoryImpl @Inject constructor(
             phone = phone,
             accessToken = accessToken,
             refreshToken = refreshToken,
+            accessTokenExpiresAt = preferences[Keys.accessTokenExpiresAt] ?: 0L,
+            refreshTokenExpiresAt = preferences[Keys.refreshTokenExpiresAt] ?: 0L,
             loggedInAt = preferences[Keys.loggedInAt] ?: 0L,
         )
+    }
+
+    /**
+     * 用途说明：
+     * - 持久化服务端返回的完整会话快照。
+     * - 登录态只保存服务器返回值，本地不伪造会员或模型权限。
+     *
+     * 参数说明：
+     * - session：待保存的最新会话。
+     */
+    private suspend fun persistSession(session: AuthSession) {
+        context.authDataStore.edit { preferences ->
+            preferences[Keys.userId] = session.userId
+            preferences[Keys.phone] = session.phone
+            preferences[Keys.accessToken] = session.accessToken
+            preferences[Keys.refreshToken] = session.refreshToken
+            preferences[Keys.accessTokenExpiresAt] = session.accessTokenExpiresAt
+            preferences[Keys.refreshTokenExpiresAt] = session.refreshTokenExpiresAt
+            preferences[Keys.loggedInAt] = session.loggedInAt
+        }
     }
 }
 
@@ -705,29 +778,36 @@ class MembershipRepositoryImpl @Inject constructor(
      * - 刷新服务器权威会员状态，对齐 `GET /v1/membership/status`。
      */
     override suspend fun refresh(): MembershipStatus {
-        val session = authRepository.authState.first().session
         val currentStatus = when {
-            session == null -> loggedOutMembershipStatus()
+            authRepository.authState.first().session == null -> loggedOutMembershipStatus()
             else -> when (
-                val result = callBackend(MEMBERSHIP_STATUS_ENDPOINT) {
-                    backendApi.membershipStatus(session.authorizationHeader())
+                val result = callAuthenticatedBackend(
+                    endpointLabel = MEMBERSHIP_STATUS_ENDPOINT,
+                    authRepository = authRepository,
+                    loginRequiredMessage = "请先使用邮箱登录/注册，再刷新会员状态",
+                ) { authorization ->
+                    backendApi.membershipStatus(authorization)
                 }
             ) {
-                is OperationResult.Success -> result.data.data.toMembershipStatus(
-                    fallbackSession = session,
-                    serverTime = result.data.serverTime,
-                )
+                is OperationResult.Success -> {
+                    val refreshedSession = authRepository.authState.first().session
+                        ?: return loggedOutMembershipStatus()
+                    result.data.data.toMembershipStatus(
+                        fallbackSession = refreshedSession,
+                        serverTime = result.data.serverTime,
+                    )
+                }
                 is OperationResult.RetryableFailure -> MembershipStatus(
-                    userId = session.userId,
-                    phone = session.phone,
+                    userId = authRepository.authState.first().session?.userId,
+                    phone = authRepository.authState.first().session?.phone,
                     serverVerified = false,
                     refreshedAt = System.currentTimeMillis(),
                     source = "server-error",
                     message = result.message,
                 )
                 is OperationResult.TerminalFailure -> MembershipStatus(
-                    userId = session.userId,
-                    phone = session.phone,
+                    userId = authRepository.authState.first().session?.userId,
+                    phone = authRepository.authState.first().session?.phone,
                     serverVerified = false,
                     refreshedAt = System.currentTimeMillis(),
                     source = "server-rejected",
@@ -737,6 +817,43 @@ class MembershipRepositoryImpl @Inject constructor(
         }
         refreshedStatus.value = currentStatus
         return currentStatus
+    }
+
+    /**
+     * 用途说明：
+     * - 免费用户自动记账真正落账前，由服务器原子扣减一次体验额度。
+     * - 服务端返回额度不足时，本地不得继续写账本，避免删除 App 或换设备绕过次数限制。
+     */
+    override suspend fun recordAutoLedgerTrialSuccess(): OperationResult<MembershipStatus> {
+        return when (
+            val result = callAuthenticatedBackend(
+                endpointLabel = AUTO_LEDGER_TRIAL_SUCCESS_ENDPOINT,
+                authRepository = authRepository,
+                loginRequiredMessage = "自动入账需要先登录邮箱账号，已转入待确认",
+            ) { authorization ->
+                backendApi.recordAutoLedgerTrialSuccess(authorization)
+            }
+        ) {
+            is OperationResult.Success -> {
+                val refreshedSession = authRepository.authState.first().session
+                    ?: return OperationResult.TerminalFailure("登录已过期，请重新登录")
+                val status = result.data.data.toMembershipStatus(
+                    fallbackSession = refreshedSession,
+                    serverTime = result.data.serverTime,
+                )
+                // 立即更新会员状态流，设置页和自动记账开关会使用服务端最新剩余额度。
+                refreshedStatus.value = status
+                OperationResult.Success(status)
+            }
+            is OperationResult.RetryableFailure -> result
+            is OperationResult.TerminalFailure -> {
+                if (result.code == AUTO_LEDGER_TRIAL_EXHAUSTED_CODE) {
+                    // 额度耗尽是服务端权威状态，失败后再拉一次会员状态，让设置页剩余次数马上归零。
+                    refresh()
+                }
+                result
+            }
+        }
     }
 
     /**
@@ -766,12 +883,14 @@ class PaymentRepositoryImpl @Inject constructor(
      * - plan：用户选择的会员套餐。
      */
     override suspend fun createMembershipOrder(plan: MembershipPlan): OperationResult<MembershipPaymentOrder> {
-        val session = authRepository.authState.first().session
-            ?: return OperationResult.TerminalFailure("请先使用邮箱登录/注册，再开通会员")
         return when (
-            val result = callBackend(MEMBERSHIP_ORDER_CREATE_ENDPOINT) {
+            val result = callAuthenticatedBackend(
+                endpointLabel = MEMBERSHIP_ORDER_CREATE_ENDPOINT,
+                authRepository = authRepository,
+                loginRequiredMessage = "请先使用邮箱登录/注册，再开通会员",
+            ) { authorization ->
                 backendApi.createMembershipOrder(
-                    authorization = session.authorizationHeader(),
+                    authorization = authorization,
                     body = BackendCreateMembershipOrderRequest(plan = plan.name),
                 )
             }
@@ -790,12 +909,14 @@ class PaymentRepositoryImpl @Inject constructor(
      * - orderId：服务器业务订单号。
      */
     override suspend fun queryPaymentState(orderId: String): OperationResult<MembershipPaymentState> {
-        val session = authRepository.authState.first().session
-            ?: return OperationResult.TerminalFailure("请先使用邮箱登录/注册，再查询会员订单")
         return when (
-            val result = callBackend(MEMBERSHIP_ORDER_QUERY_ENDPOINT) {
+            val result = callAuthenticatedBackend(
+                endpointLabel = MEMBERSHIP_ORDER_QUERY_ENDPOINT,
+                authRepository = authRepository,
+                loginRequiredMessage = "请先使用邮箱登录/注册，再查询会员订单",
+            ) { authorization ->
                 backendApi.queryMembershipOrder(
-                    authorization = session.authorizationHeader(),
+                    authorization = authorization,
                     orderId = orderId,
                 )
             }
@@ -814,9 +935,9 @@ class PaymentRepositoryImpl @Inject constructor(
  *
  * 参数说明：
  * - context：应用级上下文，用于生成设备与版本信息。
- * - settingsRepository：读取和写入云端学习开关。
+ * - settingsRepository：读取和写入用户改善计划开关。
  * - authRepository：读取当前邮箱登录会话；内部会话字段名暂沿用 `phone`。
- * - membershipRepository：判断当前用户是否具备会员能力。
+ * - membershipRepository：判断当前用户是否具备会员模型能力。
  * - modelTrainingSampleRepository：导出待上传训练样本。
  * - cloudModelStore：持久化服务器发布的全局模型，并为解析器提供本地可用版本。
  * - backendApi：AutoBook 后端 API。
@@ -840,7 +961,7 @@ class CloudLearningRepositoryImpl @Inject constructor(
         syncSnapshot,
         cloudModelStore.activeModel,
     ) { settings, membership, sync, activeModel ->
-        val effectiveEnabled = settings.cloudLearningEnabled && membership.canUseCloudLearning
+        val effectiveEnabled = membership.canUseMachineLearning
         val usableModel = activeModel?.takeIf { model -> model.isUsableAt() }
         CloudLearningState(
             enabledByUser = settings.cloudLearningEnabled,
@@ -854,8 +975,8 @@ class CloudLearningRepositoryImpl @Inject constructor(
                 else -> sync.modelVersion ?: "local-linear-confidence-v1"
             },
             message = when {
-                effectiveEnabled -> "会员全局云端学习已开启，会上传通知原文贡献全局模型，并拉取服务器最新全局模型。"
-                membership.canUseMachineLearning -> "会员机器学习已开启；云端学习关闭时不上传原文，仍可拉取全局模型。"
+                effectiveEnabled -> "会员机器学习已开启，可拉取服务器最新全局模型；样本上传由用户改善计划单独控制。"
+                membership.canUseMachineLearning -> "会员机器学习已开启，可继续使用服务器全局模型。"
                 !membership.serverVerified -> membership.message
                 else -> "免费版仅使用普通规则算法，开通会员后可启用机器学习。"
             },
@@ -864,7 +985,7 @@ class CloudLearningRepositoryImpl @Inject constructor(
 
     /**
      * 用途说明：
-     * - 写入会员全局云端学习开关，是否真正生效仍由会员状态共同决定。
+     * - 写入历史云端学习开关，保留给旧版本或调试入口使用。
      *
      * 参数说明：
      * - enabled：用户选择的开关状态。
@@ -876,15 +997,12 @@ class CloudLearningRepositoryImpl @Inject constructor(
     /**
      * 用途说明：
      * - 上传训练样本，对齐 `POST /v1/cloud-learning/training-samples`。
-     * - 请求体会包含通知原文，因此只有服务器确认会员且云学习开关生效时才发送到全局样本池。
+     * - 请求体会包含通知原文，因此只在用户登录且“用户改善计划”开启时发送具备有效反馈标签的样本。
      */
     override suspend fun uploadTrainingSamples(): OperationResult<Unit> {
-        val session = authRepository.authState.first().session
-            ?: return OperationResult.TerminalFailure("请先使用邮箱登录/注册，再上传训练样本")
-        val membership = membershipRepository.refresh()
         val settings = settingsRepository.settings.first()
-        if (!membership.canUseCloudLearning || !settings.cloudLearningEnabled) {
-            return OperationResult.TerminalFailure("当前未启用会员全局云端学习，不会上传通知原文")
+        if (!settings.userImprovementPlanEnabled) {
+            return OperationResult.TerminalFailure("用户改善计划已关闭，不会上传通知原文")
         }
 
         val uploadBatch = modelTrainingSampleRepository.loadUploadBatch(TRAINING_SAMPLE_UPLOAD_BATCH_LIMIT)
@@ -901,9 +1019,13 @@ class CloudLearningRepositoryImpl @Inject constructor(
             attemptedAt = attemptedAt,
         )
         return when (
-            val result = callBackend(TRAINING_SAMPLE_UPLOAD_ENDPOINT) {
+            val result = callAuthenticatedBackend(
+                endpointLabel = TRAINING_SAMPLE_UPLOAD_ENDPOINT,
+                authRepository = authRepository,
+                loginRequiredMessage = "请先使用邮箱登录/注册，再上传训练样本",
+            ) { authorization ->
                 backendApi.uploadTrainingSamples(
-                    authorization = session.authorizationHeader(),
+                    authorization = authorization,
                     body = BackendTrainingSamplesRequest(
                         clientBatchId = "android-${UUID.randomUUID()}",
                         deviceId = context.resolveDeviceId(),
@@ -939,17 +1061,19 @@ class CloudLearningRepositoryImpl @Inject constructor(
      * - 成功拿到新模型后写入本地模型仓库，会员解析器会在下一次通知解析时优先读取服务器权重。
      */
     override suspend fun pullCloudModel(): OperationResult<Unit> {
-        val session = authRepository.authState.first().session
-            ?: return OperationResult.TerminalFailure("请先使用邮箱登录/注册，再拉取全局模型")
         val membership = membershipRepository.refresh()
         if (!membership.canUseMachineLearning) {
             return OperationResult.TerminalFailure("当前账号不是会员或未开启机器学习，继续使用普通规则算法")
         }
         val currentModelVersion = cloudModelStore.getActiveModel()?.modelVersion ?: syncSnapshot.value.modelVersion
         return when (
-            val result = callBackend(GLOBAL_MODEL_ENDPOINT) {
+            val result = callAuthenticatedBackend(
+                endpointLabel = GLOBAL_MODEL_ENDPOINT,
+                authRepository = authRepository,
+                loginRequiredMessage = "请先使用邮箱登录/注册，再拉取全局模型",
+            ) { authorization ->
                 backendApi.pullGlobalModel(
-                    authorization = session.authorizationHeader(),
+                    authorization = authorization,
                     currentVersion = currentModelVersion,
                 )
             }
@@ -1036,6 +1160,9 @@ private fun BackendMembershipStatusResponse.toMembershipStatus(
         refreshedAt = System.currentTimeMillis(),
         modelConfidenceEnabled = modelConfidenceEnabled,
         cloudLearningEnabled = cloudLearningEnabled,
+        autoLedgerTrialLimit = autoLedgerTrialLimit.coerceAtLeast(0),
+        autoLedgerTrialUsed = autoLedgerTrialUsed.coerceAtLeast(0),
+        autoLedgerTrialRemaining = autoLedgerTrialRemaining.coerceAtLeast(0),
         source = "server",
         message = if (tierValue == MembershipTier.MEMBER && serverVerified) {
             "会员状态已由服务器确认，机器学习能力按服务端开关启用。"
@@ -1053,7 +1180,8 @@ private fun BackendMembershipOrderResponse.toDomainOrder(): MembershipPaymentOrd
     val params = wechatAppPayParams
     return MembershipPaymentOrder(
         orderId = orderId,
-        plan = runCatching { MembershipPlan.valueOf(plan) }.getOrDefault(MembershipPlan.MONTHLY),
+        // 当前正式开放的是限时年卡，服务端异常返回未知套餐时也按年卡兜底展示。
+        plan = runCatching { MembershipPlan.valueOf(plan) }.getOrDefault(MembershipPlan.YEARLY),
         amountCents = amountCents,
         appId = params?.appId.orEmpty(),
         partnerId = params?.partnerId.orEmpty(),
@@ -1062,6 +1190,7 @@ private fun BackendMembershipOrderResponse.toDomainOrder(): MembershipPaymentOrd
         nonceStr = params?.nonceStr.orEmpty(),
         timestamp = params?.timestamp.orEmpty(),
         sign = params?.sign.orEmpty(),
+        expiresAt = expiresAt,
     )
 }
 
@@ -1114,8 +1243,17 @@ private const val AUTH_SMS_CODE_ENDPOINT = "POST /v1/auth/sms-code"
 /** 用途说明：邮箱验证码登录或注册的后端接口路径。 */
 private const val AUTH_LOGIN_ENDPOINT = "POST /v1/auth/login"
 
+/** 用途说明：使用 refresh token 刷新访问令牌的后端接口路径。 */
+private const val AUTH_REFRESH_ENDPOINT = "POST /v1/auth/refresh"
+
 /** 用途说明：查询服务器权威会员状态的后端接口路径。 */
 private const val MEMBERSHIP_STATUS_ENDPOINT = "GET /v1/membership/status"
+
+/** 用途说明：扣减免费自动记账体验次数的后端接口路径。 */
+private const val AUTO_LEDGER_TRIAL_SUCCESS_ENDPOINT = "POST /v1/auto-ledger/trial-success"
+
+/** 用途说明：服务端表示免费自动记账体验已经耗尽的稳定错误码。 */
+private const val AUTO_LEDGER_TRIAL_EXHAUSTED_CODE = "AUTO_LEDGER_TRIAL_EXHAUSTED"
 
 /** 用途说明：创建会员支付订单的后端接口路径。 */
 private const val MEMBERSHIP_ORDER_CREATE_ENDPOINT = "POST /v1/payments/membership-orders"
@@ -1123,7 +1261,7 @@ private const val MEMBERSHIP_ORDER_CREATE_ENDPOINT = "POST /v1/payments/membersh
 /** 用途说明：查询会员支付订单的后端接口路径。 */
 private const val MEMBERSHIP_ORDER_QUERY_ENDPOINT = "GET /v1/payments/membership-orders/{orderId}"
 
-/** 用途说明：上传会员全局云端学习训练样本到全局样本池的后端接口路径。 */
+/** 用途说明：上传用户改善计划训练样本到全局样本池的后端接口路径。 */
 private const val TRAINING_SAMPLE_UPLOAD_ENDPOINT = "POST /v1/cloud-learning/training-samples"
 
 /** 用途说明：单次上传训练样本的最大条数，和后端请求体上限保持一致。 */
@@ -1155,6 +1293,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val autoAccountingEnabled = booleanPreferencesKey("auto_accounting_enabled")
         val cloudAnalysisEnabled = booleanPreferencesKey("cloud_analysis_enabled")
         val cloudLearningEnabled = booleanPreferencesKey("cloud_learning_enabled")
+        val userImprovementPlanEnabled = booleanPreferencesKey("user_improvement_plan_enabled")
         val captureEnabled = booleanPreferencesKey("capture_enabled")
         val notificationRetentionDays = intPreferencesKey("notification_retention_days")
         val screenshotRetentionDays = intPreferencesKey("screenshot_retention_days")
@@ -1168,6 +1307,7 @@ class SettingsRepositoryImpl @Inject constructor(
             autoAccountingEnabled = preferences[Keys.autoAccountingEnabled] ?: true,
             cloudAnalysisEnabled = preferences[Keys.cloudAnalysisEnabled] ?: true,
             cloudLearningEnabled = preferences[Keys.cloudLearningEnabled] ?: true,
+            userImprovementPlanEnabled = preferences[Keys.userImprovementPlanEnabled] ?: true,
             captureEnabled = preferences[Keys.captureEnabled] ?: false,
             notificationRetentionDays = preferences[Keys.notificationRetentionDays] ?: 30,
             screenshotRetentionDays = preferences[Keys.screenshotRetentionDays] ?: 7,
@@ -1190,6 +1330,17 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setCloudLearningEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { it[Keys.cloudLearningEnabled] = enabled }
+    }
+
+    /**
+     * 用途说明：
+     * - 持久化用户改善计划开关。
+     *
+     * 参数说明：
+     * - enabled：是否允许后台定时上传通知原文训练样本。
+     */
+    override suspend fun setUserImprovementPlanEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.userImprovementPlanEnabled] = enabled }
     }
 
     override suspend fun setCaptureEnabled(enabled: Boolean) {
@@ -1252,6 +1403,7 @@ class NotificationIngestorImpl @Inject constructor(
     private val notificationEventDao: NotificationEventDao,
     private val pipeline: TransactionProcessingPipeline,
     private val settingsRepository: SettingsRepository,
+    private val modelTrainingSampleRepository: ModelTrainingSampleRepository,
 ) : NotificationIngestor {
     override suspend fun ingest(event: NotificationEvent): OperationResult<NotificationProcessOutcome> {
         val enriched = event.enrichForProcessing()
@@ -1259,6 +1411,12 @@ class NotificationIngestorImpl @Inject constructor(
         val persisted = enriched.copy(id = id)
         val settings = settingsRepository.settings.first()
         if (!settings.autoAccountingEnabled) {
+            recordRawNotificationSafely(
+                notificationId = id,
+                event = persisted,
+                status = NotificationProcessStatus.FILTERED_OUT,
+                reason = "Auto accounting disabled by user settings",
+            )
             return completeSuccessfully(
                 notificationId = id,
                 destination = ProcessDestination.FILTERED,
@@ -1270,6 +1428,12 @@ class NotificationIngestorImpl @Inject constructor(
         }
 
         if (persisted.sourceApp !in settings.enabledSources) {
+            recordRawNotificationSafely(
+                notificationId = id,
+                event = persisted,
+                status = NotificationProcessStatus.FILTERED_OUT,
+                reason = "Source disabled by user settings",
+            )
             return completeSuccessfully(
                 notificationId = id,
                 destination = ProcessDestination.FILTERED,
@@ -1308,6 +1472,13 @@ class NotificationIngestorImpl @Inject constructor(
                     retryCount = persisted.retryCount + 1,
                     screenshotRef = persisted.screenshotRef,
                 )
+                // 临时失败也保存原文样本，但上传批次会过滤掉无训练标签的原文样本。
+                recordRawNotificationSafely(
+                    notificationId = id,
+                    event = persisted,
+                    status = NotificationProcessStatus.FAILED_RETRYABLE,
+                    reason = sanitize(result.message),
+                )
                 result
             }
 
@@ -1319,8 +1490,41 @@ class NotificationIngestorImpl @Inject constructor(
                     retryCount = persisted.retryCount,
                     screenshotRef = persisted.screenshotRef,
                 )
+                recordRawNotificationSafely(
+                    notificationId = id,
+                    event = persisted,
+                    status = NotificationProcessStatus.FAILED_TERMINAL,
+                    reason = sanitize(result.message),
+                )
                 result
             }
+        }
+    }
+
+    /**
+     * 用途说明：
+     * - 记录没有进入交易候选样本的通知原文。
+     * - 这里吞掉样本记录失败，避免训练样本辅助链路影响用户正常记账流程。
+     *
+     * 参数说明：
+     * - notificationId：通知事件本地主键。
+     * - event：已经持久化并补齐来源的通知事件。
+     * - status：通知最终处理状态。
+     * - reason：未形成交易候选的原因。
+     */
+    private suspend fun recordRawNotificationSafely(
+        notificationId: Long,
+        event: NotificationEvent,
+        status: NotificationProcessStatus,
+        reason: String,
+    ) {
+        runCatching {
+            modelTrainingSampleRepository.recordRawNotification(
+                notificationId = notificationId,
+                event = event,
+                status = status,
+                reason = reason,
+            )
         }
     }
 

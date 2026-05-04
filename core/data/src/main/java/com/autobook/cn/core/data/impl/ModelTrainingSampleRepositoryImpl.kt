@@ -24,6 +24,69 @@ import javax.inject.Singleton
 class ModelTrainingSampleRepositoryImpl @Inject constructor(
     private val modelTrainingSampleDao: ModelTrainingSampleDao,
 ) : ModelTrainingSampleRepository {
+    /**
+     * 用途说明：
+     * - 保存一条没有交易候选的原始通知样本。
+     * - 这类样本没有稳定训练标签，只保留在本地，上传批次会过滤掉它。
+     *
+     * 参数说明：
+     * - notificationId：通知事件本地主键。
+     * - event：原始通知事件。
+     * - status：通知最终处理状态。
+     * - reason：未进入交易候选的原因。
+     */
+    override suspend fun recordRawNotification(
+        notificationId: Long,
+        event: NotificationEvent,
+        status: NotificationProcessStatus,
+        reason: String,
+    ) {
+        val now = System.currentTimeMillis()
+        modelTrainingSampleDao.insert(
+            ModelTrainingSampleEntity(
+                notificationId = notificationId,
+                pendingEntryId = null,
+                ledgerEntryId = null,
+                createdAt = now,
+                updatedAt = now,
+                packageName = event.packageName,
+                rawTitle = event.title,
+                rawText = event.text,
+                rawPostedAt = event.postedAt,
+                sourceApp = event.sourceApp.name,
+                modelVersion = RAW_NOTIFICATION_MODEL_VERSION,
+                parsePath = RAW_NOTIFICATION_PARSE_PATH,
+                amount = 0.0,
+                direction = RAW_NOTIFICATION_DIRECTION,
+                channel = event.sourceApp.name,
+                candidateTimestamp = event.postedAt,
+                candidateCategory = "",
+                candidateNote = null,
+                confidenceScore = 0f,
+                confidenceLevel = RAW_NOTIFICATION_CONFIDENCE_LEVEL,
+                confidenceReason = reason,
+                featureSnapshotJson = "{}",
+                routeDestination = ProcessDestination.FILTERED.name,
+                processStatus = status.name,
+                feedbackLabel = FEEDBACK_RAW_NOTIFICATION_UNREVIEWED,
+                feedbackSource = "raw_notification",
+                feedbackAt = null,
+                editedManually = false,
+                feedbackNote = reason,
+                correctedAmount = null,
+                correctedDirection = null,
+                correctedChannel = null,
+                correctedTimestamp = null,
+                correctedCategory = null,
+                correctedNote = null,
+                changedFieldsJson = null,
+                uploadState = UPLOAD_STATE_PENDING,
+                uploadedAt = null,
+                lastUploadAttemptAt = null,
+            ),
+        )
+    }
+
     override suspend fun recordPipelineDecision(
         notificationId: Long,
         event: NotificationEvent,
@@ -216,6 +279,7 @@ class ModelTrainingSampleRepositoryImpl @Inject constructor(
     override suspend fun loadUploadBatch(limit: Int): ModelTrainingSampleUploadBatch {
         val samples = modelTrainingSampleDao.getPendingUploadBatch(
             uploadedState = UPLOAD_STATE_UPLOADED,
+            uploadableLabels = UPLOADABLE_FEEDBACK_LABELS,
             limit = limit.coerceIn(1, MAX_UPLOAD_BATCH_SIZE),
         )
         return ModelTrainingSampleUploadBatch(
@@ -697,12 +761,33 @@ private const val FEEDBACK_AUTO_LEDGER_UNREVIEWED = "AUTO_LEDGER_UNREVIEWED"
 private const val FEEDBACK_PENDING_AWAITING_USER = "PENDING_AWAITING_USER"
 private const val FEEDBACK_FILTERED_UNREVIEWED = "FILTERED_UNREVIEWED"
 private const val FEEDBACK_DUPLICATE_AWAITING_USER = "DUPLICATE_AWAITING_USER"
+private const val FEEDBACK_RAW_NOTIFICATION_UNREVIEWED = "RAW_NOTIFICATION_UNREVIEWED"
 private const val FEEDBACK_USER_CONFIRMED_POSITIVE = "USER_CONFIRMED_POSITIVE"
 private const val FEEDBACK_USER_CONFIRMED_EDITED = "USER_CONFIRMED_EDITED"
 private const val FEEDBACK_USER_DISMISSED_NEGATIVE = "USER_DISMISSED_NEGATIVE"
 private const val FEEDBACK_USER_MARKED_FALSE_POSITIVE = "USER_MARKED_FALSE_POSITIVE"
 private const val FEEDBACK_USER_EDITED_LEDGER = "USER_EDITED_LEDGER"
 private const val FEEDBACK_USER_DELETED_LEDGER = "USER_DELETED_LEDGER"
+
+/**
+ * 用途说明：
+ * - 限定客户端允许上传到云端样本池的反馈标签。
+ * - 待用户确认、重复待确认、原文样本、空标签和未知标签都没有稳定训练含义，因此先留在本地等待后续用户反馈或直接不参与同步。
+ */
+private val UPLOADABLE_FEEDBACK_LABELS = listOf(
+    FEEDBACK_AUTO_LEDGER_UNREVIEWED,
+    FEEDBACK_FILTERED_UNREVIEWED,
+    FEEDBACK_USER_CONFIRMED_POSITIVE,
+    FEEDBACK_USER_CONFIRMED_EDITED,
+    FEEDBACK_USER_DISMISSED_NEGATIVE,
+    FEEDBACK_USER_MARKED_FALSE_POSITIVE,
+    FEEDBACK_USER_EDITED_LEDGER,
+    FEEDBACK_USER_DELETED_LEDGER,
+)
+private const val RAW_NOTIFICATION_MODEL_VERSION = "raw-notification-v1"
+private const val RAW_NOTIFICATION_PARSE_PATH = "raw-notification"
+private const val RAW_NOTIFICATION_DIRECTION = "UNKNOWN"
+private const val RAW_NOTIFICATION_CONFIDENCE_LEVEL = "LOW"
 private const val UPLOAD_STATE_PENDING = "PENDING"
 private const val UPLOAD_STATE_UPLOADED = "UPLOADED"
 private const val MAX_UPLOAD_BATCH_SIZE = 200

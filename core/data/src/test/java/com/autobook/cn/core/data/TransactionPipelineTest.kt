@@ -3,6 +3,7 @@ package com.autobook.cn.core.data
 import com.autobook.cn.core.data.pipeline.TransactionProcessingPipeline
 import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.LedgerEntry
+import com.autobook.cn.core.model.MembershipStatus
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.NotificationEvent
 import com.autobook.cn.core.model.NotificationProcessStatus
@@ -30,7 +31,7 @@ class TransactionPipelineTest {
                     TransactionCandidate(
                         amount = 20.0,
                         direction = MoneyDirection.EXPENSE,
-                        merchant = "Mock Merchant",
+                        note = "Mock Merchant",
                         channel = "Notification",
                         timestamp = event.postedAt,
                         confidence = ParseConfidence(0.4f),
@@ -45,6 +46,10 @@ class TransactionPipelineTest {
         var pendingCount = 0
         val ledgerRepository = object : LedgerRepository {
             override fun observeEntries(): Flow<List<LedgerEntry>> = emptyFlow()
+
+            /** 用途说明：流水线分流测试不依赖账本统计，返回空统计流即可。 */
+            override fun observeSummaryStats(): Flow<LedgerSummaryStats> = emptyFlow()
+
             override suspend fun add(entry: LedgerEntry): Long = 1L
             override suspend fun update(entry: LedgerEntry) = Unit
             override suspend fun delete(id: Long) = Unit
@@ -89,6 +94,7 @@ class TransactionPipelineTest {
             ledgerRepository = ledgerRepository,
             pendingRepository = pendingRepository,
             settingsRepository = settingsRepository,
+            membershipRepository = buildMembershipRepository(),
             modelTrainingSampleRepository = trainingSampleRepository,
         ).process(
             notificationId = 10L,
@@ -122,7 +128,7 @@ class TransactionPipelineTest {
                     TransactionCandidate(
                         amount = 100.0,
                         direction = MoneyDirection.EXPENSE,
-                        merchant = "本地规则商户",
+                        note = "本地规则商户",
                         channel = "Bank App",
                         timestamp = event.postedAt,
                         confidence = ParseConfidence(0.9f),
@@ -136,6 +142,9 @@ class TransactionPipelineTest {
         var ledgerAddCount = 0
         val ledgerRepository = object : LedgerRepository {
             override fun observeEntries(): Flow<List<LedgerEntry>> = emptyFlow()
+
+            /** 用途说明：自动入账测试只关心新增次数，不需要账本统计。 */
+            override fun observeSummaryStats(): Flow<LedgerSummaryStats> = emptyFlow()
 
             override suspend fun add(entry: LedgerEntry): Long {
                 ledgerAddCount += 1
@@ -181,6 +190,7 @@ class TransactionPipelineTest {
             ledgerRepository = ledgerRepository,
             pendingRepository = pendingRepository,
             settingsRepository = settingsRepository,
+            membershipRepository = buildMembershipRepository(),
             modelTrainingSampleRepository = trainingSampleRepository,
         ).process(
             notificationId = 42L,
@@ -210,7 +220,7 @@ class TransactionPipelineTest {
                     TransactionCandidate(
                         amount = 55.0,
                         direction = MoneyDirection.EXPENSE,
-                        merchant = "Local Pending Bank",
+                        note = "Local Pending Bank",
                         channel = "Bank App",
                         timestamp = event.postedAt,
                         confidence = ParseConfidence(0.84f),
@@ -224,6 +234,10 @@ class TransactionPipelineTest {
         var pendingCount = 0
         val ledgerRepository = object : LedgerRepository {
             override fun observeEntries(): Flow<List<LedgerEntry>> = emptyFlow()
+
+            /** 用途说明：待确认分流测试不读取账本统计，返回空统计流即可。 */
+            override fun observeSummaryStats(): Flow<LedgerSummaryStats> = emptyFlow()
+
             override suspend fun add(entry: LedgerEntry): Long = 0L
             override suspend fun update(entry: LedgerEntry) = Unit
             override suspend fun delete(id: Long) = Unit
@@ -268,6 +282,7 @@ class TransactionPipelineTest {
             ledgerRepository = ledgerRepository,
             pendingRepository = pendingRepository,
             settingsRepository = settingsRepository,
+            membershipRepository = buildMembershipRepository(),
             modelTrainingSampleRepository = trainingSampleRepository,
         ).process(
             notificationId = 100L,
@@ -300,10 +315,40 @@ private fun buildSettingsRepository(settings: AppSettings): SettingsRepository {
         override suspend fun setAutoAccountingEnabled(enabled: Boolean) = Unit
         override suspend fun setCloudAnalysisEnabled(enabled: Boolean) = Unit
         override suspend fun setCloudLearningEnabled(enabled: Boolean) = Unit
+        override suspend fun setUserImprovementPlanEnabled(enabled: Boolean) = Unit
         override suspend fun setCaptureEnabled(enabled: Boolean) = Unit
         override suspend fun setNotificationRetentionDays(days: Int) = Unit
         override suspend fun setScreenshotRetentionDays(days: Int) = Unit
         override suspend fun setSourceEnabled(source: NotificationSourceApp, enabled: Boolean) = Unit
+    }
+}
+
+/**
+ * 构造会员仓库替身。
+ *
+ * 参数说明：
+ * - status：流水线读取到的会员状态；默认提供已登录免费用户，确保自动入账试用门禁可以通过。
+ */
+private fun buildMembershipRepository(
+    status: MembershipStatus = MembershipStatus(
+        userId = "test-user",
+        phone = "test@example.com",
+        serverVerified = false,
+        message = "测试账号已登录，按免费体验额度放行自动入账。",
+    ),
+    trialResult: OperationResult<MembershipStatus> = OperationResult.Success(
+        status.copy(
+            autoLedgerTrialUsed = 1,
+            autoLedgerTrialRemaining = 9,
+        ),
+    ),
+): MembershipRepository {
+    return object : MembershipRepository {
+        override val membershipStatus: Flow<MembershipStatus> = flowOf(status)
+        override suspend fun refresh(): MembershipStatus = status
+
+        /** 用途说明：模拟服务端扣减免费自动入账次数，验证流水线不再写本地次数。 */
+        override suspend fun recordAutoLedgerTrialSuccess(): OperationResult<MembershipStatus> = trialResult
     }
 }
 
@@ -315,6 +360,13 @@ private fun buildSettingsRepository(settings: AppSettings): SettingsRepository {
  */
 private class RecordingModelTrainingSampleRepository : ModelTrainingSampleRepository {
     val destinations = mutableListOf<ProcessDestination>()
+
+    override suspend fun recordRawNotification(
+        notificationId: Long,
+        event: NotificationEvent,
+        status: NotificationProcessStatus,
+        reason: String,
+    ) = Unit
 
     override suspend fun recordPipelineDecision(
         notificationId: Long,

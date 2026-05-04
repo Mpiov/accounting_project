@@ -270,7 +270,7 @@ def resolve_training_label(raw_sample: dict[str, object]) -> int | None:
         return 1
     if label in NEGATIVE_LABELS:
         return 0
-    # 待确认、重复待确认等状态没有最终用户反馈，第一版先不参与训练。
+    # 待确认、重复待确认、纯原文样本等状态没有最终用户反馈，第一版先不参与训练。
     return None
 
 

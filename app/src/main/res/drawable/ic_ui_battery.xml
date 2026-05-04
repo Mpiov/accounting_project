@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    用途说明：
+    - 应用耗电设置入口图标，用电池和闪电表达后台耗电/电池优化相关设置。
+    - 该资源只提供线性路径，颜色由 Compose Icon 的 tint 统一接管。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M7 17C7 14.2386 9.2386 12 12 12H34C36.7614 12 39 14.2386 39 17V31C39 33.7614 36.7614 36 34 36H12C9.2386 36 7 33.7614 7 31V17Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M43 20V28" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M25 17L18 26H24L21 33L30 23H24L25 17Z" />
+</vector>

@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import com.autobook.cn.app.sync.CloudLearningSyncScheduler
+import com.autobook.cn.service.notification.NotificationListenerRebindHelper
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -35,6 +36,10 @@ class MainActivity : ComponentActivity() {
      */
     override fun onStart() {
         super.onStart()
+        NotificationListenerRebindHelper.requestRebindIfPermitted(
+            context = this,
+            reason = "main_activity_on_start",
+        )
         cloudLearningSyncScheduler.enqueueForegroundMembershipRefresh()
     }
 }

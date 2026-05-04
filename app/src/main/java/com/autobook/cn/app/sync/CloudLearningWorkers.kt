@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import com.autobook.cn.core.data.CloudLearningRepository
 import com.autobook.cn.core.data.MembershipRepository
 import com.autobook.cn.core.model.OperationResult
+import com.autobook.cn.service.notification.NotificationListenerRebindHelper
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -45,6 +46,7 @@ class MembershipRefreshWorker(
      */
     override suspend fun doWork(): Result {
         return runCatching {
+            requestNotificationListenerRebind(reason = "membership_refresh_worker")
             val status = cloudSyncEntryPoint().membershipRepository().refresh()
             if (status.source == MEMBERSHIP_SERVER_ERROR_SOURCE) {
                 Result.retry()
@@ -59,7 +61,7 @@ class MembershipRefreshWorker(
 
 /**
  * 用途说明：
- * - 上传本地累计的会员全局训练样本。
+ * - 上传本地累计的用户改善计划训练样本。
  *
  * 参数说明：
  * - appContext：Worker 运行所需的应用上下文。
@@ -71,10 +73,11 @@ class TrainingSampleUploadWorker(
 ) : CoroutineWorker(appContext, workerParams) {
     /**
      * 用途说明：
-     * - 执行一次训练样本上传；未登录、非会员或关闭云学习属于业务门禁，不视为 Worker 失败。
+     * - 执行一次训练样本上传；未登录或关闭用户改善计划属于业务门禁，不视为 Worker 失败。
      */
     override suspend fun doWork(): Result {
         return runCatching {
+            requestNotificationListenerRebind(reason = "training_sample_upload_worker")
             cloudSyncEntryPoint()
                 .cloudLearningRepository()
                 .uploadTrainingSamples()
@@ -103,6 +106,7 @@ class CloudModelPullWorker(
      */
     override suspend fun doWork(): Result {
         return runCatching {
+            requestNotificationListenerRebind(reason = "cloud_model_pull_worker")
             cloudSyncEntryPoint()
                 .cloudLearningRepository()
                 .pullCloudModel()
@@ -124,6 +128,22 @@ private fun CoroutineWorker.cloudSyncEntryPoint(): CloudSyncWorkerEntryPoint {
     return EntryPointAccessors.fromApplication(
         applicationContext,
         CloudSyncWorkerEntryPoint::class.java,
+    )
+}
+
+/**
+ * Worker 唤醒时顺手补一次通知监听重绑。
+ *
+ * 用途说明：
+ * - WorkManager 可能在 App 没有打开时被系统唤醒，借这个机会修复“权限开着但监听服务掉线”的状态。
+ *
+ * 参数说明：
+ * - reason：当前 Worker 名称，用于写入通知监听 trace。
+ */
+private fun CoroutineWorker.requestNotificationListenerRebind(reason: String) {
+    NotificationListenerRebindHelper.requestRebindIfPermitted(
+        context = applicationContext,
+        reason = reason,
     )
 }
 

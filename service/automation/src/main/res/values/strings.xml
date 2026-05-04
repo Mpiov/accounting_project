@@ -1,4 +1,4 @@
 <resources>
     <!-- 无障碍服务在系统设置中的展示名称，保持和 App 品牌名一致。 -->
-    <string name="accessibility_service_name">轻松计无障碍服务</string>
+    <string name="accessibility_service_name">轻松记无障碍服务</string>
 </resources>

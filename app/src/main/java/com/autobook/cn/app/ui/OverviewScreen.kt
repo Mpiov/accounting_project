@@ -549,9 +549,6 @@ private fun OverviewTimelineItem(
     onClick: () -> Unit,
 ) {
     val cardBorder = autobookCardBorder()
-    val dotOuterColor = MaterialTheme.colorScheme.primaryContainer
-    val dotInnerColor = MaterialTheme.colorScheme.primary
-    val nodeCoverColor = MaterialTheme.colorScheme.surface
 
     Row(
         modifier = Modifier
@@ -564,31 +561,16 @@ private fun OverviewTimelineItem(
     ) {
         Box(
             modifier = Modifier
-                .width(22.dp)
+                .width(40.dp)
                 .fillMaxHeight()
                 .padding(vertical = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Canvas(modifier = Modifier.size(22.dp)) {
-                val center = Offset(size.width / 2f, size.height / 2f)
-
-                // 节点只负责遮住父级长链并提供定位点，连线本身由父容器统一绘制。
-                drawCircle(
-                    color = nodeCoverColor,
-                    radius = 10.dp.toPx(),
-                    center = center,
-                )
-                drawCircle(
-                    color = dotOuterColor,
-                    radius = 8.dp.toPx(),
-                    center = center,
-                )
-                drawCircle(
-                    color = dotInnerColor,
-                    radius = 3.5.dp.toPx(),
-                    center = center,
-                )
-            }
+            // 圆形节点遮住父级长链，并复用全局分类图标映射，避免各列表显示不一致。
+            LedgerCategoryIconNode(
+                category = entry.category,
+                direction = entry.direction,
+            )
         }
         Card(
             modifier = Modifier
@@ -692,9 +674,9 @@ private fun SummaryMetricCard(
  * 最近记录时间线轨道的横向中心。
  *
  * 用途说明：
- * - 左侧节点列固定 22dp 宽，因此长链中心固定在 11dp，父级画线和子节点才能严丝合缝。
+ * - 左侧图标节点列固定 40dp 宽，因此长链中心固定在 20dp，父级画线和子节点才能严丝合缝。
  */
-private val overviewTimelineRailCenterX = 11.dp
+private val overviewTimelineRailCenterX = 20.dp
 
 /**
  * 最近记录时间线首尾留白。

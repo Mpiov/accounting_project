@@ -61,6 +61,9 @@ const val MEDIUM_CONFIDENCE_THRESHOLD: Float = 0.62f
 /** 用途说明：待确认区间上限分数。 */
 const val PENDING_CONFIDENCE_MAX_SCORE: Float = 0.85f
 
+/** 用途说明：免费登录用户可体验的高置信度自动入账次数。 */
+const val AUTO_LEDGER_FREE_TRIAL_LIMIT: Int = 10
+
 /**
  * 用途说明：
  * - 数值型置信度封装。
@@ -174,6 +177,8 @@ data class AppSettings(
     val autoAccountingEnabled: Boolean = true,
     val cloudAnalysisEnabled: Boolean = true,
     val cloudLearningEnabled: Boolean = true,
+    /** 用途说明：用户是否加入改善计划；开启后本地通知原文样本会按固定周期上传到服务器全局样本池。 */
+    val userImprovementPlanEnabled: Boolean = true,
     val captureEnabled: Boolean = false,
     val notificationRetentionDays: Int = 30,
     val screenshotRetentionDays: Int = 7,
@@ -195,6 +200,8 @@ data class AppSettings(
  * - phone：已绑定的邮箱；字段名暂沿用旧契约。
  * - accessToken：访问业务接口的短期令牌。
  * - refreshToken：刷新访问令牌的长期令牌。
+ * - accessTokenExpiresAt：访问令牌过期毫秒时间戳，服务端判定过期后客户端用刷新令牌换新会话。
+ * - refreshTokenExpiresAt：刷新令牌过期毫秒时间戳，过期后才需要用户重新登录。
  * - loggedInAt：本地记录的登录时间。
  * - source：会话来源，真实接入后应为 `server`。
  */
@@ -203,6 +210,8 @@ data class AuthSession(
     val phone: String,
     val accessToken: String,
     val refreshToken: String,
+    val accessTokenExpiresAt: Long = 0L,
+    val refreshTokenExpiresAt: Long = 0L,
     val loggedInAt: Long,
     val source: String = "server",
 )
@@ -230,6 +239,8 @@ enum class MembershipTier {
 
 /** 用途说明：会员套餐类型。 */
 enum class MembershipPlan {
+    TWO_YEAR,
+    QUARTERLY,
     MONTHLY,
     YEARLY,
 }
@@ -257,7 +268,10 @@ enum class MembershipPaymentState {
  * - serverTime：服务器返回的当前时间，用于后续对齐会员有效期。
  * - refreshedAt：本地刷新会员状态的时间。
  * - modelConfidenceEnabled：服务器是否允许该用户使用机器学习解析。
- * - cloudLearningEnabled：服务器是否允许该用户上传样本贡献全局模型。
+ * - cloudLearningEnabled：历史云端学习字段，当前样本上传门禁已改为本地“用户改善计划”开关。
+ * - autoLedgerTrialLimit：服务器配置的免费自动记账体验总次数。
+ * - autoLedgerTrialUsed：服务器记录的免费自动记账已用次数。
+ * - autoLedgerTrialRemaining：服务器计算后的免费自动记账剩余次数。
  * - source：状态来源，便于区分服务器、占位实现或缓存。
  * - message：面向设置页的短说明。
  */
@@ -271,6 +285,9 @@ data class MembershipStatus(
     val refreshedAt: Long? = null,
     val modelConfidenceEnabled: Boolean = false,
     val cloudLearningEnabled: Boolean = false,
+    val autoLedgerTrialLimit: Int = AUTO_LEDGER_FREE_TRIAL_LIMIT,
+    val autoLedgerTrialUsed: Int = 0,
+    val autoLedgerTrialRemaining: Int = AUTO_LEDGER_FREE_TRIAL_LIMIT,
     val source: String = "server-required",
     val message: String = "未登录，会员状态需要服务器确认。",
 ) {
@@ -284,9 +301,9 @@ data class MembershipStatus(
     val canUseMachineLearning: Boolean
         get() = isMember && modelConfidenceEnabled
 
-    /** 用途说明：当前是否允许上传原文样本到服务器全局样本池。 */
-    val canUseCloudLearning: Boolean
-        get() = isMember && cloudLearningEnabled
+    /** 用途说明：当前是否存在可归属试用额度的登录账号。 */
+    val hasLoggedInAccount: Boolean
+        get() = !userId.isNullOrBlank() || !phone.isNullOrBlank()
 }
 
 /**
@@ -304,6 +321,7 @@ data class MembershipStatus(
  * - nonceStr：签名随机串。
  * - timestamp：签名时间戳。
  * - sign：服务端生成的调起支付签名。
+ * - expiresAt：服务器订单过期时间，未返回时为空。
  */
 data class MembershipPaymentOrder(
     val orderId: String,
@@ -316,6 +334,7 @@ data class MembershipPaymentOrder(
     val nonceStr: String,
     val timestamp: String,
     val sign: String,
+    val expiresAt: Long? = null,
 )
 
 /**
@@ -323,9 +342,9 @@ data class MembershipPaymentOrder(
  * - 云端学习能力的运行状态。
  *
  * 参数说明：
- * - enabledByUser：用户设置里的云端学习开关。
+ * - enabledByUser：历史云端学习开关。
  * - isMember：当前是否会员。
- * - effectiveEnabled：是否真正允许上传原文到服务器全局样本池。
+ * - effectiveEnabled：当前机器学习模型能力是否可用。
  * - lastUploadAt：最近一次上传样本时间。
  * - lastModelPullAt：最近一次拉取全局模型时间。
  * - activeModelVersion：当前生效的全局模型版本或本地规则版本。

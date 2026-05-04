@@ -64,6 +64,13 @@ class LedgerRepositoryImplTest {
  * - 账本仓储单测中的训练样本仓储空实现。
  */
 private object NoOpModelTrainingSampleRepository : ModelTrainingSampleRepository {
+    override suspend fun recordRawNotification(
+        notificationId: Long,
+        event: NotificationEvent,
+        status: NotificationProcessStatus,
+        reason: String,
+    ) = Unit
+
     override suspend fun recordPipelineDecision(
         notificationId: Long,
         event: NotificationEvent,

@@ -50,11 +50,11 @@ class CreateOrderRequest(BaseModel):
     """创建会员订单请求。
 
     参数：
-        plan: 会员套餐。
+        plan: 会员套餐，目前正式开放的是新发布限时年卡，其它套餐先保留协议占位。
         payChannel: 支付渠道。
     """
 
-    plan: Literal["MONTHLY", "YEARLY"] = "MONTHLY"
+    plan: Literal["TWO_YEAR", "YEARLY", "QUARTERLY", "MONTHLY"] = "YEARLY"
     payChannel: Literal["WECHAT_APP"] = "WECHAT_APP"
 
 

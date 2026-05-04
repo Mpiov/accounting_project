@@ -7,6 +7,7 @@
 - `AUTOBOOK_DB_PATH`：SQLite 数据库路径，容器默认 `/data/autobook.sqlite3`。
 - `AUTOBOOK_TOKEN_SECRET`：访问令牌签名密钥，生产环境必须覆盖。
 - `AUTOBOOK_DEV_SMS_CODE`：开发阶段固定验证码，默认 `123456`。
+- `AUTOBOOK_PAYMENT_ORDER_EXPIRE_MINUTES`：会员订单有效分钟数，默认 `30`。
 
 ## 当前接口
 
@@ -15,12 +16,13 @@
 - `POST /v1/auth/login`
 - `POST /v1/auth/refresh`
 - `GET /v1/membership/status`
+- `POST /v1/auto-ledger/trial-success`
 - `POST /v1/payments/membership-orders`
 - `GET /v1/payments/membership-orders/{orderId}`
 - `POST /v1/cloud-learning/training-samples`
 - `GET /v1/cloud-learning/global-model`
 
-会员默认是免费状态，只有服务器数据库把账号标记为有效会员后，机器学习模型接口才会放行。训练样本会进入服务器全局样本池，后续训练任务基于所有用户贡献的数据发布统一全局模型，不生成单用户定制模型。上传接口优先按 `userId + sampleLocalId` 更新同一条本地样本，用户后续纠错会覆盖服务器旧样本。
+会员默认是免费状态，只有服务器数据库把账号标记为有效会员后，机器学习模型接口才会放行。订单创建后默认 30 分钟过期；当前未接真实微信支付回调时，管理员可以在 SSH 隧道管理后台的“订单”页确认收款并自动开通会员。训练样本会进入服务器全局样本池，登录用户开启“用户改善计划”后即可提交样本，不要求会员；后续训练任务基于所有用户贡献的数据发布统一全局模型，不生成单用户定制模型。上传接口优先按 `userId + sampleLocalId` 更新同一条本地样本，用户后续纠错会覆盖服务器旧样本。
 
 模型权重使用客户端稳定特征键，例如 `source.trusted_payment`、`amount.with_currency`、`semantic.transaction_scene` 和 `risk.asset_valuation`。客户端会保存下发的版本、权重和风险阈值，并在会员解析时优先使用服务器全局模型。
 
@@ -96,3 +98,7 @@ http://127.0.0.1:8080/admin
 ```
 
 后台密码来自服务器 `/opt/autobook/.env` 的 `AUTOBOOK_ADMIN_PASSWORD`。
+
+后台首页会展示最近订单；进入 `http://127.0.0.1:8080/admin/orders` 可以按邮箱、订单号和状态筛选订单。未过期的待支付订单支持“确认收款并开通”，确认后会把订单标记为 `PAID`，并按套餐自动写入会员有效期。
+
+训练样本明细页位于 `http://127.0.0.1:8080/admin/samples`，可以按邮箱、样本 ID、通知 ID、通知原文片段和反馈标签筛选。列表会展示每一行样本的通知原文、解析结果、用户纠错结果、反馈标签，并可展开查看服务器保存的完整 JSON。

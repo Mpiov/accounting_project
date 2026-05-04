@@ -11,10 +11,13 @@ import com.autobook.cn.core.data.LedgerSummaryStats
 import com.autobook.cn.core.data.MembershipRepository
 import com.autobook.cn.core.data.PaymentRepository
 import com.autobook.cn.core.data.SettingsRepository
+import com.autobook.cn.core.model.AUTO_LEDGER_FREE_TRIAL_LIMIT
+import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.AuthState
 import com.autobook.cn.core.model.CloudLearningState
 import com.autobook.cn.core.model.LedgerEntry
 import com.autobook.cn.core.model.MembershipPlan
+import com.autobook.cn.core.model.MembershipStatus
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.NotificationSourceApp
 import com.autobook.cn.core.model.OperationResult
@@ -33,6 +36,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -51,9 +55,17 @@ data class SettingsUiState(
     val authCodeCooldownSeconds: Int = 0,
     val authLoginInProgress: Boolean = false,
     val membershipActive: Boolean = false,
+    val autoLedgerTrialLimit: Int = AUTO_LEDGER_FREE_TRIAL_LIMIT,
+    val autoLedgerTrialRemainingCount: Int = AUTO_LEDGER_FREE_TRIAL_LIMIT,
     val cloudLearningEnabled: Boolean = true,
     val cloudLearningEffectiveEnabled: Boolean = false,
+    val userImprovementPlanEnabled: Boolean = true,
     val membershipSummary: String = "免费版",
+    val membershipExpiresAtLabel: String = "未开通",
+    // 服务端返回的当前时间，用于会员限时活动倒计时；为空时 UI 再退回本机时间。
+    val membershipServerTime: Long? = null,
+    // 本地收到服务端会员时间的时刻，用于估算当前服务端时间，避免倒计时停在刷新瞬间。
+    val membershipServerRefreshedAt: Long? = null,
     val cloudLearningSummary: String = "免费版仅使用普通规则算法。",
     val membershipActionMessage: String = "",
     val captureEnabled: Boolean = false,
@@ -105,11 +117,13 @@ class SettingsViewModel @Inject constructor(
     }
     private val accountState: Flow<SettingsAccountState> = combine(
         cloudLearningRepository.cloudLearningState,
+        membershipRepository.membershipStatus,
         authRepository.authState,
         authForm,
-    ) { cloudLearning, authState, form ->
+    ) { cloudLearning, membershipStatus, authState, form ->
         SettingsAccountState(
             cloudLearning = cloudLearning,
+            membershipStatus = membershipStatus,
             authState = authState,
             form = form,
         )
@@ -140,7 +154,9 @@ class SettingsViewModel @Inject constructor(
         bookkeepingStats,
     ) { settings, account, actionMessage, authInteraction, stats ->
         val cloudLearning = account.cloudLearning
+        val membershipStatus = account.membershipStatus
         val authState = account.authState
+        val trialRemainingCount = membershipStatus.autoLedgerTrialRemaining
         SettingsUiState(
             autoAccountingEnabled = settings.autoAccountingEnabled,
             cloudAnalysisEnabled = settings.cloudAnalysisEnabled,
@@ -151,16 +167,16 @@ class SettingsViewModel @Inject constructor(
             authCodeRequesting = authInteraction.codeRequesting,
             authCodeCooldownSeconds = authInteraction.cooldownSeconds,
             authLoginInProgress = authInteraction.loginInProgress,
-            membershipActive = cloudLearning.isMember,
+            membershipActive = membershipStatus.isMember,
+            autoLedgerTrialLimit = membershipStatus.autoLedgerTrialLimit,
+            autoLedgerTrialRemainingCount = trialRemainingCount,
             cloudLearningEnabled = cloudLearning.enabledByUser,
             cloudLearningEffectiveEnabled = cloudLearning.effectiveEnabled,
-            membershipSummary = if (cloudLearning.isMember) {
-                "会员已由服务器确认，机器学习解析可用。"
-            } else if (authState.isLoggedIn) {
-                "已登录，当前会员状态未由服务器确认。"
-            } else {
-                "免费版，登录并开通会员后才可使用机器学习。"
-            },
+            userImprovementPlanEnabled = settings.userImprovementPlanEnabled,
+            membershipSummary = membershipStatus.toMembershipSummary(authState),
+            membershipExpiresAtLabel = membershipStatus.toMembershipExpiresAtLabel(),
+            membershipServerTime = membershipStatus.serverTime,
+            membershipServerRefreshedAt = membershipStatus.refreshedAt,
             cloudLearningSummary = cloudLearning.message,
             membershipActionMessage = actionMessage,
             captureEnabled = settings.captureEnabled,
@@ -177,6 +193,26 @@ class SettingsViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = SettingsUiState(),
     )
+
+    init {
+        viewModelScope.launch {
+            combine(
+                settingsRepository.settings,
+                accountState,
+            ) { settings, account ->
+                settings.autoAccountingEnabled &&
+                    account.authState.isLoggedIn &&
+                    !account.membershipStatus.isMember &&
+                    account.membershipStatus.autoLedgerTrialRemaining <= 0
+            }
+                .distinctUntilChanged()
+                .collect { shouldCloseAutoAccounting ->
+                    if (shouldCloseAutoAccounting) {
+                        settingsRepository.setAutoAccountingEnabled(false)
+                    }
+                }
+        }
+    }
 
     fun setAutoAccountingEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setAutoAccountingEnabled(enabled) }
@@ -279,13 +315,24 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * 用途说明：
-     * - 写入用户是否允许会员全局云端学习上传通知原文。
+     * - 写入历史云端学习开关，保留给旧版本或调试入口使用。
      *
      * 参数说明：
-     * - enabled：目标开关状态，默认开启但只有会员才会真正生效。
+     * - enabled：目标开关状态。
      */
     fun setCloudLearningEnabled(enabled: Boolean) {
         viewModelScope.launch { cloudLearningRepository.setCloudLearningEnabled(enabled) }
+    }
+
+    /**
+     * 用途说明：
+     * - 设置用户改善计划开关。
+     *
+     * 参数说明：
+     * - enabled：是否允许后台定时上传通知原文训练样本。
+     */
+    fun setUserImprovementPlanEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setUserImprovementPlanEnabled(enabled) }
     }
 
     /**
@@ -305,6 +352,14 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * 用途说明：
+     * - 创建两年会员支付订单。
+     */
+    fun startTwoYearMembershipPayment() {
+        createMembershipOrder(MembershipPlan.TWO_YEAR)
+    }
+
+    /**
+     * 用途说明：
      * - 创建月卡会员支付订单。
      */
     fun startMonthlyMembershipPayment() {
@@ -317,6 +372,14 @@ class SettingsViewModel @Inject constructor(
      */
     fun startYearlyMembershipPayment() {
         createMembershipOrder(MembershipPlan.YEARLY)
+    }
+
+    /**
+     * 用途说明：
+     * - 创建季卡会员支付订单。
+     */
+    fun startQuarterlyMembershipPayment() {
+        createMembershipOrder(MembershipPlan.QUARTERLY)
     }
 
     /**
@@ -429,6 +492,7 @@ private data class SettingsAuthForm(
  */
 private data class SettingsAccountState(
     val cloudLearning: CloudLearningState,
+    val membershipStatus: MembershipStatus,
     val authState: AuthState,
     val form: SettingsAuthForm,
 )
@@ -474,6 +538,35 @@ private fun CloudLearningState.toModelLastPulledLabel(): String {
     return lastModelPullAt?.let { pulledAt ->
         TimeFormatter.format(pulledAt)
     } ?: "尚未拉取"
+}
+
+/**
+ * 用途说明：
+ * - 把服务器会员状态转换为设置首页“会员中心”横条的小字，只表达是否会员，避免和顶部体验次数重复。
+ *
+ * 参数说明：
+ * - authState：当前登录状态，用于区分未登录和已登录免费用户。
+ */
+private fun MembershipStatus.toMembershipSummary(authState: AuthState): String {
+    return when {
+        isMember -> "当前为会员"
+        authState.isLoggedIn -> "当前为免费用户"
+        else -> "未登录"
+    }
+}
+
+/**
+ * 用途说明：
+ * - 把会员有效期时间戳转换成会员中心内展示的截止日期。
+ */
+private fun MembershipStatus.toMembershipExpiresAtLabel(): String {
+    if (!isMember) {
+        return "未开通"
+    }
+    val expiry = expiresAt ?: return "长期有效"
+    return Instant.ofEpochMilli(expiry)
+        .atZone(ZoneId.systemDefault())
+        .format(MEMBERSHIP_EXPIRY_FORMATTER)
 }
 
 internal data class SettingsLedgerOverview(
@@ -622,5 +715,6 @@ private fun AuthState.toSummary(): String {
 }
 
 private val MONTH_LABEL_FORMATTER = DateTimeFormatter.ofPattern("yyyy 年 M 月", Locale.CHINA)
+private val MEMBERSHIP_EXPIRY_FORMATTER = DateTimeFormatter.ofPattern("yyyy年M月d日", Locale.CHINA)
 private val AUTH_EMAIL_REGEX = Regex("""^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$""", RegexOption.IGNORE_CASE)
 private const val AUTH_CODE_LOCAL_COOLDOWN_SECONDS = 60

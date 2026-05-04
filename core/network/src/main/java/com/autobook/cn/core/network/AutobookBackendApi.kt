@@ -79,6 +79,18 @@ interface AutobookBackendApi {
 
     /**
      * 用途说明：
+     * - 免费用户自动记账真正成功前，先让服务器占用并扣减一次免费体验额度。
+     *
+     * 参数说明：
+     * - authorization：Bearer 访问令牌；服务端通过登录用户 ID 维护次数，客户端不再本地记数。
+     */
+    @POST("v1/auto-ledger/trial-success")
+    suspend fun recordAutoLedgerTrialSuccess(
+        @Header("Authorization") authorization: String,
+    ): Response<BackendEnvelope<BackendMembershipStatusResponse>>
+
+    /**
+     * 用途说明：
      * - 创建会员订单。
      *
      * 参数说明：
@@ -226,6 +238,9 @@ data class BackendMembershipStatusResponse(
     val expiresAt: Long? = null,
     val modelConfidenceEnabled: Boolean = false,
     val cloudLearningEnabled: Boolean = false,
+    val autoLedgerTrialLimit: Int = 10,
+    val autoLedgerTrialUsed: Int = 0,
+    val autoLedgerTrialRemaining: Int = 10,
     val serverVerified: Boolean = false,
 )
 
@@ -241,6 +256,7 @@ data class BackendMembershipOrderResponse(
     val plan: String,
     val amountCents: Long,
     val paymentState: String = "CREATED",
+    val expiresAt: Long? = null,
     val wechatAppPayParams: BackendWechatAppPayParams? = null,
 )
 
@@ -260,6 +276,7 @@ data class BackendMembershipOrderStateResponse(
     val orderId: String,
     val paymentState: String,
     val paidAt: Long? = null,
+    val expiresAt: Long? = null,
 )
 
 /** 用途说明：上传到服务器全局样本池的训练样本请求体。 */

@@ -32,16 +32,14 @@ class ImageImportCandidatePostProcessorTest {
                         amount = 32.5,
                         timestamp = 1_744_598_810_000L,
                         direction = MoneyDirection.EXPENSE,
-                        merchant = "商户 A",
-                        orderId = "ORDER-A",
+                        note = "商户 A，订单号 ORDER-A",
                         confidence = ParseConfidence(0.9f),
                     ),
                     ImageImportCandidate(
                         amount = 32.5,
                         timestamp = 1_744_598_819_999L,
                         direction = MoneyDirection.EXPENSE,
-                        merchant = "商户 B",
-                        orderId = "ORDER-B",
+                        note = "商户 B，订单号 ORDER-B",
                         confidence = ParseConfidence(0.8f),
                     ),
                 ),
@@ -50,7 +48,7 @@ class ImageImportCandidatePostProcessorTest {
 
         assertEquals(1, result.candidates.size)
         assertEquals(1, result.duplicateFilteredCount)
-        assertEquals("商户 A", result.merchant)
+        assertEquals("商户 A，订单号 ORDER-A", result.note)
         assertEquals(1_744_598_810_000L, result.timestamp)
     }
 
@@ -69,14 +67,14 @@ class ImageImportCandidatePostProcessorTest {
                         amount = 32.5,
                         timestamp = null,
                         direction = MoneyDirection.EXPENSE,
-                        merchant = "商户 A",
+                        note = "商户 A",
                         confidence = ParseConfidence(0.9f),
                     ),
                     ImageImportCandidate(
                         amount = 32.5,
                         timestamp = null,
                         direction = MoneyDirection.EXPENSE,
-                        merchant = "商户 B",
+                        note = "商户 B",
                         confidence = ParseConfidence(0.8f),
                     ),
                 ),
@@ -105,14 +103,14 @@ class ImageImportCandidatePostProcessorTest {
                         amount = 32.5,
                         timestamp = 1_744_598_800_000L,
                         direction = MoneyDirection.EXPENSE,
-                        merchant = "命中历史重复",
+                        note = "命中历史重复",
                         confidence = ParseConfidence(0.9f),
                     ),
                     ImageImportCandidate(
                         amount = 19.9,
                         timestamp = 1_744_598_860_000L,
                         direction = MoneyDirection.EXPENSE,
-                        merchant = "保留候选",
+                        note = "保留候选",
                         confidence = ParseConfidence(0.7f),
                     ),
                 ),
@@ -121,7 +119,7 @@ class ImageImportCandidatePostProcessorTest {
 
         assertEquals(1, result.candidates.size)
         assertEquals(1, result.duplicateFilteredCount)
-        assertEquals("保留候选", result.merchant)
+        assertEquals("保留候选", result.note)
         assertTrue(result.message.contains("去除重复 1 条"))
     }
 
@@ -143,7 +141,7 @@ class ImageImportCandidatePostProcessorTest {
                         amount = 32.5,
                         timestamp = null,
                         direction = MoneyDirection.EXPENSE,
-                        merchant = "待确认候选",
+                        note = "待确认候选",
                         confidence = ParseConfidence(0.93f),
                     ),
                 ),
@@ -165,6 +163,12 @@ private class FakeImageImportLedgerRepository(
     private val ambiguousDuplicateDirection: MoneyDirection? = null,
 ) : LedgerRepository {
     override fun observeEntries(): Flow<List<LedgerEntry>> = emptyFlow()
+
+    /**
+     * 用途说明：
+     * - 图片导入后处理测试不关心账本统计，返回空统计即可满足仓储接口。
+     */
+    override fun observeSummaryStats(): Flow<LedgerSummaryStats> = emptyFlow()
 
     override suspend fun add(entry: LedgerEntry): Long = 1L
 
@@ -193,10 +197,10 @@ private class FakeImageImportLedgerRepository(
             id = 1L,
             amount = amount,
             direction = direction,
-            merchant = "历史重复记录",
             channel = "图片导入",
             timestamp = timestamp,
             category = "待分类",
+            note = "历史重复记录",
             traceSource = "test",
             tracePath = "test",
             traceModelVersion = "test",
@@ -214,10 +218,10 @@ private class FakeImageImportLedgerRepository(
             id = 2L,
             amount = amount,
             direction = direction,
-            merchant = "缺时间疑似重复",
             channel = "图片导入",
             timestamp = 1_744_598_800_000L,
             category = "待分类",
+            note = "缺时间疑似重复",
             traceSource = "test",
             tracePath = "test",
             traceModelVersion = "test",

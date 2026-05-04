@@ -20,7 +20,7 @@ import javax.inject.Singleton
 /**
  * 用途说明：
  * - 统一管理会员状态、训练样本上传和全局模型拉取的后台同步排队。
- * - 这里只负责 WorkManager 调度，不直接承载业务判断；会员门禁、上传开关和模型权限仍由 data 层仓储校验。
+ * - 这里只负责 WorkManager 调度，不直接承载业务判断；用户改善计划开关和模型权限仍由 data 层仓储校验。
  *
  * 参数说明：
  * - context：应用级上下文，用于获取进程内唯一的 WorkManager 实例。
@@ -37,6 +37,8 @@ class CloudLearningSyncScheduler @Inject constructor(
      * - 该方法可在应用启动时反复调用，`KEEP` 会避免重复创建同名任务。
      */
     fun ensurePeriodicSync() {
+        // 旧版本曾在用户处理待确认后创建一次性上传任务；现在统一只保留周期上传，启动时清理遗留队列。
+        workManager.cancelUniqueWork(LEGACY_DELAYED_TRAINING_SAMPLE_UPLOAD_WORK)
         workManager.enqueueUniquePeriodicWork(
             PERIODIC_MEMBERSHIP_REFRESH_WORK,
             ExistingPeriodicWorkPolicy.KEEP,
@@ -47,7 +49,7 @@ class CloudLearningSyncScheduler @Inject constructor(
         )
         workManager.enqueueUniquePeriodicWork(
             PERIODIC_TRAINING_SAMPLE_UPLOAD_WORK,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             buildPeriodicNetworkWork<TrainingSampleUploadWorker>(
                 intervalHours = TRAINING_SAMPLE_UPLOAD_INTERVAL_HOURS,
                 initialDelayMinutes = TRAINING_SAMPLE_UPLOAD_INITIAL_DELAY_MINUTES,
@@ -76,20 +78,6 @@ class CloudLearningSyncScheduler @Inject constructor(
         )
     }
 
-    /**
-     * 用途说明：
-     * - 用户在待确认页确认、纠错、忽略或标记误识别后，延迟触发训练样本上传。
-     * - 延迟上传可以把短时间内的多次反馈合并成一个批次，减少手机和服务器的无意义请求。
-     */
-    fun enqueueDelayedTrainingSampleUpload() {
-        workManager.enqueueUniqueWork(
-            DELAYED_TRAINING_SAMPLE_UPLOAD_WORK,
-            ExistingWorkPolicy.KEEP,
-            buildOneTimeNetworkWork<TrainingSampleUploadWorker>(
-                initialDelayMinutes = TRAINING_SAMPLE_UPLOAD_FEEDBACK_DELAY_MINUTES,
-            ),
-        )
-    }
 }
 
 /**
@@ -147,14 +135,13 @@ private const val PERIODIC_MEMBERSHIP_REFRESH_WORK = "cloud_learning_membership_
 private const val PERIODIC_TRAINING_SAMPLE_UPLOAD_WORK = "cloud_learning_training_sample_upload_periodic"
 private const val PERIODIC_CLOUD_MODEL_PULL_WORK = "cloud_learning_model_pull_periodic"
 private const val FOREGROUND_MEMBERSHIP_REFRESH_WORK = "cloud_learning_membership_refresh_foreground"
-private const val DELAYED_TRAINING_SAMPLE_UPLOAD_WORK = "cloud_learning_training_sample_upload_feedback"
+private const val LEGACY_DELAYED_TRAINING_SAMPLE_UPLOAD_WORK = "cloud_learning_training_sample_upload_feedback"
 
 private const val MEMBERSHIP_REFRESH_INTERVAL_HOURS = 12L
-private const val TRAINING_SAMPLE_UPLOAD_INTERVAL_HOURS = 6L
+private const val TRAINING_SAMPLE_UPLOAD_INTERVAL_HOURS = 1L
 private const val CLOUD_MODEL_PULL_INTERVAL_HOURS = 24L
 
 private const val MEMBERSHIP_REFRESH_INITIAL_DELAY_MINUTES = 12L * 60L
-private const val TRAINING_SAMPLE_UPLOAD_INITIAL_DELAY_MINUTES = 30L
+private const val TRAINING_SAMPLE_UPLOAD_INITIAL_DELAY_MINUTES = 15L
 private const val CLOUD_MODEL_PULL_INITIAL_DELAY_MINUTES = 60L
-private const val TRAINING_SAMPLE_UPLOAD_FEEDBACK_DELAY_MINUTES = 30L
 private const val CLOUD_SYNC_BACKOFF_MINUTES = 30L

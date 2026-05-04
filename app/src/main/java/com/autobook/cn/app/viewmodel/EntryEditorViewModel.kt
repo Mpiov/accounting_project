@@ -4,7 +4,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.util.Log
-import com.autobook.cn.app.sync.CloudLearningSyncScheduler
 import com.autobook.cn.core.data.ImageImportAnalyzer
 import com.autobook.cn.core.data.LedgerRepository
 import com.autobook.cn.core.data.PendingRepository
@@ -88,7 +87,6 @@ class EntryEditorViewModel @Inject constructor(
     private val imageImportAnalyzer: ImageImportAnalyzer,
     private val ledgerRepository: LedgerRepository,
     private val pendingRepository: PendingRepository,
-    private val cloudLearningSyncScheduler: CloudLearningSyncScheduler,
 ) : ViewModel() {
     private val ledgerId: Long? = savedStateHandle.get<String>("ledgerId")?.toLongOrNull()
     private val pendingId: Long? = savedStateHandle.get<String>("pendingId")?.toLongOrNull()
@@ -303,8 +301,6 @@ class EntryEditorViewModel @Inject constructor(
                             editedManually = true,
                         ),
                     )
-                    // 账本编辑可能会改写训练样本标签，延迟上传让服务器训练池拿到用户纠错后的结果。
-                    cloudLearningSyncScheduler.enqueueDelayedTrainingSampleUpload()
                 }
 
                 EntryEditorMode.RESOLVE_PENDING -> {
@@ -329,8 +325,6 @@ class EntryEditorViewModel @Inject constructor(
                         id = pending.id,
                         correctedEntry = correctedEntry.copy(id = ledgerEntryId),
                     )
-                    // 待确认纠错是最有价值的监督标签，排队上传给全局样本池累计训练。
-                    cloudLearningSyncScheduler.enqueueDelayedTrainingSampleUpload()
                 }
             }
 
@@ -348,8 +342,6 @@ class EntryEditorViewModel @Inject constructor(
         val id = ledgerId ?: return
         viewModelScope.launch {
             ledgerRepository.delete(id)
-            // 删除可作为误判或无效入账反馈，交给样本仓储标记后再由后台任务上传。
-            cloudLearningSyncScheduler.enqueueDelayedTrainingSampleUpload()
             updateState { copy(finished = true) }
         }
     }

@@ -66,7 +66,7 @@ fun OnboardingScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = "轻松计",
+            text = "轻松记",
             style = MaterialTheme.typography.headlineMedium,
         )
         Text(

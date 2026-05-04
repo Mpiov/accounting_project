@@ -27,6 +27,7 @@ class AppConfig:
         smtp_use_starttls: 是否在普通连接上升级 STARTTLS。
         admin_password: 管理后台登录密码，第一版只通过 SSH 隧道访问。
         admin_session_seconds: 管理后台会话有效期，单位秒。
+        payment_order_expire_minutes: 支付订单默认有效期，单位分钟。
         training_schedule_hour: 定时训练检查的北京时间小时。
         training_min_new_samples: 自动训练需要的新增有效样本数。
         training_min_total_samples: 自动训练需要的总有效样本数。
@@ -50,6 +51,7 @@ class AppConfig:
     smtp_use_starttls: bool
     admin_password: str
     admin_session_seconds: int
+    payment_order_expire_minutes: int
     training_schedule_hour: int
     training_min_new_samples: int
     training_min_total_samples: int
@@ -81,6 +83,7 @@ def load_config() -> AppConfig:
         smtp_use_starttls=_read_bool("AUTOBOOK_SMTP_USE_STARTTLS", default=False),
         admin_password=os.getenv("AUTOBOOK_ADMIN_PASSWORD", ""),
         admin_session_seconds=int(os.getenv("AUTOBOOK_ADMIN_SESSION_SECONDS", "7200")),
+        payment_order_expire_minutes=int(os.getenv("AUTOBOOK_PAYMENT_ORDER_EXPIRE_MINUTES", "30")),
         training_schedule_hour=int(os.getenv("AUTOBOOK_TRAINING_SCHEDULE_HOUR", "3")),
         training_min_new_samples=int(os.getenv("AUTOBOOK_TRAINING_MIN_NEW_SAMPLES", "100")),
         training_min_total_samples=int(os.getenv("AUTOBOOK_TRAINING_MIN_TOTAL_SAMPLES", "100")),

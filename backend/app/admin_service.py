@@ -12,6 +12,7 @@ from .response import now_millis
 PHONE_PATTERN = re.compile(r"^1\d{10}$")
 EMAIL_PATTERN = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$", re.IGNORECASE)
 MILLIS_PER_DAY = 24 * 60 * 60 * 1000
+AUTO_LEDGER_FREE_TRIAL_LIMIT = 10
 
 
 def normalize_phone(raw_phone: str) -> str:
@@ -170,7 +171,8 @@ def get_member_status_by_phone(database_path: str, phone: str) -> dict[str, obje
         row = db.execute(
             """
             SELECT u.id AS user_id, u.phone, u.created_at, m.tier, m.expires_at,
-                   m.model_confidence_enabled, m.cloud_learning_enabled, m.updated_at
+                   m.model_confidence_enabled, m.cloud_learning_enabled,
+                   m.auto_ledger_trial_used, m.updated_at
             FROM users u
             LEFT JOIN memberships m ON m.user_id = u.id
             WHERE u.phone = ?
@@ -186,6 +188,9 @@ def get_member_status_by_phone(database_path: str, phone: str) -> dict[str, obje
             "expiresAt": None,
             "modelConfidenceEnabled": False,
             "cloudLearningEnabled": False,
+            "autoLedgerTrialLimit": AUTO_LEDGER_FREE_TRIAL_LIMIT,
+            "autoLedgerTrialUsed": 0,
+            "autoLedgerTrialRemaining": AUTO_LEDGER_FREE_TRIAL_LIMIT,
             "activeMember": False,
         }
 
@@ -215,7 +220,8 @@ def list_member_statuses(
         rows = db.execute(
             """
             SELECT u.id AS user_id, u.phone, u.created_at, m.tier, m.expires_at,
-                   m.model_confidence_enabled, m.cloud_learning_enabled, m.updated_at
+                   m.model_confidence_enabled, m.cloud_learning_enabled,
+                   m.auto_ledger_trial_used, m.updated_at
             FROM users u
             LEFT JOIN memberships m ON m.user_id = u.id
             WHERE (? = '' OR u.phone LIKE ?)
@@ -239,6 +245,7 @@ def row_to_member_status(row: object) -> dict[str, object]:
 
     tier = row["tier"] or "FREE"
     expires_at = row["expires_at"]
+    trial_used = max(0, min(int(row["auto_ledger_trial_used"] or 0), AUTO_LEDGER_FREE_TRIAL_LIMIT))
     active_member = tier == "MEMBER" and expires_at is not None and int(expires_at) > now_millis()
     return {
         "phone": row["phone"],
@@ -249,6 +256,9 @@ def row_to_member_status(row: object) -> dict[str, object]:
         "expiresAt": expires_at if active_member else None,
         "modelConfidenceEnabled": bool(row["model_confidence_enabled"]) if active_member else False,
         "cloudLearningEnabled": bool(row["cloud_learning_enabled"]) if active_member else False,
+        "autoLedgerTrialLimit": AUTO_LEDGER_FREE_TRIAL_LIMIT,
+        "autoLedgerTrialUsed": trial_used,
+        "autoLedgerTrialRemaining": max(0, AUTO_LEDGER_FREE_TRIAL_LIMIT - trial_used),
         "activeMember": active_member,
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],

@@ -35,7 +35,7 @@ class MockImageImportAnalyzerTest {
         assertTrue(result is OperationResult.Success)
         val suggestion = (result as OperationResult.Success).data
         assertEquals(ImageImportAnalysisPath.CLOUD_LLM_PROXY, suggestion.tracePath)
-        assertEquals("云端大模型图片建议商户", suggestion.merchant)
+        assertTrue(suggestion.note.contains("云端大模型图片建议商户"))
         assertEquals(32.5, suggestion.amount)
         assertEquals(1_744_598_800_000L, suggestion.timestamp)
         assertTrue(suggestion.requiresManualConfirmation)
@@ -76,6 +76,7 @@ private fun fakeSettingsRepository(settings: AppSettings): SettingsRepository {
         override suspend fun setAutoAccountingEnabled(enabled: Boolean) = Unit
         override suspend fun setCloudAnalysisEnabled(enabled: Boolean) = Unit
         override suspend fun setCloudLearningEnabled(enabled: Boolean) = Unit
+        override suspend fun setUserImprovementPlanEnabled(enabled: Boolean) = Unit
         override suspend fun setCaptureEnabled(enabled: Boolean) = Unit
         override suspend fun setNotificationRetentionDays(days: Int) = Unit
         override suspend fun setScreenshotRetentionDays(days: Int) = Unit
@@ -90,6 +91,13 @@ private fun fakeSettingsRepository(settings: AppSettings): SettingsRepository {
 private fun fakeLedgerRepository(): LedgerRepository {
     return object : LedgerRepository {
         override fun observeEntries(): Flow<List<com.autobook.cn.core.model.LedgerEntry>> = flowOf(emptyList())
+
+        /**
+         * 用途说明：
+         * - 图片导入分析器测试不依赖账本统计，返回零值统计即可。
+         */
+        override fun observeSummaryStats(): Flow<LedgerSummaryStats> = flowOf(LedgerSummaryStats(dayCount = 0, entryCount = 0))
+
         override suspend fun add(entry: com.autobook.cn.core.model.LedgerEntry): Long = 1L
         override suspend fun update(entry: com.autobook.cn.core.model.LedgerEntry) = Unit
         override suspend fun delete(id: Long) = Unit
@@ -121,22 +129,18 @@ private fun fakeCloudImageImportApi(): CloudImageImportApi {
                 amount = 32.5,
                 timestamp = 1_744_598_800_000L,
                 direction = "EXPENSE",
-                merchant = "云端大模型图片建议商户",
                 category = "餐饮",
-                note = "来自云端大模型代理链路，建议人工确认后保存",
-                orderId = "IMG-CLOUD-MODEL-PROXY-001",
+                note = "商户：云端大模型图片建议商户；订单号：IMG-CLOUD-MODEL-PROXY-001；来自云端大模型代理链路，建议人工确认后保存",
                 modelName = "gemini-3-flash-preview",
-                message = "已按云端大模型代理链路生成建议，请核对金额、商户和备注后确认保存。",
+                message = "已按云端大模型代理链路生成建议，请核对金额、分类和备注后确认保存。",
                 requiresManualConfirmation = true,
                 candidates = listOf(
                     CloudImageImportCandidateResponse(
                         amount = 32.5,
                         timestamp = 1_744_598_800_000L,
                         direction = "EXPENSE",
-                        merchant = "云端大模型图片建议商户",
                         category = "餐饮",
-                        note = "来自云端大模型代理链路，建议人工确认后保存",
-                        orderId = "IMG-CLOUD-MODEL-PROXY-001",
+                        note = "商户：云端大模型图片建议商户；订单号：IMG-CLOUD-MODEL-PROXY-001；来自云端大模型代理链路，建议人工确认后保存",
                         confidenceScore = 0.88f,
                         transactionState = "ACTIVE",
                         stateReason = "页面显示支付成功",
@@ -146,10 +150,8 @@ private fun fakeCloudImageImportApi(): CloudImageImportApi {
                         amount = 32.5,
                         timestamp = 1_744_503_800_000L,
                         direction = "EXPENSE",
-                        merchant = "云端大模型旧交易记录",
                         category = "餐饮",
-                        note = "已退款记录",
-                        orderId = "IMG-CLOUD-MODEL-PROXY-REFUND-001",
+                        note = "商户：云端大模型旧交易记录；订单号：IMG-CLOUD-MODEL-PROXY-REFUND-001；已退款记录",
                         confidenceScore = 0.64f,
                         transactionState = "REFUNDED",
                         stateReason = "页面展示退款成功",

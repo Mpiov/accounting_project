@@ -1,20 +1,19 @@
 package com.autobook.cn.app.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,6 +29,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -135,10 +136,10 @@ fun LedgerWorkspaceScreen(
                     LedgerEmptyCard(range = state.selectedRange)
                 }
             } else {
-                items(items = state.entries, key = { entry -> entry.id }) { entry ->
-                    LedgerTimelineCard(
-                        entry = entry,
-                        onClick = { onEntryClick(entry.id) },
+                item(key = "entries_timeline") {
+                    LedgerEntriesTimeline(
+                        entries = state.entries,
+                        onEntryClick = onEntryClick,
                     )
                 }
             }
@@ -354,7 +355,53 @@ private fun LedgerCalendarDayCard(
 
 /**
  * 用途说明：
- * - 月份详情页流水卡片负责展示备注标题、分类、时间和金额。
+ * - 月份详情页流水区域使用连续长链承载当天或整月流水，和总览页最近记录保持一致。
+ *
+ * 参数说明：
+ * - entries：当前筛选范围下的流水列表。
+ * - onEntryClick：点击某条流水后的回调。
+ */
+@Composable
+private fun LedgerEntriesTimeline(
+    entries: List<LedgerItemUiModel>,
+    onEntryClick: (Long) -> Unit,
+) {
+    val connectorColor = autobookTimelineConnectorColor()
+    val timelineModifier = if (entries.size > 1) {
+        Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                val railX = ledgerWorkspaceTimelineRailCenterX.toPx()
+                val railInset = ledgerWorkspaceTimelineRailVerticalInset.toPx().coerceAtMost(size.height / 2f)
+
+                // 流水区域由父容器一次性画完整长链，避免每个卡片独立绘制时出现断链。
+                drawLine(
+                    color = connectorColor,
+                    start = Offset(railX, railInset),
+                    end = Offset(railX, size.height - railInset),
+                    strokeWidth = 2.dp.toPx(),
+                )
+            }
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
+    Column(
+        modifier = timelineModifier,
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        entries.forEach { entry ->
+            LedgerTimelineCard(
+                entry = entry,
+                onClick = { onEntryClick(entry.id) },
+            )
+        }
+    }
+}
+
+/**
+ * 用途说明：
+ * - 月份详情页单条流水负责展示链上图标节点、备注标题、分类、时间和金额。
  *
  * 参数说明：
  * - entry：当前账单条目。
@@ -366,56 +413,103 @@ private fun LedgerTimelineCard(
     onClick: () -> Unit,
 ) {
     val timelineCardShape = AutobookUiTokens.compactPanelShape
-    Card(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .autobookClippedClickable(shape = timelineCardShape, onClick = onClick),
-        shape = timelineCardShape,
-        border = autobookCardBorder(),
-        colors = autobookCardColors(),
+            .heightIn(min = ledgerWorkspaceTimelineRowMinHeight)
+            .clickable(onClick = onClick)
+            .padding(vertical = 1.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
+        Box(
+            modifier = Modifier
+                .width(40.dp)
+                .fillMaxHeight()
+                .padding(vertical = 4.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+            // 圆形分类节点压在线上，让流水列表形成真正的长链结构。
+            LedgerCategoryIconNode(
+                category = entry.category,
+                direction = entry.direction,
+            )
+        }
+        Card(
+            modifier = Modifier
+                .weight(1f)
+                .padding(vertical = 4.dp),
+            shape = timelineCardShape,
+            border = autobookCardBorder(),
+            colors = autobookCardColors(),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
             ) {
-                Text(
-                    text = entry.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (entry.title != entry.category) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text(
-                        text = entry.category,
+                        text = entry.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (entry.title != entry.category) {
+                        Text(
+                            text = entry.category,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = entry.subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Text(
-                    text = entry.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    text = entry.amount,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (entry.direction == MoneyDirection.INCOME) {
+                        AutobookIncomeColor
+                    } else {
+                        AutobookExpenseColor
+                    },
                 )
             }
-            Text(
-                text = entry.amount,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (entry.direction == MoneyDirection.INCOME) {
-                    AutobookIncomeColor
-                } else {
-                    AutobookExpenseColor
-                },
-            )
         }
     }
 }
+
+/**
+ * 月份详情页流水时间线轨道横向中心。
+ *
+ * 用途说明：
+ * - 左侧图标节点列固定 40dp，因此长链中心固定在 20dp。
+ */
+private val ledgerWorkspaceTimelineRailCenterX = 20.dp
+
+/**
+ * 月份详情页流水时间线首尾留白。
+ *
+ * 用途说明：
+ * - 长链从第一枚节点附近开始，到最后一枚节点附近结束，避免线条顶到流水区域外沿。
+ */
+private val ledgerWorkspaceTimelineRailVerticalInset = 43.dp
+
+/**
+ * 月份详情页单条流水最小高度。
+ *
+ * 用途说明：
+ * - 保持节点中心和右侧卡片垂直对齐，让长链在不同内容长度下仍然稳定。
+ */
+private val ledgerWorkspaceTimelineRowMinHeight = 86.dp
 
 /**
  * 用途说明：

@@ -13,6 +13,7 @@ interface ServiceDependenciesEntryPoint {
     fun captureCoordinator(): CaptureCoordinator
     fun imageImportAnalyzer(): ImageImportAnalyzer
     fun settingsRepository(): SettingsRepository
+    fun membershipRepository(): MembershipRepository
     fun pendingRepository(): PendingRepository
     fun ledgerRepository(): LedgerRepository
 }

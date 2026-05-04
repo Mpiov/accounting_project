@@ -129,6 +129,7 @@ def init_database(database_path: str) -> None:
                 expires_at INTEGER,
                 model_confidence_enabled INTEGER NOT NULL DEFAULT 0,
                 cloud_learning_enabled INTEGER NOT NULL DEFAULT 0,
+                auto_ledger_trial_used INTEGER NOT NULL DEFAULT 0,
                 updated_at INTEGER NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
@@ -140,6 +141,7 @@ def init_database(database_path: str) -> None:
                 amount_cents INTEGER NOT NULL,
                 payment_state TEXT NOT NULL,
                 paid_at INTEGER,
+                expires_at INTEGER,
                 created_at INTEGER NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
@@ -228,6 +230,26 @@ def init_database(database_path: str) -> None:
             column_name="updated_at",
             column_sql="updated_at INTEGER NOT NULL DEFAULT 0",
         )
+        _ensure_column(
+            db,
+            table_name="payment_orders",
+            column_name="expires_at",
+            column_sql="expires_at INTEGER",
+        )
+        _ensure_column(
+            db,
+            table_name="memberships",
+            column_name="auto_ledger_trial_used",
+            column_sql="auto_ledger_trial_used INTEGER NOT NULL DEFAULT 0",
+        )
+        # 旧订单没有过期时间，按创建后 30 分钟补齐，避免历史 CREATED 订单永久挂起。
+        db.execute(
+            """
+            UPDATE payment_orders
+            SET expires_at = created_at + 1800000
+            WHERE expires_at IS NULL
+            """
+        )
         # 旧库补齐 contribution_scope 后再创建索引，避免 SQLite 在字段不存在时中断迁移。
         db.execute(
             """
@@ -240,5 +262,17 @@ def init_database(database_path: str) -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS idx_training_samples_user_local
             ON training_samples(user_id, sample_local_id)
             WHERE sample_local_id IS NOT NULL
+            """
+        )
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_payment_orders_state_created
+            ON payment_orders(payment_state, created_at DESC)
+            """
+        )
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_payment_orders_user_created
+            ON payment_orders(user_id, created_at DESC)
             """
         )

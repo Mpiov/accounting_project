@@ -1,4 +1,4 @@
 <resources>
     <!-- 通知监听服务在系统设置中的展示名称，方便用户识别授权对象。 -->
-    <string name="notification_listener_name">轻松计通知监听</string>
+    <string name="notification_listener_name">轻松记通知监听</string>
 </resources>

@@ -38,18 +38,21 @@ interface ModelTrainingSampleDao {
      *
      * 参数说明：
      * - uploadedState：已完成同步的状态值，本查询会排除该状态。
+     * - uploadableLabels：允许上传的有效反馈标签，待确认、重复、原文、空标签和未知标签会被排除。
      * - limit：单次上传批次上限，和后端单批 200 条限制保持一致。
      */
     @Query(
         """
         SELECT * FROM model_training_samples
         WHERE uploadState <> :uploadedState
+          AND feedbackLabel IN (:uploadableLabels)
         ORDER BY updatedAt ASC, id ASC
         LIMIT :limit
         """,
     )
     suspend fun getPendingUploadBatch(
         uploadedState: String,
+        uploadableLabels: List<String>,
         limit: Int,
     ): List<ModelTrainingSampleEntity>
 

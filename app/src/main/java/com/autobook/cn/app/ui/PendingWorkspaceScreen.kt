@@ -23,7 +23,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.autobook.cn.feature.pending.model.PendingItemUiModel
@@ -36,6 +35,7 @@ import com.autobook.cn.feature.pending.model.PendingUiState
  * - state：待确认列表的界面状态。
  * - onConfirm：确认入账回调。
  * - onEdit：编辑后入账回调。
+ * - onIgnore：不入账回调，用于把误识别的待确认项移出可见列表。
  * - onOpenLedger：空状态下前往账本页的回调。
  * - onCreateEntry：空状态下快速记一笔的回调。
  * - modifier：外层修饰符。
@@ -45,6 +45,7 @@ fun PendingWorkspaceScreen(
     state: PendingUiState,
     onConfirm: (Long) -> Unit,
     onEdit: (Long) -> Unit,
+    onIgnore: (Long) -> Unit,
     onOpenLedger: () -> Unit,
     onCreateEntry: () -> Unit,
     modifier: Modifier = Modifier,
@@ -74,6 +75,7 @@ fun PendingWorkspaceScreen(
                     item = item,
                     onConfirm = { onConfirm(item.id) },
                     onEdit = { onEdit(item.id) },
+                    onIgnore = { onIgnore(item.id) },
                 )
             }
         }
@@ -145,18 +147,20 @@ private fun PendingSummaryCard(
  *
  * 用途说明：
  * - 取消建议分类和提示，把用户判断依据集中到默认展开的通知原文。
- * - 第一行提供四个轻量修改入口，第二行只保留更重的“确认入账”主按钮。
+ * - 操作区压缩成一行三个选择：修改后入账、确认入账、不入账，降低每条卡片的纵向占用。
  *
  * 参数说明：
  * - item：当前待确认项。
  * - onConfirm：确认入账回调。
- * - onEdit：进入编辑页回调；当前四个修改入口先共用编辑页。
+ * - onEdit：进入编辑页回调。
+ * - onIgnore：不入账回调，用于把误识别反馈给训练样本并从可见列表移除。
  */
 @Composable
 private fun PendingResolveCard(
     item: PendingItemUiModel,
     onConfirm: () -> Unit,
     onEdit: () -> Unit,
+    onIgnore: () -> Unit,
 ) {
     Card(
         shape = AutobookUiTokens.panelShape,
@@ -195,34 +199,12 @@ private fun PendingResolveCard(
                 )
             }
             PendingRawNotificationCard(rawNotificationText = item.rawNotificationText)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                PendingFieldActionButton(
-                    label = "修改收支方向",
-                    onClick = onEdit,
-                    modifier = Modifier.weight(1f),
-                )
-                PendingFieldActionButton(
-                    label = "修改分类",
-                    onClick = onEdit,
-                    modifier = Modifier.weight(1f),
-                )
-                PendingFieldActionButton(
-                    label = "修改金额",
-                    onClick = onEdit,
-                    modifier = Modifier.weight(1f),
-                )
-                PendingFieldActionButton(
-                    label = "编辑备注",
-                    onClick = onEdit,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Button(
-                onClick = onConfirm,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("确认入账")
-            }
+            PendingDecisionActionRow(
+                canConfirm = item.canDirectConfirm,
+                onEdit = onEdit,
+                onConfirm = onConfirm,
+                onIgnore = onIgnore,
+            )
         }
     }
 }
@@ -279,39 +261,74 @@ private fun PendingRawNotificationCard(
 }
 
 /**
- * 待确认字段修改按钮。
+ * 待确认项底部决策操作行。
  *
  * 用途说明：
- * - 字段修改入口属于辅助操作，使用浅色 Surface，避免抢过“确认入账”的主按钮权重。
+ * - 用一行三个按钮承载用户最常见的三种决策：修改后入账、确认入账、不入账。
+ * - “确认入账”保留实心主按钮样式，“修改后入账”和“不入账”使用描边按钮，明确主次关系。
  *
  * 参数说明：
- * - label：按钮文案。
- * - onClick：点击回调。
- * - modifier：外层布局修饰符。
+ * - canConfirm：当前待确认项是否已经具备直接入账条件；方向未知时禁用确认，避免写入无效账本。
+ * - onEdit：点击“修改后入账”后进入编辑页。
+ * - onConfirm：点击“确认入账”后转成正式账本。
+ * - onIgnore：点击“不入账”后标记为误识别并移出可见列表。
  */
 @Composable
-private fun PendingFieldActionButton(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+private fun PendingDecisionActionRow(
+    canConfirm: Boolean,
+    onEdit: () -> Unit,
+    onConfirm: () -> Unit,
+    onIgnore: () -> Unit,
 ) {
-    val chipShape = AutobookUiTokens.innerPanelShape
-    Surface(
-        modifier = modifier.autobookClippedClickable(shape = chipShape, onClick = onClick),
-        shape = chipShape,
-        border = autobookCardBorder(),
-        color = MaterialTheme.colorScheme.surface,
+    // 三个按钮保持三等分，避免操作区左右轻重不一；仅压缩内边距和文字样式来容纳“五字按钮”。
+    val compactButtonPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        OutlinedButton(
+            onClick = onEdit,
+            contentPadding = compactButtonPadding,
+            modifier = Modifier.weight(1f),
+        ) {
+            PendingActionButtonText(label = "修改后入账")
+        }
+        Button(
+            onClick = onConfirm,
+            enabled = canConfirm,
+            contentPadding = compactButtonPadding,
+            modifier = Modifier.weight(1f),
+        ) {
+            PendingActionButtonText(label = "确认入账")
+        }
+        OutlinedButton(
+            onClick = onIgnore,
+            contentPadding = compactButtonPadding,
+            modifier = Modifier.weight(1f),
+        ) {
+            PendingActionButtonText(label = "不入账")
+        }
     }
+}
+
+/**
+ * 待确认操作按钮文字。
+ *
+ * 用途说明：
+ * - 统一把一行动作按钮里的文字限制为单行，避免“修改后入账”在窄屏或字体放大时拆成两行。
+ * - 使用较小的 `labelSmall`，让三按钮操作区保持清爽紧凑。
+ *
+ * 参数说明：
+ * - label：按钮展示文案。
+ */
+@Composable
+private fun PendingActionButtonText(label: String) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 /** 空状态使用“说明 + 行动建议”的结构，而不是只放一句提示。 */

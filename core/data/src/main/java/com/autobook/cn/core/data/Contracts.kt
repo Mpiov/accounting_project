@@ -265,9 +265,27 @@ interface PendingRepository {
  */
 interface ModelTrainingSampleRepository {
     /**
+     * 用途说明：
+     * - 记录一条没有形成交易候选的原始通知样本，用于本地排查解析失败或来源关闭的原因。
+     * - 这类样本没有稳定训练标签，客户端上传批次会过滤掉它，不再发送到服务器样本池。
+     *
      * 参数说明：
      * - notificationId：来源通知主键。
-     * - event：原始通知事件，会员全局云端学习会导出其中的标题、正文和通知时间。
+     * - event：原始通知事件，上传时会包含标题、正文、包名和通知时间。
+     * - status：通知最终处理状态。
+     * - reason：未进入交易候选解析的原因。
+     */
+    suspend fun recordRawNotification(
+        notificationId: Long,
+        event: NotificationEvent,
+        status: NotificationProcessStatus,
+        reason: String,
+    )
+
+    /**
+     * 参数说明：
+     * - notificationId：来源通知主键。
+     * - event：原始通知事件，用户改善计划会导出其中的标题、正文和通知时间。
      * - candidate：解析器产出的交易候选。
      * - destination：本次流水线分流落点。
      * - status：通知最终处理状态。
@@ -411,6 +429,16 @@ interface AuthRepository {
 
     /**
      * 用途说明：
+     * - 使用本地保存的 refresh token 向后端换取新的 access token。
+     * - 该方法只在业务接口收到后端 `AUTH_TOKEN_EXPIRED` 后调用，避免客户端自行决定登录是否过期。
+     *
+     * 参数说明：
+     * - expiredAccessToken：刚被后端判定过期的访问令牌；如果其它协程已经刷新过，会直接复用最新会话。
+     */
+    suspend fun refreshSession(expiredAccessToken: String? = null): OperationResult<AuthSession>
+
+    /**
+     * 用途说明：
      * - 清除本地登录会话；服务器会员状态下次必须重新通过 `GET /v1/membership/status` 拉取。
      */
     suspend fun logout()
@@ -431,6 +459,15 @@ interface MembershipRepository {
      * - 刷新后的会员状态；后端未配置时返回免费状态。
      */
     suspend fun refresh(): MembershipStatus
+
+    /**
+     * 用途说明：
+     * - 免费用户自动记账成功前调用服务器扣减一次体验额度，并以服务器返回值刷新本地会员状态缓存。
+     *
+     * 返回值说明：
+     * - 成功时返回扣减后的会员状态；失败时说明本次自动入账不应继续写入账本。
+     */
+    suspend fun recordAutoLedgerTrialSuccess(): OperationResult<MembershipStatus>
 }
 
 /**
@@ -543,14 +580,14 @@ object NoOpCloudModelStore : CloudModelStore {
 
 /**
  * 用途说明：
- * - 云端学习仓储，负责会员开关、原文样本上传到全局样本池，以及全局模型拉取。
+ * - 云端学习仓储，负责有效反馈样本上传到全局样本池，以及会员全局模型拉取。
  */
 interface CloudLearningRepository {
     val cloudLearningState: Flow<CloudLearningState>
 
     /**
      * 参数说明：
-     * - enabled：用户是否允许会员全局云端学习上传通知原文。
+     * - enabled：历史云端学习开关目标状态，保留给旧 UI 或调试入口使用。
      */
     suspend fun setCloudLearningEnabled(enabled: Boolean)
 
@@ -609,9 +646,15 @@ interface SettingsRepository {
 
     /**
      * 参数说明：
-     * - enabled：会员全局云端学习开关目标状态。
+     * - enabled：历史云端学习开关目标状态。
      */
     suspend fun setCloudLearningEnabled(enabled: Boolean)
+
+    /**
+     * 参数说明：
+     * - enabled：用户改善计划目标状态，开启后会定时上传已具备有效反馈标签的通知训练样本。
+     */
+    suspend fun setUserImprovementPlanEnabled(enabled: Boolean)
 
     /**
      * 参数说明：

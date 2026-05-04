@@ -1,9 +1,9 @@
 package com.autobook.cn.app.viewmodel
 
 import androidx.lifecycle.SavedStateHandle
-import com.autobook.cn.app.sync.CloudLearningSyncScheduler
 import com.autobook.cn.core.data.ImageImportAnalyzer
 import com.autobook.cn.core.data.LedgerRepository
+import com.autobook.cn.core.data.LedgerSummaryStats
 import com.autobook.cn.core.data.PendingRepository
 import com.autobook.cn.core.model.ImageImportAnalysisPath
 import com.autobook.cn.core.model.ImageImportCandidate
@@ -13,7 +13,6 @@ import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.OperationResult
 import com.autobook.cn.core.model.ParseConfidence
 import com.autobook.cn.core.model.PendingEntry
-import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.flow.Flow
@@ -42,10 +41,8 @@ class EntryEditorImageImportSupportTest {
                                 amount = 66.6,
                                 timestamp = 1_744_598_800_000L,
                                 direction = MoneyDirection.INCOME,
-                                merchant = "图片导入商户",
                                 category = "工资",
-                                note = "图片导入备注",
-                                orderId = "IMG-ORDER-001",
+                                note = "图片导入商户\n订单号 IMG-ORDER-001\n图片导入备注",
                                 confidence = ParseConfidence(0.91f),
                                 tracePath = ImageImportAnalysisPath.CLOUD_LLM_PROXY,
                                 message = "图片导入建议已生成",
@@ -54,10 +51,8 @@ class EntryEditorImageImportSupportTest {
                                         amount = 66.6,
                                         timestamp = 1_744_598_800_000L,
                                         direction = MoneyDirection.INCOME,
-                                        merchant = "图片导入商户",
                                         category = "工资",
-                                        note = "图片导入备注",
-                                        orderId = "IMG-ORDER-001",
+                                        note = "图片导入商户\n订单号 IMG-ORDER-001\n图片导入备注",
                                         confidence = ParseConfidence(0.91f),
                                         evidence = "到账 66.60 元",
                                     ),
@@ -65,10 +60,8 @@ class EntryEditorImageImportSupportTest {
                                         amount = 28.8,
                                         timestamp = 1_744_512_400_000L,
                                         direction = MoneyDirection.EXPENSE,
-                                        merchant = "第二候选商户",
                                         category = "餐饮",
-                                        note = "第二候选备注",
-                                        orderId = "IMG-ORDER-002",
+                                        note = "第二候选商户\n订单号 IMG-ORDER-002\n第二候选备注",
                                         confidence = ParseConfidence(0.73f),
                                         evidence = "支付 28.80 元",
                                     ),
@@ -82,7 +75,6 @@ class EntryEditorImageImportSupportTest {
                 },
                 ledgerRepository = fakeLedgerRepository(),
                 pendingRepository = fakePendingRepository(),
-                cloudLearningSyncScheduler = fakeCloudLearningSyncScheduler(),
             )
 
             viewModel.importFromImage("content://demo/image-1")
@@ -92,10 +84,8 @@ class EntryEditorImageImportSupportTest {
             assertEquals("66.6", state.amount)
             assertEquals(1_744_598_800_000L, state.entryTimestamp)
             assertEquals(MoneyDirection.INCOME, state.direction)
-            assertEquals("图片导入商户", state.merchant)
             assertEquals("工资", state.category)
-            assertEquals("图片导入备注", state.note)
-            assertEquals("IMG-ORDER-001", state.orderId)
+            assertEquals("图片导入商户\n订单号 IMG-ORDER-001\n图片导入备注", state.note)
             assertEquals("content://demo/image-1", state.importedImageRef)
             assertEquals(ImageImportAnalysisPath.CLOUD_LLM_PROXY, state.imageImportTracePath)
             assertEquals(2, state.imageImportCandidates.size)
@@ -112,10 +102,8 @@ class EntryEditorImageImportSupportTest {
             assertEquals("28.8", switchedState.amount)
             assertEquals(1_744_512_400_000L, switchedState.entryTimestamp)
             assertEquals(MoneyDirection.EXPENSE, switchedState.direction)
-            assertEquals("第二候选商户", switchedState.merchant)
             assertEquals("餐饮", switchedState.category)
-            assertEquals("第二候选备注", switchedState.note)
-            assertEquals("IMG-ORDER-002", switchedState.orderId)
+            assertEquals("第二候选商户\n订单号 IMG-ORDER-002\n第二候选备注", switchedState.note)
             assertEquals(1, switchedState.selectedImageImportCandidateIndex)
         } finally {
             Dispatchers.resetMain()
@@ -135,11 +123,10 @@ class EntryEditorImageImportSupportTest {
                         return OperationResult.Success(
                             ImageImportSuggestion(
                                 amount = 88.0,
-                                timestamp = 1_744_598_800_000L,
+                                timestamp = 1_744_598_760_000L,
                                 direction = MoneyDirection.EXPENSE,
-                                merchant = "账单商户",
                                 category = "餐饮",
-                                note = "已识别账单时间",
+                                note = "账单商户\n已识别账单时间",
                                 tracePath = ImageImportAnalysisPath.CLOUD_LLM_PROXY,
                                 message = "时间已识别",
                             ),
@@ -148,7 +135,6 @@ class EntryEditorImageImportSupportTest {
                 },
                 ledgerRepository = recordingLedgerRepository,
                 pendingRepository = fakePendingRepository(),
-                cloudLearningSyncScheduler = fakeCloudLearningSyncScheduler(),
             )
 
             viewModel.importFromImage("content://demo/image-2")
@@ -158,26 +144,22 @@ class EntryEditorImageImportSupportTest {
 
             val savedEntry = recordingLedgerRepository.lastAddedEntry
             assertNotNull(savedEntry)
-            assertEquals(1_744_598_800_000L, savedEntry?.timestamp)
-            assertEquals("账单商户", savedEntry?.merchant)
+            assertEquals(1_744_598_760_000L, savedEntry?.timestamp)
+            assertEquals("账单商户\n已识别账单时间", savedEntry?.note)
         } finally {
             Dispatchers.resetMain()
         }
     }
 }
 
-/**
- * 提供不会真正注册 WorkManager 任务的云端学习调度器替身。
- *
- * 返回值说明：
- * - 使用 relaxed mock，让测试只关注编辑页字段映射，不触发系统后台任务。
- */
-private fun fakeCloudLearningSyncScheduler(): CloudLearningSyncScheduler = mockk(relaxed = true)
-
 /** 提供不会访问真实数据库的账本仓储替身。 */
 private fun fakeLedgerRepository(): LedgerRepository {
     return object : LedgerRepository {
         override fun observeEntries(): Flow<List<LedgerEntry>> = emptyFlow()
+
+        /** 用途说明：图片导入表单测试不依赖账本统计，返回零值统计即可。 */
+        override fun observeSummaryStats(): Flow<LedgerSummaryStats> = emptyFlow()
+
         override suspend fun add(entry: LedgerEntry): Long = 1L
         override suspend fun update(entry: LedgerEntry) = Unit
         override suspend fun delete(id: Long) = Unit
@@ -201,6 +183,9 @@ private class RecordingLedgerRepository : LedgerRepository {
     var lastAddedEntry: LedgerEntry? = null
 
     override fun observeEntries(): Flow<List<LedgerEntry>> = emptyFlow()
+
+    /** 用途说明：保存表单测试只记录新增账本，不读取账本统计。 */
+    override fun observeSummaryStats(): Flow<LedgerSummaryStats> = emptyFlow()
 
     override suspend fun add(entry: LedgerEntry): Long {
         lastAddedEntry = entry

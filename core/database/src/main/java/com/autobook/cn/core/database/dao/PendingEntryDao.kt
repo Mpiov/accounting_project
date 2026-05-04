@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.autobook.cn.core.database.entity.PendingEntryEntity
 import com.autobook.cn.core.database.entity.PendingStatsEntity
@@ -43,6 +44,48 @@ interface PendingEntryDao {
      */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertStats(stats: PendingStatsEntity)
+
+    /**
+     * 用途说明：
+     * - 事务化增减待确认数量缓存，避免短时间连续写入时出现“两个协程都读到旧值再覆盖写回”的丢失更新。
+     * - 该方法不扫描待确认表，只维护 `pending_stats.activeCount` 这一行缓存。
+     *
+     * 参数说明：
+     * - delta：有效待确认数量变化量，新增为 `+1`，确认/忽略/误识别为 `-1`。
+     */
+    @Transaction
+    suspend fun applyActiveCountDelta(delta: Int) {
+        ensureStatsRow()
+        updateActiveCountByDelta(delta = delta)
+    }
+
+    /**
+     * 用途说明：
+     * - 确保待确认统计缓存存在固定主键 `1` 的行。
+     * - 只在更新缓存前补空行，不读取真实待确认表。
+     */
+    @Query("INSERT OR IGNORE INTO pending_stats(id, activeCount) VALUES(1, 0)")
+    suspend fun ensureStatsRow()
+
+    /**
+     * 用途说明：
+     * - 在 SQLite 单条 `UPDATE` 中完成数量增减，数据库会串行化写入，避免并发丢失更新。
+     * - 使用 `CASE` 把结果钳制到 0 以上，防止重复点击或历史异常把徽标数量减成负数。
+     *
+     * 参数说明：
+     * - delta：有效待确认数量变化量。
+     */
+    @Query(
+        """
+        UPDATE pending_stats
+        SET activeCount = CASE
+            WHEN activeCount + :delta < 0 THEN 0
+            ELSE activeCount + :delta
+        END
+        WHERE id = 1
+        """,
+    )
+    suspend fun updateActiveCountByDelta(delta: Int)
 
     @Query("SELECT * FROM pending_entries WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): PendingEntryEntity?

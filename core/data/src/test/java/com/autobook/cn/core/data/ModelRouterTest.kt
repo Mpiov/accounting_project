@@ -24,7 +24,7 @@ class ModelRouterTest {
         val expectedCandidate = TransactionCandidate(
             amount = 12.5,
             direction = MoneyDirection.EXPENSE,
-            merchant = "微信支付",
+            note = "微信支付",
             channel = "微信支付",
             timestamp = 1L,
             confidence = ParseConfidence(0.9f),
@@ -131,5 +131,9 @@ private fun fakeMembershipRepository(status: MembershipStatus): MembershipReposi
         override val membershipStatus: Flow<MembershipStatus> = flowOf(status)
 
         override suspend fun refresh(): MembershipStatus = status
+
+        /** 用途说明：路由测试不触发自动入账扣次，返回当前状态即可满足接口契约。 */
+        override suspend fun recordAutoLedgerTrialSuccess(): OperationResult<MembershipStatus> =
+            OperationResult.Success(status)
     }
 }

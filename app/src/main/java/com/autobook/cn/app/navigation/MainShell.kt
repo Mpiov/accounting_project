@@ -204,6 +204,8 @@ fun MainShell(
                     onEdit = { pendingId ->
                         rootNavController.navigate(AutobookDestination.PendingResolve.createRoute(pendingId))
                     },
+                    // “不入账”代表用户确认这条通知不是账单，标记为误识别后会从待确认列表隐藏，并进入样本反馈链路。
+                    onIgnore = viewModel::markFalsePositive,
                     onOpenLedger = { shellNavController.navigateToMainTab(MainShellTab.Ledger) },
                     onCreateEntry = {
                         rootNavController.navigate(
@@ -226,12 +228,9 @@ fun MainShell(
                     onRequestLoginCode = viewModel::requestLoginCode,
                     onLoginOrRegister = viewModel::loginOrRegisterWithCode,
                     onLogout = viewModel::logout,
-                    onCloudLearningChanged = viewModel::setCloudLearningEnabled,
-                    onRefreshMembership = viewModel::refreshMembership,
-                    onStartMonthlyMembership = viewModel::startMonthlyMembershipPayment,
                     onStartYearlyMembership = viewModel::startYearlyMembershipPayment,
-                    onSyncCloudLearning = viewModel::syncCloudLearningNow,
                     onPullCloudModel = viewModel::pullCloudModelNow,
+                    onUserImprovementPlanChanged = viewModel::setUserImprovementPlanEnabled,
                     onCaptureEnabledChanged = viewModel::setCaptureEnabled,
                     onNotificationRetentionChanged = viewModel::setNotificationRetentionDays,
                     onScreenshotRetentionChanged = viewModel::setScreenshotRetentionDays,

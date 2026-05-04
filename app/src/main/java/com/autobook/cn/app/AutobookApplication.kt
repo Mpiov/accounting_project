@@ -3,6 +3,7 @@ package com.autobook.cn.app
 import android.app.Application
 import com.autobook.cn.app.sync.CloudLearningSyncScheduler
 import com.autobook.cn.core.data.parser.NotificationRuleWarmup
+import com.autobook.cn.service.notification.NotificationListenerRebindHelper
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +42,10 @@ class AutobookApplication : Application() {
      */
     override fun onCreate() {
         super.onCreate()
+        NotificationListenerRebindHelper.requestRebindIfPermitted(
+            context = this,
+            reason = "application_on_create",
+        )
         cloudLearningSyncScheduler.ensurePeriodicSync()
         cloudLearningSyncScheduler.enqueueForegroundMembershipRefresh()
         applicationScope.launch {
