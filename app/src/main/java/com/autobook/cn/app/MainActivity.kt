@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import com.autobook.cn.app.sync.CloudLearningSyncScheduler
+import com.autobook.cn.app.sync.NotificationListenerHealthScheduler
 import com.autobook.cn.service.notification.NotificationListenerRebindHelper
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -21,6 +22,15 @@ class MainActivity : ComponentActivity() {
      */
     @Inject
     lateinit var cloudLearningSyncScheduler: CloudLearningSyncScheduler
+
+    /**
+     * 通知监听健康检查调度器。
+     *
+     * 用途说明：
+     * - App 回到前台时立即补一次重绑检查，减少用户打开 App 后仍漏通知的概率。
+     */
+    @Inject
+    lateinit var notificationListenerHealthScheduler: NotificationListenerHealthScheduler
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,7 +49,9 @@ class MainActivity : ComponentActivity() {
         NotificationListenerRebindHelper.requestRebindIfPermitted(
             context = this,
             reason = "main_activity_on_start",
+            force = true,
         )
+        notificationListenerHealthScheduler.enqueueImmediateCheck(reason = "main_activity_on_start")
         cloudLearningSyncScheduler.enqueueForegroundMembershipRefresh()
     }
 }

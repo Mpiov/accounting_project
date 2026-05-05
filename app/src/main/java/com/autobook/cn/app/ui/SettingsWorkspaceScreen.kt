@@ -45,6 +45,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -99,6 +100,8 @@ import java.time.temporal.ChronoUnit
  * - onLoginOrRegister：登录或注册回调。
  * - onLogout：退出登录回调。
  * - onStartYearlyMembership：创建年卡订单回调。
+ * - onRefreshMembership：从服务器刷新会员状态回调。
+ * - onRefreshMembershipAfterPayment：用户付款后主动检查会员是否生效的回调。
  * - onPullCloudModel：只拉取服务器最新全局模型回调。
  * - onUserImprovementPlanChanged：用户改善计划开关回调。
  * - onCaptureEnabledChanged：截图记账入口启停状态回写回调。
@@ -119,6 +122,8 @@ fun SettingsWorkspaceScreen(
     onLoginOrRegister: () -> Unit,
     onLogout: () -> Unit,
     onStartYearlyMembership: () -> Unit,
+    onRefreshMembership: () -> Unit,
+    onRefreshMembershipAfterPayment: () -> Unit,
     onPullCloudModel: () -> Unit,
     onUserImprovementPlanChanged: (Boolean) -> Unit,
     onCaptureEnabledChanged: (Boolean) -> Unit,
@@ -134,6 +139,8 @@ fun SettingsWorkspaceScreen(
     val hasNotificationAccess = permissionSnapshot.hasNotificationAccess
     val hasAppNotificationsEnabled = permissionSnapshot.hasAppNotificationsEnabled
     val hasAccessibilityAccess = permissionSnapshot.hasAccessibilityAccess
+    val latestRefreshMembership by rememberUpdatedState(onRefreshMembership)
+    val latestAuthLoggedIn by rememberUpdatedState(state.authLoggedIn)
     /**
      * 应用通知设置页打开中的本地保护状态。
      *
@@ -155,6 +162,26 @@ fun SettingsWorkspaceScreen(
     var selectedDetailName by remember(homeResetKey) { mutableStateOf<String?>(null) }
     val selectedDetail = SettingsDetailDestination.entries.firstOrNull { detail ->
         detail.name == selectedDetailName
+    }
+
+    LaunchedEffect(state.authLoggedIn) {
+        if (state.authLoggedIn) {
+            // 设置页首次出现或刚登录成功时立即刷新服务器会员状态，避免后台已开通但本地仍显示免费用户。
+            latestRefreshMembership()
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && latestAuthLoggedIn) {
+                // 从支付 App、系统设置或后台切回轻松记时重新拉取会员状态，让人工确认收款后的会员权益及时生效。
+                latestRefreshMembership()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
     /**
      * 统一打开“应用通知”系统设置入口。
@@ -250,6 +277,7 @@ fun SettingsWorkspaceScreen(
                 )
             },
             onStartYearlyMembership = onStartYearlyMembership,
+            onRefreshMembershipAfterPayment = onRefreshMembershipAfterPayment,
             onUserImprovementPlanChanged = onUserImprovementPlanChanged,
             onNotificationRetentionChanged = onNotificationRetentionChanged,
             onScreenshotRetentionChanged = onScreenshotRetentionChanged,
@@ -427,6 +455,7 @@ private enum class SettingsDetailDestination(
  * - onRequestNotificationPermission：申请运行时通知权限回调。
  * - onOpenAccessibilitySettings：打开无障碍系统设置回调。
  * - onStartYearlyMembership：开通年卡回调。
+ * - onRefreshMembershipAfterPayment：用户付款后主动检查会员是否生效的回调。
  * - onUserImprovementPlanChanged：用户改善计划启停回调。
  * - onNotificationRetentionChanged：通知保留天数变更回调。
  * - onScreenshotRetentionChanged：截图保留天数变更回调。
@@ -449,6 +478,7 @@ private fun SettingsDetailScreen(
     onRequestNotificationPermission: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     onStartYearlyMembership: () -> Unit,
+    onRefreshMembershipAfterPayment: () -> Unit,
     onUserImprovementPlanChanged: (Boolean) -> Unit,
     onNotificationRetentionChanged: (Int) -> Unit,
     onScreenshotRetentionChanged: (Int) -> Unit,
@@ -534,6 +564,8 @@ private fun SettingsDetailScreen(
                     MembershipPaymentQrCard(
                         plan = membershipPaymentPlan,
                         accountEmail = state.authPaymentEmailText(),
+                        actionMessage = state.membershipActionMessage,
+                        onRefreshMembership = onRefreshMembershipAfterPayment,
                     )
                 } else {
                     MembershipCenterCard(
@@ -1913,11 +1945,15 @@ private fun MembershipPlanOption(
  * 参数说明：
  * - plan：当前准备支付的会员套餐。
  * - accountEmail：当前账号邮箱；未登录或无法识别时传入“未登录”。
+ * - actionMessage：刷新会员状态后的短提示文案。
+ * - onRefreshMembership：用户付款后主动刷新服务器会员状态的回调。
  */
 @Composable
 private fun MembershipPaymentQrCard(
     plan: MembershipPlanUi,
     accountEmail: String,
+    actionMessage: String,
+    onRefreshMembership: () -> Unit,
 ) {
     val hasPaymentEmail = accountEmail.contains("@")
     val warningText = if (hasPaymentEmail) {
@@ -2015,6 +2051,31 @@ private fun MembershipPaymentQrCard(
                     )
                 }
             }
+            Button(
+                onClick = onRefreshMembership,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
+                Text("我已付款，刷新会员状态")
+            }
+            if (actionMessage.isNotBlank()) {
+                Text(
+                    text = actionMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Text(
+                text = "后台确认收款后，刷新会显示服务器会员有效期；续费用户请以有效期是否延长为准。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

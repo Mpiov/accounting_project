@@ -36,7 +36,16 @@ CONFIG = load_config()
 app = FastAPI(title="AutoBook API", version="0.1.0")
 app.include_router(admin_router)
 EMAIL_PATTERN = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$", re.IGNORECASE)
-AUTO_LEDGER_FREE_TRIAL_LIMIT = 10
+
+
+def auto_ledger_free_trial_limit() -> int:
+    """读取免费自动记账体验额度。
+
+    返回：
+        int: 服务端配置的免费自动记账体验总次数，接口展示和扣减逻辑共用同一个值。
+    """
+
+    return CONFIG.auto_ledger_free_trial_limit
 
 
 @app.on_event("startup")
@@ -109,7 +118,9 @@ def current_membership(user_id: str) -> dict[str, object]:
 
     tier = row["tier"] or "FREE"
     expires_at = row["expires_at"]
-    trial_used = max(0, min(int(row["auto_ledger_trial_used"] or 0), AUTO_LEDGER_FREE_TRIAL_LIMIT))
+    trial_limit = auto_ledger_free_trial_limit()
+    # 已用次数按服务端当前额度夹取，避免后台临时下调额度后展示出负数剩余次数。
+    trial_used = max(0, min(int(row["auto_ledger_trial_used"] or 0), trial_limit))
     # 会员过期时服务端直接降级，客户端不能凭本地缓存继续使用模型能力。
     active_member = tier == "MEMBER" and expires_at is not None and int(expires_at) > now_millis()
     return {
@@ -119,9 +130,9 @@ def current_membership(user_id: str) -> dict[str, object]:
         "expiresAt": expires_at if active_member else None,
         "modelConfidenceEnabled": bool(row["model_confidence_enabled"]) if active_member else False,
         "cloudLearningEnabled": bool(row["cloud_learning_enabled"]) if active_member else False,
-        "autoLedgerTrialLimit": AUTO_LEDGER_FREE_TRIAL_LIMIT,
+        "autoLedgerTrialLimit": trial_limit,
         "autoLedgerTrialUsed": trial_used,
-        "autoLedgerTrialRemaining": max(0, AUTO_LEDGER_FREE_TRIAL_LIMIT - trial_used),
+        "autoLedgerTrialRemaining": max(0, trial_limit - trial_used),
         "serverVerified": True,
     }
 
@@ -370,7 +381,7 @@ def record_auto_ledger_trial_success(authorization: str | None = Header(default=
                 WHERE user_id = ?
                   AND auto_ledger_trial_used < ?
                 """,
-                (current_time, row["user_id"], AUTO_LEDGER_FREE_TRIAL_LIMIT),
+                (current_time, row["user_id"], auto_ledger_free_trial_limit()),
             ).rowcount
             if updated <= 0:
                 raise fail(403, "AUTO_LEDGER_TRIAL_EXHAUSTED", "免费自动入账体验已用完，开通会员后可继续使用")

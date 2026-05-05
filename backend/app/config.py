@@ -28,6 +28,7 @@ class AppConfig:
         admin_password: 管理后台登录密码，第一版只通过 SSH 隧道访问。
         admin_session_seconds: 管理后台会话有效期，单位秒。
         payment_order_expire_minutes: 支付订单默认有效期，单位分钟。
+        auto_ledger_free_trial_limit: 免费用户自动记账体验总次数，由服务器统一下发并扣减。
         training_schedule_hour: 定时训练检查的北京时间小时。
         training_min_new_samples: 自动训练需要的新增有效样本数。
         training_min_total_samples: 自动训练需要的总有效样本数。
@@ -52,6 +53,7 @@ class AppConfig:
     admin_password: str
     admin_session_seconds: int
     payment_order_expire_minutes: int
+    auto_ledger_free_trial_limit: int
     training_schedule_hour: int
     training_min_new_samples: int
     training_min_total_samples: int
@@ -84,8 +86,9 @@ def load_config() -> AppConfig:
         admin_password=os.getenv("AUTOBOOK_ADMIN_PASSWORD", ""),
         admin_session_seconds=int(os.getenv("AUTOBOOK_ADMIN_SESSION_SECONDS", "7200")),
         payment_order_expire_minutes=int(os.getenv("AUTOBOOK_PAYMENT_ORDER_EXPIRE_MINUTES", "30")),
+        auto_ledger_free_trial_limit=_read_non_negative_int("AUTOBOOK_AUTO_LEDGER_FREE_TRIAL_LIMIT", default=10),
         training_schedule_hour=int(os.getenv("AUTOBOOK_TRAINING_SCHEDULE_HOUR", "3")),
-        training_min_new_samples=int(os.getenv("AUTOBOOK_TRAINING_MIN_NEW_SAMPLES", "100")),
+        training_min_new_samples=int(os.getenv("AUTOBOOK_TRAINING_MIN_NEW_SAMPLES", "1000")),
         training_min_total_samples=int(os.getenv("AUTOBOOK_TRAINING_MIN_TOTAL_SAMPLES", "100")),
         training_min_per_class=int(os.getenv("AUTOBOOK_TRAINING_MIN_PER_CLASS", "10")),
         training_min_accuracy=float(os.getenv("AUTOBOOK_TRAINING_MIN_ACCURACY", "0.65")),
@@ -108,3 +111,24 @@ def _read_bool(name: str, default: bool) -> bool:
     if raw_value is None:
         return default
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _read_non_negative_int(name: str, default: int) -> int:
+    """读取非负整数环境变量。
+
+    参数：
+        name: 环境变量名称。
+        default: 环境变量未设置或格式错误时使用的默认值。
+
+    返回：
+        int: 不小于 0 的整数配置值，避免错误配置把扣减逻辑变成负数额度。
+    """
+
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        # 体验次数允许设置为 0，表示免费用户没有自动记账体验额度。
+        return max(0, int(raw_value.strip()))
+    except ValueError:
+        return default

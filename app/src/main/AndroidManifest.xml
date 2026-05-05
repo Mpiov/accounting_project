@@ -74,6 +74,22 @@
             android:name="com.autobook.cn.app.capture.PageCaptureBookkeepingService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!--
+            通知监听重绑广播接收器。
+            说明：
+            1. 线上自动记账依赖 NotificationListenerService 持续处于 Live listeners。
+            2. 部分厂商系统在开机或应用升级后会保留权限但不立刻恢复绑定，因此这里主动补一次健康检查。
+            3. 该组件只接收系统广播，不对外提供业务入口。
+        -->
+        <receiver
+            android:name="com.autobook.cn.app.sync.NotificationListenerRebindReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

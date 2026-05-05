@@ -53,3 +53,4 @@ Autobook is an Android-first accounting app for notification-driven bookkeeping 
 
 - Current architecture: `docs/框架.md`
 - Notification confidence rules: `docs/置信度规则.md`
+- Production maintenance notes: `docs/上线维护注意事项.md`

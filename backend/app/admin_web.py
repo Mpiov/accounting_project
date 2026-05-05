@@ -14,6 +14,7 @@ from .admin_service import grant_member
 from .admin_service import list_member_statuses
 from .admin_service import revoke_member
 from .auth import parse_token, sign_token
+from .config import AppConfig
 from .config import load_config
 from .global_model_service import count_global_training_samples
 from .global_model_service import get_active_global_model
@@ -303,6 +304,22 @@ async def read_form(request: Request) -> dict[str, str]:
     return {key: values[0] if values else "" for key, values in parsed.items()}
 
 
+def read_int_form(form: dict[str, str], name: str, default: int) -> int:
+    """读取整数表单字段。
+
+    参数：
+        form: 已解析的 HTML 表单字段字典。
+        name: 需要读取的字段名。
+        default: 字段为空时使用的配置默认值。
+    返回：
+        int: 表单中填写的整数；空值会回退到配置，非法值交给上层异常提示。
+    """
+
+    raw_value = form.get(name, "").strip()
+    # 后台表单允许管理员不填写，此时应沿用服务器环境配置，避免悄悄退回硬编码旧值。
+    return int(raw_value) if raw_value else default
+
+
 def build_admin_session() -> str:
     """生成管理后台会话。
 
@@ -429,7 +446,7 @@ def admin_index(request: Request, q: str = "", message: str = "") -> Response:
     members = list_member_statuses(config.database_path, query=q)
     orders_section = render_recent_orders_section(config.database_path)
     global_model_section = render_global_model_section(config.database_path)
-    training_section = render_training_section(config.database_path)
+    training_section = render_training_section(config)
     message_html = f'<div class="message">{escape(message)}</div>' if message else ""
     rows = "\n".join(render_member_row(member) for member in members)
     body = f"""
@@ -858,17 +875,18 @@ def render_global_model_section(database_path: str) -> str:
         """
 
 
-def render_training_section(database_path: str) -> str:
+def render_training_section(config: AppConfig) -> str:
     """渲染训练任务摘要。
 
     参数：
-        database_path: SQLite 数据库文件路径。
+        config: 后端运行配置，包含数据库路径和当前训练门槛。
 
     返回：
         str: 管理后台首页中的训练任务 HTML。
     """
 
     try:
+        database_path = config.database_path
         summary = training_dataset_summary(database_path)
         jobs = list_training_jobs(database_path, limit=5)
         rows = "\n".join(render_training_job_row(job) for job in jobs)
@@ -888,8 +906,11 @@ def render_training_section(database_path: str) -> str:
           <form method="post" action="/admin/training/run" style="margin-top: 14px;">
             <label>
               新增样本门槛
-              <input type="number" name="min_new_samples" value="100" min="1" max="100000">
+              <input type="number" name="min_new_samples" value="{config.training_min_new_samples}" min="1" max="100000">
             </label>
+            <p class="muted">
+              当前自动训练配置：新增有效样本 ≥ {config.training_min_new_samples}，总有效样本 ≥ {config.training_min_total_samples}，正负样本各 ≥ {config.training_min_per_class}。
+            </p>
             <label>
               <span>强制训练</span>
               <input type="checkbox" name="force">
@@ -999,9 +1020,11 @@ async def run_training_job(request: Request) -> Response:
             database_path=config.database_path,
             trigger_type="admin",
             policy=TrainingPolicy(
-                min_new_samples=int(form.get("min_new_samples", "100")),
-                min_total_samples=100,
-                min_per_class=10,
+                min_new_samples=read_int_form(form, "min_new_samples", config.training_min_new_samples),
+                min_total_samples=config.training_min_total_samples,
+                min_per_class=config.training_min_per_class,
+                min_accuracy=config.training_min_accuracy,
+                max_false_positive_rate=config.training_max_false_positive_rate,
                 force="force" in form,
             ),
         )
@@ -1024,7 +1047,8 @@ def render_member_row(member: dict[str, object]) -> str:
     phone = str(member.get("phone", ""))
     tier = str(member.get("tier", "FREE"))
     trial_used = int(member.get("autoLedgerTrialUsed", 0) or 0)
-    trial_limit = int(member.get("autoLedgerTrialLimit", 10) or 10)
+    # 管理服务会返回服务器配置的体验总次数；这里不再写死 10，避免后台展示和 API 配置不一致。
+    trial_limit = int(member.get("autoLedgerTrialLimit", 0) or 0)
     return f"""
     <tr>
       <td>{escape(phone)}</td>

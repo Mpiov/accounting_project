@@ -8,6 +8,7 @@
 - `AUTOBOOK_TOKEN_SECRET`：访问令牌签名密钥，生产环境必须覆盖。
 - `AUTOBOOK_DEV_SMS_CODE`：开发阶段固定验证码，默认 `123456`。
 - `AUTOBOOK_PAYMENT_ORDER_EXPIRE_MINUTES`：会员订单有效分钟数，默认 `30`。
+- `AUTOBOOK_AUTO_LEDGER_FREE_TRIAL_LIMIT`：免费用户自动记账体验总次数，默认 `10`，由服务器接口下发并原子扣减。
 
 ## 当前接口
 
@@ -35,6 +36,8 @@
 - 正负样本任一类别少于 `AUTOBOOK_TRAINING_MIN_PER_CLASS` 时跳过。
 - 验证准确率低于 `AUTOBOOK_TRAINING_MIN_ACCURACY` 时跳过。
 - 负样本误判率高于 `AUTOBOOK_TRAINING_MAX_FALSE_POSITIVE_RATE` 时跳过。
+
+`api` 和 `trainer` 容器都会读取同一组 `AUTOBOOK_TRAINING_*` 环境变量。管理后台手动训练和 CLI 手动训练默认沿用这些服务器配置；只有显式填写表单或传入命令行参数时才临时覆盖。
 
 手动检查一次训练：
 

@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -89,6 +90,7 @@ data class SettingsUiState(
  * - membershipRepository：会员状态仓储。
  * - paymentRepository：会员支付仓储。
  * - cloudLearningRepository：云端学习仓储。
+ * - appNoticeBus：全局底部提示条事件通道，用于复用登录成功、模型拉取成功等短反馈。
  * - ledgerRepository：账本仓储，仅用于设置页顶部轻量统计。
  */
 @HiltViewModel
@@ -98,6 +100,7 @@ class SettingsViewModel @Inject constructor(
     private val membershipRepository: MembershipRepository,
     private val paymentRepository: PaymentRepository,
     private val cloudLearningRepository: CloudLearningRepository,
+    private val appNoticeBus: AppNoticeBus,
     ledgerRepository: LedgerRepository,
 ) : ViewModel() {
     private val membershipActionMessage = MutableStateFlow("")
@@ -106,6 +109,7 @@ class SettingsViewModel @Inject constructor(
     private val authCodeRequesting = MutableStateFlow(false)
     private val authCodeCooldownSeconds = MutableStateFlow(0)
     private val authLoginInProgress = MutableStateFlow(false)
+    private var lastSilentMembershipRefreshAt: Long = 0L
     private val authForm: Flow<SettingsAuthForm> = combine(
         authPhoneInput,
         authCodeInput,
@@ -262,10 +266,15 @@ class SettingsViewModel @Inject constructor(
         startAuthCodeCooldown()
         viewModelScope.launch {
             try {
-                membershipActionMessage.value = when (val result = authRepository.requestLoginCode(phone)) {
+                val result = authRepository.requestLoginCode(phone)
+                val message = when (result) {
                     is OperationResult.Success -> "验证码已发送，请到邮箱查看。"
                     is OperationResult.RetryableFailure -> "${result.message}，请等待倒计时结束后重试。"
                     is OperationResult.TerminalFailure -> result.message
+                }
+                membershipActionMessage.value = message
+                if (result is OperationResult.Success) {
+                    appNoticeBus.show(message)
                 }
             } finally {
                 // 无论网络调用结果如何，都结束“发送中”；倒计时由本地限流协程继续维护。
@@ -290,9 +299,11 @@ class SettingsViewModel @Inject constructor(
                     phone = authPhoneInput.value,
                     code = authCodeInput.value,
                 )
-                membershipActionMessage.value = result.toMessage()
+                val message = result.toMessage()
+                membershipActionMessage.value = message
                 if (result is OperationResult.Success) {
                     membershipRepository.refresh()
+                    appNoticeBus.show("登录成功，会员状态已同步。")
                 }
             } finally {
                 // 防止登录请求异常中断后按钮一直停留在“登录中”。
@@ -352,6 +363,49 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * 用途说明：
+     * - 用户在二维码页完成付款后主动检查会员状态，并给出明确的短提示。
+     * - 个人收款码阶段没有支付平台回调，只有后台确认订单后服务器会员状态才会变为会员。
+     *
+     * 参数说明：
+     * - 无参数；会使用当前登录会话向服务器查询会员状态。
+     */
+    fun refreshMembershipAfterPayment() {
+        viewModelScope.launch {
+            val status = membershipRepository.refresh()
+            membershipActionMessage.value = if (status.isMember) {
+                val expiryLabel = status.toMembershipExpiresAtLabel()
+                "当前会员有效期至 $expiryLabel。若刚刚付款续费，请以有效期变化为准。"
+            } else {
+                "暂未查到会员，请等待后台确认收款后再刷新。"
+            }
+        }
+    }
+
+    /**
+     * 用途说明：
+     * - 静默刷新服务器会员状态，供设置页进入和回到前台时调用。
+     * - 不写入提示文案，避免用户只是切回设置页时反复看到“当前仍是免费版”这类干扰信息。
+     *
+     * 参数说明：
+     * - 无参数；内部会先判断是否已经登录邮箱账号。
+     */
+    fun refreshMembershipSilently() {
+        viewModelScope.launch {
+            if (authRepository.authState.first().session == null) {
+                return@launch
+            }
+            val now = System.currentTimeMillis()
+            if (now - lastSilentMembershipRefreshAt < MEMBERSHIP_SILENT_REFRESH_INTERVAL_MILLIS) {
+                return@launch
+            }
+            // 进入设置页和回到前台可能连续触发两次刷新，这里做轻量节流，避免把重复压力打到服务器。
+            lastSilentMembershipRefreshAt = now
+            membershipRepository.refresh()
+        }
+    }
+
+    /**
+     * 用途说明：
      * - 创建两年会员支付订单。
      */
     fun startTwoYearMembershipPayment() {
@@ -401,10 +455,15 @@ class SettingsViewModel @Inject constructor(
      */
     fun pullCloudModelNow() {
         viewModelScope.launch {
-            membershipActionMessage.value = when (val result = cloudLearningRepository.pullCloudModel()) {
+            val result = cloudLearningRepository.pullCloudModel()
+            val message = when (result) {
                 is OperationResult.Success -> "模型已拉取，后续通知解析会使用最新会员模型。"
                 is OperationResult.RetryableFailure -> result.message
                 is OperationResult.TerminalFailure -> result.message
+            }
+            membershipActionMessage.value = message
+            if (result is OperationResult.Success) {
+                appNoticeBus.show(message)
             }
         }
     }
@@ -718,3 +777,4 @@ private val MONTH_LABEL_FORMATTER = DateTimeFormatter.ofPattern("yyyy 年 M 月"
 private val MEMBERSHIP_EXPIRY_FORMATTER = DateTimeFormatter.ofPattern("yyyy年M月d日", Locale.CHINA)
 private val AUTH_EMAIL_REGEX = Regex("""^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$""", RegexOption.IGNORE_CASE)
 private const val AUTH_CODE_LOCAL_COOLDOWN_SECONDS = 60
+private const val MEMBERSHIP_SILENT_REFRESH_INTERVAL_MILLIS = 15_000L

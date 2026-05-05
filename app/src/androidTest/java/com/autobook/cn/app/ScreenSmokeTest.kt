@@ -123,6 +123,8 @@ class ScreenSmokeTest {
                 onLoginOrRegister = {},
                 onLogout = {},
                 onStartYearlyMembership = {},
+                onRefreshMembership = {},
+                onRefreshMembershipAfterPayment = {},
                 onPullCloudModel = {},
                 onUserImprovementPlanChanged = {},
                 onCaptureEnabledChanged = {},

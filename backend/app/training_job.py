@@ -108,7 +108,7 @@ class TrainingPolicy:
         force: 是否跳过数量和质量门槛；标签只有单类时仍然不会训练。
     """
 
-    min_new_samples: int = 100
+    min_new_samples: int = 1000
     min_total_samples: int = 100
     min_per_class: int = 10
     min_accuracy: float = 0.65

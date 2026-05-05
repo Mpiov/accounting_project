@@ -2,6 +2,7 @@ package com.autobook.cn.app
 
 import android.app.Application
 import com.autobook.cn.app.sync.CloudLearningSyncScheduler
+import com.autobook.cn.app.sync.NotificationListenerHealthScheduler
 import com.autobook.cn.core.data.parser.NotificationRuleWarmup
 import com.autobook.cn.service.notification.NotificationListenerRebindHelper
 import dagger.hilt.android.HiltAndroidApp
@@ -22,6 +23,15 @@ class AutobookApplication : Application() {
      */
     @Inject
     lateinit var cloudLearningSyncScheduler: CloudLearningSyncScheduler
+
+    /**
+     * 通知监听健康检查调度器。
+     *
+     * 用途说明：
+     * - 线上事故表明部分系统会保留通知使用权但断开 Live listener，这里注册周期自愈任务。
+     */
+    @Inject
+    lateinit var notificationListenerHealthScheduler: NotificationListenerHealthScheduler
 
     /**
      * 应用级后台作用域。
@@ -45,7 +55,10 @@ class AutobookApplication : Application() {
         NotificationListenerRebindHelper.requestRebindIfPermitted(
             context = this,
             reason = "application_on_create",
+            force = true,
         )
+        notificationListenerHealthScheduler.ensurePeriodicCheck()
+        notificationListenerHealthScheduler.enqueueImmediateCheck(reason = "application_on_create")
         cloudLearningSyncScheduler.ensurePeriodicSync()
         cloudLearningSyncScheduler.enqueueForegroundMembershipRefresh()
         applicationScope.launch {

@@ -9,12 +9,17 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -22,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -39,6 +45,7 @@ import com.autobook.cn.app.ui.OverviewScreen
 import com.autobook.cn.app.ui.PendingWorkspaceScreen
 import com.autobook.cn.app.ui.SettingsWorkspaceScreen
 import com.autobook.cn.app.viewmodel.ChartViewModel
+import com.autobook.cn.app.viewmodel.AppNoticeViewModel
 import com.autobook.cn.app.viewmodel.LedgerBoardMode
 import com.autobook.cn.app.viewmodel.LedgerBoardViewModel
 import com.autobook.cn.app.viewmodel.LedgerViewModel
@@ -46,6 +53,7 @@ import com.autobook.cn.app.viewmodel.PendingBadgeViewModel
 import com.autobook.cn.app.viewmodel.PendingViewModel
 import com.autobook.cn.app.viewmodel.SettingsViewModel
 import com.autobook.cn.core.model.MoneyDirection
+import kotlinx.coroutines.flow.collect
 
 /**
  * 用途说明：
@@ -63,17 +71,41 @@ fun MainShell(
 ) {
     // 主壳层只订阅待确认数量，避免每个一级页面都常驻完整待确认列表和通知原文。
     val pendingBadgeViewModel: PendingBadgeViewModel = hiltViewModel()
+    val appNoticeViewModel: AppNoticeViewModel = hiltViewModel()
     val pendingCount by pendingBadgeViewModel.pendingCount.collectAsStateWithLifecycle()
     val shellNavController = rememberNavController()
     val navBackStackEntry by shellNavController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val currentTab = MainShellTab.match(currentDestination) ?: MainShellTab.Overview
     var settingsHomeResetKey by rememberSaveable { mutableStateOf(0) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LifecycleResumeEffect(Unit) {
+        // 每次 App 回到前台都检查免费自动记账体验是否耗尽，保证用户不用进入设置页也能感知。
+        appNoticeViewModel.onAppEnteredForeground()
+        onPauseOrDispose { }
+    }
+
+    LaunchedEffect(appNoticeViewModel) {
+        appNoticeViewModel.notices.collect { message ->
+            snackbarHostState.showSnackbar(message = message)
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         // 主壳层使用不透明背景，设置页快速滚动时不再透出底层内容参与合成。
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    shape = RoundedCornerShape(12.dp),
+                    containerColor = MaterialTheme.colorScheme.inverseSurface,
+                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                )
+            }
+        },
         bottomBar = {
             /**
              * 底部导航统一包一层暖色面板。
@@ -229,6 +261,8 @@ fun MainShell(
                     onLoginOrRegister = viewModel::loginOrRegisterWithCode,
                     onLogout = viewModel::logout,
                     onStartYearlyMembership = viewModel::startYearlyMembershipPayment,
+                    onRefreshMembership = viewModel::refreshMembershipSilently,
+                    onRefreshMembershipAfterPayment = viewModel::refreshMembershipAfterPayment,
                     onPullCloudModel = viewModel::pullCloudModelNow,
                     onUserImprovementPlanChanged = viewModel::setUserImprovementPlanEnabled,
                     onCaptureEnabledChanged = viewModel::setCaptureEnabled,

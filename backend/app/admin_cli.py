@@ -10,6 +10,7 @@ from .admin_service import get_member_status_by_phone
 from .admin_service import grant_member as grant_member_status
 from .admin_service import normalize_phone
 from .admin_service import revoke_member as revoke_member_status
+from .config import AppConfig
 from .config import load_config
 from .global_model_service import count_global_training_samples
 from .global_model_service import get_active_global_model
@@ -96,14 +97,38 @@ def run_training(args: Namespace) -> dict[str, object]:
     return run_global_training(
         database_path=config.database_path,
         trigger_type=args.trigger,
-        policy=TrainingPolicy(
-            min_new_samples=args.min_new_samples,
-            min_total_samples=args.min_total_samples,
-            min_per_class=args.min_per_class,
-            min_accuracy=args.min_accuracy,
-            max_false_positive_rate=args.max_false_positive_rate,
-            force=args.force,
-        ),
+        policy=build_training_policy(args=args, config=config),
+    )
+
+
+def build_training_policy(args: Namespace, config: AppConfig) -> TrainingPolicy:
+    """合成命令行训练策略。
+
+    参数：
+        args: argparse 解析后的命令行参数，允许管理员临时覆盖训练门槛。
+        config: 当前服务器环境配置，作为 CLI 未传参时的默认来源。
+    返回：
+        TrainingPolicy: 传给全局训练任务的最终策略。
+    """
+
+    return TrainingPolicy(
+        # CLI 不传参数时必须读取环境配置，保证和定时训练、管理后台手动训练使用同一套门槛。
+        min_new_samples=args.min_new_samples
+        if args.min_new_samples is not None
+        else config.training_min_new_samples,
+        min_total_samples=args.min_total_samples
+        if args.min_total_samples is not None
+        else config.training_min_total_samples,
+        min_per_class=args.min_per_class
+        if args.min_per_class is not None
+        else config.training_min_per_class,
+        min_accuracy=args.min_accuracy
+        if args.min_accuracy is not None
+        else config.training_min_accuracy,
+        max_false_positive_rate=args.max_false_positive_rate
+        if args.max_false_positive_rate is not None
+        else config.training_max_false_positive_rate,
+        force=args.force,
     )
 
 
@@ -160,15 +185,15 @@ def build_parser() -> ArgumentParser:
     training_parser = subparsers.add_parser("run-global-training", help="执行一次全局模型训练检查")
     training_parser.add_argument("--trigger", default="manual", help="触发来源，默认 manual")
     training_parser.add_argument("--force", action="store_true", help="忽略数量和质量门槛；正负样本必须同时存在")
-    training_parser.add_argument("--min-new-samples", type=int, default=100, help="自动训练所需新增有效样本数")
-    training_parser.add_argument("--min-total-samples", type=int, default=100, help="自动训练所需总有效样本数")
-    training_parser.add_argument("--min-per-class", type=int, default=10, help="自动训练所需每类最小样本数")
-    training_parser.add_argument("--min-accuracy", type=float, default=0.65, help="自动发布所需最低验证准确率")
+    training_parser.add_argument("--min-new-samples", type=int, default=None, help="自动训练所需新增有效样本数；不填则读取服务器配置")
+    training_parser.add_argument("--min-total-samples", type=int, default=None, help="自动训练所需总有效样本数；不填则读取服务器配置")
+    training_parser.add_argument("--min-per-class", type=int, default=None, help="自动训练所需每类最小样本数；不填则读取服务器配置")
+    training_parser.add_argument("--min-accuracy", type=float, default=None, help="自动发布所需最低验证准确率；不填则读取服务器配置")
     training_parser.add_argument(
         "--max-false-positive-rate",
         type=float,
-        default=0.25,
-        help="自动发布允许的最高负样本误判率",
+        default=None,
+        help="自动发布允许的最高负样本误判率；不填则读取服务器配置",
     )
     training_parser.set_defaults(handler=run_training)
 

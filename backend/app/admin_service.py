@@ -6,13 +6,24 @@ CLI、Web 管理后台和后续支付回调都应复用这里的会员状态写�
 import re
 from uuid import uuid4
 
+from .config import load_config
 from .database import init_database, transaction
 from .response import now_millis
 
 PHONE_PATTERN = re.compile(r"^1\d{10}$")
 EMAIL_PATTERN = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$", re.IGNORECASE)
 MILLIS_PER_DAY = 24 * 60 * 60 * 1000
-AUTO_LEDGER_FREE_TRIAL_LIMIT = 10
+CONFIG = load_config()
+
+
+def auto_ledger_free_trial_limit() -> int:
+    """读取免费自动记账体验额度。
+
+    返回：
+        int: 管理后台展示会员状态时使用的服务器配置额度，避免后台和 API 出现两个不同的硬编码值。
+    """
+
+    return CONFIG.auto_ledger_free_trial_limit
 
 
 def normalize_phone(raw_phone: str) -> str:
@@ -181,6 +192,7 @@ def get_member_status_by_phone(database_path: str, phone: str) -> dict[str, obje
         ).fetchone()
 
     if row is None:
+        trial_limit = auto_ledger_free_trial_limit()
         return {
             "phone": normalized_phone,
             "exists": False,
@@ -188,9 +200,9 @@ def get_member_status_by_phone(database_path: str, phone: str) -> dict[str, obje
             "expiresAt": None,
             "modelConfidenceEnabled": False,
             "cloudLearningEnabled": False,
-            "autoLedgerTrialLimit": AUTO_LEDGER_FREE_TRIAL_LIMIT,
+            "autoLedgerTrialLimit": trial_limit,
             "autoLedgerTrialUsed": 0,
-            "autoLedgerTrialRemaining": AUTO_LEDGER_FREE_TRIAL_LIMIT,
+            "autoLedgerTrialRemaining": trial_limit,
             "activeMember": False,
         }
 
@@ -245,7 +257,9 @@ def row_to_member_status(row: object) -> dict[str, object]:
 
     tier = row["tier"] or "FREE"
     expires_at = row["expires_at"]
-    trial_used = max(0, min(int(row["auto_ledger_trial_used"] or 0), AUTO_LEDGER_FREE_TRIAL_LIMIT))
+    trial_limit = auto_ledger_free_trial_limit()
+    # 按当前服务器额度夹取历史已用次数，避免调低免费额度后后台显示负数剩余额度。
+    trial_used = max(0, min(int(row["auto_ledger_trial_used"] or 0), trial_limit))
     active_member = tier == "MEMBER" and expires_at is not None and int(expires_at) > now_millis()
     return {
         "phone": row["phone"],
@@ -256,9 +270,9 @@ def row_to_member_status(row: object) -> dict[str, object]:
         "expiresAt": expires_at if active_member else None,
         "modelConfidenceEnabled": bool(row["model_confidence_enabled"]) if active_member else False,
         "cloudLearningEnabled": bool(row["cloud_learning_enabled"]) if active_member else False,
-        "autoLedgerTrialLimit": AUTO_LEDGER_FREE_TRIAL_LIMIT,
+        "autoLedgerTrialLimit": trial_limit,
         "autoLedgerTrialUsed": trial_used,
-        "autoLedgerTrialRemaining": max(0, AUTO_LEDGER_FREE_TRIAL_LIMIT - trial_used),
+        "autoLedgerTrialRemaining": max(0, trial_limit - trial_used),
         "activeMember": active_member,
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],

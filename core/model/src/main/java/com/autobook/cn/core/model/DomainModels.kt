@@ -61,7 +61,7 @@ const val MEDIUM_CONFIDENCE_THRESHOLD: Float = 0.62f
 /** 用途说明：待确认区间上限分数。 */
 const val PENDING_CONFIDENCE_MAX_SCORE: Float = 0.85f
 
-/** 用途说明：免费登录用户可体验的高置信度自动入账次数。 */
+/** 用途说明：会员状态尚未从服务器刷新前的本地展示兜底值；真实额度和扣减以服务器配置为准。 */
 const val AUTO_LEDGER_FREE_TRIAL_LIMIT: Int = 10
 
 /**

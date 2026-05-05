@@ -1,5 +1,6 @@
 package com.autobook.cn.core.network
 
+import com.autobook.cn.core.model.AUTO_LEDGER_FREE_TRIAL_LIMIT
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonNull
@@ -238,9 +239,9 @@ data class BackendMembershipStatusResponse(
     val expiresAt: Long? = null,
     val modelConfidenceEnabled: Boolean = false,
     val cloudLearningEnabled: Boolean = false,
-    val autoLedgerTrialLimit: Int = 10,
+    val autoLedgerTrialLimit: Int = AUTO_LEDGER_FREE_TRIAL_LIMIT,
     val autoLedgerTrialUsed: Int = 0,
-    val autoLedgerTrialRemaining: Int = 10,
+    val autoLedgerTrialRemaining: Int = AUTO_LEDGER_FREE_TRIAL_LIMIT,
     val serverVerified: Boolean = false,
 )
 
