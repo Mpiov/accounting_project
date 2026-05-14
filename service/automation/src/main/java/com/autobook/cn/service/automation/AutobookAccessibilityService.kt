@@ -13,6 +13,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -30,6 +33,21 @@ class AutobookAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
+     * 用途说明：
+     * - 串行化系统截图请求，避免用户连续点击截图入口时并发调用 `takeScreenshot`。
+     * - 部分 ROM 对连续截图很敏感，并发请求可能让无障碍服务被系统判定异常。
+     */
+    private val screenshotMutex = Mutex()
+
+    /**
+     * 用途说明：
+     * - 标记无障碍服务是否已经完成系统连接。
+     * - 截图前先检查该状态，避免服务断开后继续调用系统能力造成异常。
+     */
+    @Volatile
+    private var serviceConnected = false
+
+    /**
      * 对外暴露给数据层的自动化运行时实现。
      *
      * 说明：
@@ -37,7 +55,12 @@ class AutobookAccessibilityService : AccessibilityService() {
      * - 数据层只依赖接口，不感知具体 service 类型。
      */
     private val runtime = object : AutomationRuntime {
-        override fun openNotificationShade(): Boolean = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+        override fun openNotificationShade(): Boolean {
+            return safePerformGlobalAction(
+                action = GLOBAL_ACTION_NOTIFICATIONS,
+                actionName = "openNotificationShade",
+            )
+        }
 
         override suspend fun captureScreenshot(): OperationResult<Bitmap> = captureCurrentDisplay()
 
@@ -54,7 +77,10 @@ class AutobookAccessibilityService : AccessibilityService() {
              * - 对更低版本，这里宁可不主动发“返回键”，也不要再制造页面回退副作用。
              */
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+                safePerformGlobalAction(
+                    action = GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE,
+                    actionName = "collapseNotificationShade",
+                )
             } else {
                 true
             }
@@ -63,15 +89,22 @@ class AutobookAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        serviceConnected = true
         AutomationRuntimeRegistry.register(runtime)
         Log.d(LOG_TAG, "Accessibility automation service connected")
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // 当前服务只使用截图和全局动作能力，不消费窗口事件；空实现可保持系统回调稳定。
+    }
 
-    override fun onInterrupt() = Unit
+    override fun onInterrupt() {
+        // 中断回调不等于服务解绑，这里只记录日志，避免误注销仍可用的无障碍运行时。
+        Log.w(LOG_TAG, "Accessibility automation service interrupted")
+    }
 
     override fun onDestroy() {
+        serviceConnected = false
         AutomationRuntimeRegistry.unregister(runtime)
         serviceScope.cancel()
         super.onDestroy()
@@ -88,59 +121,110 @@ class AutobookAccessibilityService : AccessibilityService() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             return OperationResult.TerminalFailure("Accessibility screenshot requires Android 11 or above")
         }
+        if (!serviceConnected) {
+            return OperationResult.RetryableFailure("Accessibility service is not connected")
+        }
 
-        return suspendCancellableCoroutine { continuation ->
-            takeScreenshot(
-                Display.DEFAULT_DISPLAY,
-                mainExecutor,
-                object : TakeScreenshotCallback {
-                    override fun onSuccess(screenshot: ScreenshotResult) {
-                        val hardwareBuffer = screenshot.hardwareBuffer
-                        try {
-                            val wrappedBitmap = Bitmap.wrapHardwareBuffer(
-                                hardwareBuffer,
-                                screenshot.colorSpace,
-                            )
-                            if (wrappedBitmap == null) {
-                                continuation.resume(
-                                    OperationResult.TerminalFailure("Accessibility screenshot bitmap was null"),
+        return screenshotMutex.withLock {
+            suspendCancellableCoroutine { continuation ->
+                takeScreenshot(
+                    Display.DEFAULT_DISPLAY,
+                    mainExecutor,
+                    object : TakeScreenshotCallback {
+                        override fun onSuccess(screenshot: ScreenshotResult) {
+                            val hardwareBuffer = screenshot.hardwareBuffer
+                            try {
+                                val wrappedBitmap = Bitmap.wrapHardwareBuffer(
+                                    hardwareBuffer,
+                                    screenshot.colorSpace,
                                 )
-                                return
-                            }
+                                if (wrappedBitmap == null) {
+                                    continuation.resumeIfActive(
+                                        OperationResult.TerminalFailure("Accessibility screenshot bitmap was null"),
+                                    )
+                                    return
+                                }
 
-                            // 复制为普通软件位图，避免后续图片保存或分析读取硬件位图时出现兼容性问题。
-                            val copiedBitmap = wrappedBitmap.copy(Bitmap.Config.ARGB_8888, false)
-                            wrappedBitmap.recycle()
-                            if (copiedBitmap == null) {
-                                continuation.resume(
-                                    OperationResult.TerminalFailure("Accessibility screenshot copy failed"),
+                                // 复制为普通软件位图，避免后续图片保存或分析读取硬件位图时出现兼容性问题。
+                                val copiedBitmap = wrappedBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                                wrappedBitmap.recycle()
+                                if (copiedBitmap == null) {
+                                    continuation.resumeIfActive(
+                                        OperationResult.TerminalFailure("Accessibility screenshot copy failed"),
+                                    )
+                                    return
+                                }
+                                continuation.resumeIfActive(OperationResult.Success(copiedBitmap))
+                            } catch (error: Throwable) {
+                                continuation.resumeIfActive(
+                                    OperationResult.RetryableFailure(
+                                        message = "Accessibility screenshot crashed",
+                                        cause = error,
+                                    ),
                                 )
-                                return
+                            } finally {
+                                // 截图结果底层持有硬件缓冲区，这里及时关闭以避免资源泄漏。
+                                runCatching { hardwareBuffer.close() }
+                                    .onFailure { Log.w(LOG_TAG, "close screenshot hardware buffer failed", it) }
                             }
-                            continuation.resume(OperationResult.Success(copiedBitmap))
-                        } catch (error: Throwable) {
-                            continuation.resume(
+                        }
+
+                        override fun onFailure(errorCode: Int) {
+                            continuation.resumeIfActive(
                                 OperationResult.RetryableFailure(
-                                    message = "Accessibility screenshot crashed",
-                                    cause = error,
+                                    message = "Accessibility screenshot failed: ${screenshotFailureMessage(errorCode)}",
                                 ),
                             )
-                        } finally {
-                            // 截图结果底层持有硬件缓冲区，这里及时关闭以避免资源泄漏。
-                            hardwareBuffer.close()
                         }
-                    }
-
-                    override fun onFailure(errorCode: Int) {
-                        continuation.resume(
-                            OperationResult.RetryableFailure(
-                                message = "Accessibility screenshot failed: ${screenshotFailureMessage(errorCode)}",
-                            ),
-                        )
-                    }
-                },
-            )
+                    },
+                )
+            }
         }
+    }
+
+    /**
+     * 安全恢复截图协程结果。
+     *
+     * 用途说明：
+     * - 系统截图回调可能晚于调用方取消动作到达，直接 `resume` 容易抛出重复恢复异常。
+     * - 如果成功位图已经生成但调用方不再等待，需要主动回收，避免短时间多次截图造成内存压力。
+     *
+     * 参数说明：
+     * - result：准备返回给截图调用方的处理结果。
+     */
+    private fun CancellableContinuation<OperationResult<Bitmap>>.resumeIfActive(result: OperationResult<Bitmap>) {
+        if (!isActive) {
+            // 调用方已经取消时，成功位图不会再被消费，需要在服务侧立即释放。
+            (result as? OperationResult.Success<Bitmap>)?.data?.recycle()
+            return
+        }
+        runCatching { resume(result) }
+            .onFailure { error ->
+                // 极端竞态下恢复失败时也不能让回调异常冒泡到系统无障碍服务。
+                (result as? OperationResult.Success<Bitmap>)?.data?.recycle()
+                Log.w(LOG_TAG, "resume screenshot result failed", error)
+            }
+    }
+
+    /**
+     * 安全执行无障碍全局动作。
+     *
+     * 用途说明：
+     * - 部分系统在服务刚断开或权限被回收时，执行全局动作可能抛出运行时异常。
+     * - 这里统一吞掉异常并返回 `false`，避免一次动作失败把无障碍服务进程打崩。
+     *
+     * 参数说明：
+     * - action：Android 无障碍全局动作常量。
+     * - actionName：日志中使用的动作名称，便于定位失败动作。
+     */
+    private fun safePerformGlobalAction(action: Int, actionName: String): Boolean {
+        if (!serviceConnected) {
+            Log.w(LOG_TAG, "skip $actionName because accessibility service is not connected")
+            return false
+        }
+        return runCatching { performGlobalAction(action) }
+            .onFailure { error -> Log.w(LOG_TAG, "$actionName failed", error) }
+            .getOrDefault(false)
     }
 
     /**

@@ -33,9 +33,18 @@ internal object NotificationRuleConfidenceScorer {
             score += DIRECTION_SCORE
             reasons += "方向${formatSigned(DIRECTION_SCORE)}"
         }
+        if (features.hasTailNumber) {
+            score += TAIL_NUMBER_SCORE
+            reasons += "尾号${formatSigned(TAIL_NUMBER_SCORE)}"
+        }
         if (features.hasStrongBankStructureSignal) {
             score += STRUCTURE_SCORE
             reasons += "结构${formatSigned(STRUCTURE_SCORE)}"
+        }
+        score += timeSignalScore(features).also { contribution ->
+            if (contribution > 0f) {
+                reasons += "时间${formatSigned(contribution)}"
+            }
         }
         if (features.hasTransactionSceneKeyword) {
             score += TRANSACTION_SCENE_SCORE
@@ -89,6 +98,23 @@ internal object NotificationRuleConfidenceScorer {
         AmountSignalKind.WITH_CURRENCY -> AMOUNT_WITH_CURRENCY_SCORE
         AmountSignalKind.WITH_UNIT -> AMOUNT_WITH_UNIT_SCORE
         AmountSignalKind.BARE_NUMBER -> BARE_AMOUNT_SCORE
+    }
+
+    /**
+     * 用途说明：
+     * - 按“年、月、日、时、xx:xx”五个独立信号累计时间分，避免只命中完整时间格式才加分。
+     *
+     * 参数说明：
+     * - features：本地解析器抽取出的时间语义特征。
+     */
+    private fun timeSignalScore(features: NotificationSemanticFeatures): Float {
+        var score = 0f
+        if (features.hasTimeYearKeyword) score += TIME_YEAR_SCORE
+        if (features.hasTimeMonthKeyword) score += TIME_MONTH_SCORE
+        if (features.hasTimeDayKeyword) score += TIME_DAY_SCORE
+        if (features.hasTimeHourKeyword) score += TIME_HOUR_SCORE
+        if (features.hasClockTime) score += CLOCK_TIME_SCORE
+        return score
     }
 
     /**
@@ -154,7 +180,21 @@ private fun buildRuleSnapshotJson(
     append(",")
     appendJsonBoolean("hasReliableAmount", features.hasReliableAmount)
     append(",")
+    appendJsonBoolean("hasTailNumber", features.hasTailNumber)
+    append(",")
     appendJsonBoolean("hasStrongBankStructureSignal", features.hasStrongBankStructureSignal)
+    append(",")
+    appendJsonBoolean("hasExplicitTime", features.hasExplicitTime)
+    append(",")
+    appendJsonBoolean("hasTimeYearKeyword", features.hasTimeYearKeyword)
+    append(",")
+    appendJsonBoolean("hasTimeMonthKeyword", features.hasTimeMonthKeyword)
+    append(",")
+    appendJsonBoolean("hasTimeDayKeyword", features.hasTimeDayKeyword)
+    append(",")
+    appendJsonBoolean("hasTimeHourKeyword", features.hasTimeHourKeyword)
+    append(",")
+    appendJsonBoolean("hasClockTime", features.hasClockTime)
     append(",")
     appendJsonBoolean("hasTransactionSceneKeyword", features.hasTransactionSceneKeyword)
     append(",")
@@ -278,7 +318,13 @@ private const val AMOUNT_WITH_CURRENCY_SCORE = 0.20f
 private const val AMOUNT_WITH_UNIT_SCORE = 0.20f
 private const val BARE_AMOUNT_SCORE = 0.06f
 private const val DIRECTION_SCORE = 0.15f
+private const val TAIL_NUMBER_SCORE = 0.08f
 private const val STRUCTURE_SCORE = 0.14f
+private const val TIME_YEAR_SCORE = 0.04f
+private const val TIME_MONTH_SCORE = 0.04f
+private const val TIME_DAY_SCORE = 0.04f
+private const val TIME_HOUR_SCORE = 0.04f
+private const val CLOCK_TIME_SCORE = 0.08f
 private const val TRANSACTION_SCENE_SCORE = 0.08f
 private const val FINANCE_SETTLED_SCORE = 0.16f
 private const val COUNTERPARTY_DETAIL_SCORE = 0.04f

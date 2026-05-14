@@ -259,6 +259,12 @@ def init_database(database_path: str) -> None:
         )
         db.execute(
             """
+            CREATE INDEX IF NOT EXISTS idx_training_samples_inserted
+            ON training_samples(inserted_at DESC, id DESC)
+            """
+        )
+        db.execute(
+            """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_training_samples_user_local
             ON training_samples(user_id, sample_local_id)
             WHERE sample_local_id IS NOT NULL
@@ -272,7 +278,25 @@ def init_database(database_path: str) -> None:
         )
         db.execute(
             """
+            CREATE INDEX IF NOT EXISTS idx_payment_orders_created
+            ON payment_orders(created_at DESC)
+            """
+        )
+        db.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_payment_orders_user_created
             ON payment_orders(user_id, created_at DESC)
+            """
+        )
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_users_created
+            ON users(created_at DESC)
+            """
+        )
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_memberships_updated
+            ON memberships(updated_at DESC)
             """
         )

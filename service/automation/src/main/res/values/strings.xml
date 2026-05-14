@@ -1,4 +1,8 @@
 <resources>
     <!-- 无障碍服务在系统设置中的展示名称，保持和 App 品牌名一致。 -->
     <string name="accessibility_service_name">轻松记无障碍服务</string>
+    <!-- 无障碍服务在系统设置中的摘要，说明服务用于用户主动触发的截图能力。 -->
+    <string name="accessibility_service_summary">用于主动截图记账</string>
+    <!-- 无障碍服务在系统授权页中的详细说明，帮助部分 ROM 正确展示服务用途。 -->
+    <string name="accessibility_service_description">轻松记会在您主动点击截图记账时读取当前屏幕并生成记账建议，不会自动操作其它应用。</string>
 </resources>

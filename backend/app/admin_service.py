@@ -213,6 +213,7 @@ def list_member_statuses(
     database_path: str,
     query: str = "",
     limit: int = 50,
+    offset: int = 0,
 ) -> list[dict[str, object]]:
     """列出用户会员状态。
 
@@ -220,6 +221,7 @@ def list_member_statuses(
         database_path: SQLite 数据库文件路径。
         query: 账号搜索关键字，可输入邮箱或旧手机号片段。
         limit: 最大返回数量。
+        offset: 跳过的记录数量，用于后台分页。
 
     返回：
         list[dict[str, object]]: 用户会员状态列表。
@@ -238,11 +240,98 @@ def list_member_statuses(
             LEFT JOIN memberships m ON m.user_id = u.id
             WHERE (? = '' OR u.phone LIKE ?)
             ORDER BY COALESCE(m.updated_at, u.created_at) DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """,
-            (normalized_query, like_query, max(1, min(limit, 200))),
+            (
+                normalized_query,
+                like_query,
+                _clamp_page_size(limit),
+                max(0, offset),
+            ),
         ).fetchall()
     return [row_to_member_status(row) for row in rows]
+
+
+def count_member_statuses(database_path: str, query: str = "") -> int:
+    """统计符合筛选条件的用户数量。
+
+    参数：
+        database_path: SQLite 数据库文件路径。
+        query: 账号搜索关键字，可输入邮箱或旧手机号片段。
+
+    返回：
+        int: 当前筛选条件下的用户总数。
+    """
+
+    init_database(database_path)
+    normalized_query = query.strip().lower()
+    like_query = f"%{normalized_query}%"
+    with transaction(database_path) as db:
+        row = db.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM users u
+            WHERE (? = '' OR u.phone LIKE ?)
+            """,
+            (normalized_query, like_query),
+        ).fetchone()
+    return int(row["total"] if row is not None else 0)
+
+
+def list_member_status_page(
+    database_path: str,
+    query: str = "",
+    page: int = 1,
+    page_size: int = 20,
+) -> dict[str, object]:
+    """分页列出用户会员状态。
+
+    参数：
+        database_path: SQLite 数据库文件路径。
+        query: 账号搜索关键字，可输入邮箱或旧手机号片段。
+        page: 当前页码，从 1 开始。
+        page_size: 每页记录数。
+
+    返回：
+        dict[str, object]: 包含列表、总数、页码和每页数量的分页结果。
+    """
+
+    normalized_page = max(1, page)
+    normalized_page_size = _clamp_page_size(page_size)
+    total = count_member_statuses(database_path, query=query)
+    total_pages = max(1, (total + normalized_page_size - 1) // normalized_page_size)
+    normalized_page = min(normalized_page, total_pages)
+    # OFFSET 只在当前页真正读取时使用，避免管理后台一次性加载所有用户。
+    offset = (normalized_page - 1) * normalized_page_size
+    items = list_member_statuses(
+        database_path,
+        query=query,
+        limit=normalized_page_size,
+        offset=offset,
+    )
+    return {
+        "items": items,
+        "total": total,
+        "page": normalized_page,
+        "pageSize": normalized_page_size,
+    }
+
+
+def _clamp_page_size(page_size: int) -> int:
+    """限制后台分页每页数量。
+
+    参数：
+        page_size: 调用方请求的每页数量。
+
+    返回：
+        int: 限制在 1 到 200 之间的安全分页大小。
+    """
+
+    try:
+        normalized_page_size = int(page_size)
+    except (TypeError, ValueError):
+        normalized_page_size = 20
+    return max(1, min(normalized_page_size, 200))
 
 
 def row_to_member_status(row: object) -> dict[str, object]:

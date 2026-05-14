@@ -3,6 +3,7 @@ package com.autobook.cn.core.data
 import android.content.Context
 import com.autobook.cn.core.data.impl.CloudModelStoreImpl
 import com.autobook.cn.core.data.impl.AccessibilityCaptureCoordinator
+import com.autobook.cn.core.data.impl.AppUpdateRepositoryImpl
 import com.autobook.cn.core.data.impl.AuthRepositoryImpl
 import com.autobook.cn.core.data.impl.CloudLearningRepositoryImpl
 import com.autobook.cn.core.data.impl.LedgerRepositoryImpl
@@ -70,6 +71,9 @@ abstract class DataBindingsModule {
 
     @Binds
     abstract fun bindPaymentRepository(impl: PaymentRepositoryImpl): PaymentRepository
+
+    @Binds
+    abstract fun bindAppUpdateRepository(impl: AppUpdateRepositoryImpl): AppUpdateRepository
 
     @Binds
     abstract fun bindCloudLearningRepository(impl: CloudLearningRepositoryImpl): CloudLearningRepository

@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.autobook.cn.core.data.AuthRepository
+import com.autobook.cn.core.data.AppUpdateRepository
 import com.autobook.cn.core.data.CloudConfidenceModel
 import com.autobook.cn.core.data.CloudLearningRepository
 import com.autobook.cn.core.data.CloudModelStore
@@ -31,6 +32,7 @@ import com.autobook.cn.core.database.dao.NotificationEventDao
 import com.autobook.cn.core.database.dao.PendingEntryDao
 import com.autobook.cn.core.database.entity.LedgerStatsEntity
 import com.autobook.cn.core.model.AppSettings
+import com.autobook.cn.core.model.AppReleaseInfo
 import com.autobook.cn.core.model.AuthSession
 import com.autobook.cn.core.model.AuthState
 import com.autobook.cn.core.model.CloudLearningState
@@ -50,6 +52,7 @@ import com.autobook.cn.core.model.PendingEntry
 import com.autobook.cn.core.model.ProcessDestination
 import com.autobook.cn.core.model.TransactionCandidate
 import com.autobook.cn.core.network.AutobookBackendApi
+import com.autobook.cn.core.network.BackendAppReleaseResponse
 import com.autobook.cn.core.network.BackendCloudModelResponse
 import com.autobook.cn.core.network.BackendCreateMembershipOrderRequest
 import com.autobook.cn.core.network.BackendLoginRequest
@@ -748,11 +751,13 @@ class AuthRepositoryImpl @Inject constructor(
  * 参数说明：
  * - authRepository：读取当前邮箱登录会话；内部会话字段名暂沿用 `phone`。
  * - backendApi：AutoBook 后端 API。
+ * - settingsRepository：用于在服务器确认会员生效后恢复因免费体验耗尽关闭的自动记账。
  */
 @Singleton
 class MembershipRepositoryImpl @Inject constructor(
     private val authRepository: AuthRepository,
     private val backendApi: AutobookBackendApi,
+    private val settingsRepository: SettingsRepository,
 ) : MembershipRepository {
     private val refreshedStatus = MutableStateFlow<MembershipStatus?>(null)
 
@@ -815,6 +820,7 @@ class MembershipRepositoryImpl @Inject constructor(
                 )
             }
         }
+        restoreAutoAccountingIfMember(currentStatus)
         refreshedStatus.value = currentStatus
         return currentStatus
     }
@@ -841,6 +847,7 @@ class MembershipRepositoryImpl @Inject constructor(
                     fallbackSession = refreshedSession,
                     serverTime = result.data.serverTime,
                 )
+                restoreAutoAccountingIfMember(status)
                 // 立即更新会员状态流，设置页和自动记账开关会使用服务端最新剩余额度。
                 refreshedStatus.value = status
                 OperationResult.Success(status)
@@ -862,6 +869,23 @@ class MembershipRepositoryImpl @Inject constructor(
      */
     private fun loggedOutMembershipStatus(): MembershipStatus {
         return MembershipStatus(message = "未登录，会员状态需要邮箱登录后从服务器确认。")
+    }
+
+    /**
+     * 用途说明：
+     * - 服务器确认会员生效后，恢复此前因免费体验耗尽被系统关闭的自动记账。
+     * - 如果用户是手动关闭自动记账，设置仓储会保留关闭状态，不会在这里强行打开。
+     *
+     * 参数说明：
+     * - status：服务器刷新或扣次接口返回的会员状态。
+     */
+    private suspend fun restoreAutoAccountingIfMember(status: MembershipStatus) {
+        if (status.isMember) {
+            settingsRepository.restoreAutoAccountingAfterMembershipActivation(
+                allowLegacyTrialExhaustedRecovery = status.autoLedgerTrialRemaining <= 0 ||
+                    status.autoLedgerTrialUsed >= status.autoLedgerTrialLimit,
+            )
+        }
     }
 }
 
@@ -922,6 +946,45 @@ class PaymentRepositoryImpl @Inject constructor(
             }
         ) {
             is OperationResult.Success -> OperationResult.Success(result.data.data.toPaymentState())
+            is OperationResult.RetryableFailure -> result
+            is OperationResult.TerminalFailure -> result
+        }
+    }
+}
+
+/**
+ * 用途说明：
+ * - App 新版本检查仓储实现。
+ * - 这里只读取服务端小体积元数据，不下载 APK，避免 4Mbps 服务器被后台流量占满。
+ *
+ * 参数说明：
+ * - backendApi：AutoBook 后端 API，用于访问公开版本元数据接口。
+ */
+@Singleton
+class AppUpdateRepositoryImpl @Inject constructor(
+    private val backendApi: AutobookBackendApi,
+) : AppUpdateRepository {
+    /**
+     * 用途说明：
+     * - 查询 Android stable 最新版本，并把后端响应转换成客户端领域模型。
+     *
+     * 参数说明：
+     * - currentVersionCode：当前安装包 versionCode。
+     * - currentVersionName：当前安装包 versionName。
+     */
+    override suspend fun checkLatestRelease(
+        currentVersionCode: Int,
+        currentVersionName: String,
+    ): OperationResult<AppReleaseInfo> {
+        return when (
+            val result = callBackend(APP_RELEASE_LATEST_ENDPOINT) {
+                backendApi.latestAppRelease(
+                    currentVersionCode = currentVersionCode,
+                    currentVersionName = currentVersionName,
+                )
+            }
+        ) {
+            is OperationResult.Success -> OperationResult.Success(result.data.data.toAppReleaseInfo())
             is OperationResult.RetryableFailure -> result
             is OperationResult.TerminalFailure -> result
         }
@@ -1118,6 +1181,28 @@ private data class CloudLearningSyncSnapshot(
 
 /**
  * 用途说明：
+ * - 把后端 App 版本元数据映射为客户端领域模型。
+ *
+ * 参数说明：
+ * - 接收者：后端 `GET /v1/app/releases/latest` 返回的数据体。
+ */
+private fun BackendAppReleaseResponse.toAppReleaseInfo(): AppReleaseInfo {
+    return AppReleaseInfo(
+        latestVersionCode = latestVersionCode.coerceAtLeast(0),
+        latestVersionName = latestVersionName.trim(),
+        minSupportedVersionCode = minSupportedVersionCode.coerceAtLeast(0),
+        forceUpdate = forceUpdate,
+        apkUrl = apkUrl.trim(),
+        apkSizeBytes = apkSizeBytes.coerceAtLeast(0L),
+        sha256 = sha256?.trim()?.takeIf(String::isNotBlank),
+        releaseNotes = releaseNotes.map(String::trim).filter(String::isNotBlank),
+        publishedAt = publishedAt?.takeIf { value -> value > 0L },
+        notModified = notModified,
+    )
+}
+
+/**
+ * 用途说明：
  * - 把后端模型响应映射为客户端可落盘的全局置信度模型。
  *
  * 参数说明：
@@ -1261,6 +1346,9 @@ private const val MEMBERSHIP_ORDER_CREATE_ENDPOINT = "POST /v1/payments/membersh
 /** 用途说明：查询会员支付订单的后端接口路径。 */
 private const val MEMBERSHIP_ORDER_QUERY_ENDPOINT = "GET /v1/payments/membership-orders/{orderId}"
 
+/** 用途说明：检查 App 最新稳定版元数据的后端接口标签。 */
+private const val APP_RELEASE_LATEST_ENDPOINT = "GET /v1/app/releases/latest"
+
 /** 用途说明：上传用户改善计划训练样本到全局样本池的后端接口路径。 */
 private const val TRAINING_SAMPLE_UPLOAD_ENDPOINT = "POST /v1/cloud-learning/training-samples"
 
@@ -1291,6 +1379,10 @@ class SettingsRepositoryImpl @Inject constructor(
     private object Keys {
         val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
         val autoAccountingEnabled = booleanPreferencesKey("auto_accounting_enabled")
+        val autoAccountingDisabledByTrialExhaustion =
+            booleanPreferencesKey("auto_accounting_disabled_by_trial_exhaustion")
+        val autoLedgerSuccessNotificationEnabled =
+            booleanPreferencesKey("auto_ledger_success_notification_enabled")
         val cloudAnalysisEnabled = booleanPreferencesKey("cloud_analysis_enabled")
         val cloudLearningEnabled = booleanPreferencesKey("cloud_learning_enabled")
         val userImprovementPlanEnabled = booleanPreferencesKey("user_improvement_plan_enabled")
@@ -1305,6 +1397,10 @@ class SettingsRepositoryImpl @Inject constructor(
         AppSettings(
             onboardingCompleted = preferences[Keys.onboardingCompleted] ?: false,
             autoAccountingEnabled = preferences[Keys.autoAccountingEnabled] ?: true,
+            autoAccountingDisabledByTrialExhaustion =
+                preferences[Keys.autoAccountingDisabledByTrialExhaustion] ?: false,
+            autoLedgerSuccessNotificationEnabled =
+                preferences[Keys.autoLedgerSuccessNotificationEnabled] ?: true,
             cloudAnalysisEnabled = preferences[Keys.cloudAnalysisEnabled] ?: true,
             cloudLearningEnabled = preferences[Keys.cloudLearningEnabled] ?: true,
             userImprovementPlanEnabled = preferences[Keys.userImprovementPlanEnabled] ?: true,
@@ -1321,7 +1417,56 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setAutoAccountingEnabled(enabled: Boolean) {
-        context.settingsDataStore.edit { it[Keys.autoAccountingEnabled] = enabled }
+        context.settingsDataStore.edit { preferences ->
+            preferences[Keys.autoAccountingEnabled] = enabled
+            // 用户手动切换开关时清理“体验耗尽自动关闭”标记，避免后续会员刷新覆盖用户选择。
+            preferences[Keys.autoAccountingDisabledByTrialExhaustion] = false
+        }
+    }
+
+    /**
+     * 用途说明：
+     * - 持久化自动入账成功通知开关。
+     *
+     * 参数说明：
+     * - enabled：是否在自动入账成功后弹出可点击通知。
+     */
+    override suspend fun setAutoLedgerSuccessNotificationEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { preferences ->
+            preferences[Keys.autoLedgerSuccessNotificationEnabled] = enabled
+        }
+    }
+
+    /**
+     * 用途说明：
+     * - 免费自动入账体验耗尽时关闭总开关，并保留系统关闭原因。
+     * - 后续服务器确认用户成为会员时，可以根据这个标记自动恢复自动记账。
+     */
+    override suspend fun disableAutoAccountingForTrialExhaustion() {
+        context.settingsDataStore.edit { preferences ->
+            preferences[Keys.autoAccountingEnabled] = false
+            preferences[Keys.autoAccountingDisabledByTrialExhaustion] = true
+        }
+    }
+
+    /**
+     * 用途说明：
+     * - 会员状态生效后恢复因体验耗尽被系统关闭的自动记账。
+     * - 兼容旧版本：如果旧客户端已经把开关关掉但尚未写入原因标记，也恢复一次，修复已付费用户卡在免费门禁的问题。
+     */
+    override suspend fun restoreAutoAccountingAfterMembershipActivation(
+        allowLegacyTrialExhaustedRecovery: Boolean,
+    ) {
+        context.settingsDataStore.edit { preferences ->
+            val autoAccountingEnabled = preferences[Keys.autoAccountingEnabled] ?: true
+            val disabledByTrial = preferences[Keys.autoAccountingDisabledByTrialExhaustion] ?: false
+            val legacyDisabledBeforeReasonKey =
+                allowLegacyTrialExhaustedRecovery && !preferences.contains(Keys.autoAccountingDisabledByTrialExhaustion)
+            if (!autoAccountingEnabled && (disabledByTrial || legacyDisabledBeforeReasonKey)) {
+                preferences[Keys.autoAccountingEnabled] = true
+            }
+            preferences[Keys.autoAccountingDisabledByTrialExhaustion] = false
+        }
     }
 
     override suspend fun setCloudAnalysisEnabled(enabled: Boolean) {

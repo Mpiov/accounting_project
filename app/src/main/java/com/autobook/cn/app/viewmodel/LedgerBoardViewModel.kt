@@ -12,6 +12,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import javax.inject.Inject
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -314,8 +315,8 @@ private fun List<LedgerEntry>.filterWithinYear(
  * - 统计一组账单的收入、支出和净额。
  */
 private fun List<LedgerEntry>.summarize(): LedgerBoardAmountSummary {
-    val income = filter { it.direction == MoneyDirection.INCOME }.sumOf { it.amount }
-    val expense = filter { it.direction == MoneyDirection.EXPENSE }.sumOf { it.amount }
+    val income = filter { it.direction == MoneyDirection.INCOME }.sumOf { it.amount.absoluteValue }
+    val expense = filter { it.direction == MoneyDirection.EXPENSE }.sumOf { it.amount.absoluteValue }
     return LedgerBoardAmountSummary(
         income = income,
         expense = expense,

@@ -203,20 +203,26 @@ def list_training_samples(
     query: str = "",
     feedback_label: str = "",
     limit: int = 100,
+    offset: int = 0,
+    account_query: str = "",
 ) -> list[dict[str, object]]:
     """列出训练样本明细。
 
     参数：
         database_path: SQLite 数据库文件路径。
-        query: 搜索关键字，支持邮箱、样本 ID、通知 ID、原文片段。
+        account_query: 账号筛选关键字，支持邮箱或旧手机号片段。
+        query: 搜索关键字，支持样本 ID、通知 ID、原文片段；为兼容旧链接也保留邮箱匹配。
         feedback_label: 用户反馈标签筛选，空字符串表示全部。
         limit: 最大返回数量。
+        offset: 跳过的样本数量，用于后台分页。
 
     返回：
         list[dict[str, object]]: 可直接交给管理后台渲染的样本行。
     """
 
     init_database(database_path)
+    normalized_account = account_query.strip().lower()
+    account_like_query = f"%{normalized_account}%"
     normalized_query = query.strip().lower()
     like_query = f"%{normalized_query}%"
     numeric_query = normalized_query if normalized_query.isdigit() else "__NO_NUMERIC_MATCH__"
@@ -231,7 +237,8 @@ def list_training_samples(
                    ts.sample_created_at, ts.raw_json, ts.inserted_at, ts.updated_at
             FROM training_samples ts
             JOIN users u ON u.id = ts.user_id
-            WHERE (? = ''
+            WHERE (? = '' OR lower(u.phone) LIKE ?)
+              AND (? = ''
                    OR lower(u.phone) LIKE ?
                    OR CAST(ts.id AS TEXT) = ?
                    OR CAST(ts.sample_local_id AS TEXT) = ?
@@ -239,9 +246,11 @@ def list_training_samples(
                    OR lower(ts.raw_json) LIKE ?)
               AND (? = '' OR ts.raw_json LIKE ?)
             ORDER BY ts.inserted_at DESC, ts.id DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """,
             (
+                normalized_account,
+                account_like_query,
                 normalized_query,
                 like_query,
                 numeric_query,
@@ -250,10 +259,136 @@ def list_training_samples(
                 like_query,
                 normalized_label,
                 label_query,
-                max(1, min(limit, 300)),
+                _clamp_sample_page_size(limit),
+                max(0, offset),
             ),
         ).fetchall()
     return [row_to_training_sample(row) for row in rows]
+
+
+def count_training_samples(
+    database_path: str,
+    query: str = "",
+    feedback_label: str = "",
+    account_query: str = "",
+) -> int:
+    """统计符合筛选条件的训练样本数量。
+
+    参数：
+        database_path: SQLite 数据库文件路径。
+        account_query: 账号筛选关键字，支持邮箱或旧手机号片段。
+        query: 搜索关键字，支持样本 ID、通知 ID、原文片段；为兼容旧链接也保留邮箱匹配。
+        feedback_label: 用户反馈标签筛选，空字符串表示全部。
+
+    返回：
+        int: 当前筛选条件下的训练样本总数。
+    """
+
+    init_database(database_path)
+    normalized_account = account_query.strip().lower()
+    account_like_query = f"%{normalized_account}%"
+    normalized_query = query.strip().lower()
+    like_query = f"%{normalized_query}%"
+    numeric_query = normalized_query if normalized_query.isdigit() else "__NO_NUMERIC_MATCH__"
+    normalized_label = feedback_label.strip().upper()
+    label_query = f'%"feedbackLabel":"{normalized_label}"%' if normalized_label else "%"
+
+    with transaction(database_path) as db:
+        row = db.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM training_samples ts
+            JOIN users u ON u.id = ts.user_id
+            WHERE (? = '' OR lower(u.phone) LIKE ?)
+              AND (? = ''
+                   OR lower(u.phone) LIKE ?
+                   OR CAST(ts.id AS TEXT) = ?
+                   OR CAST(ts.sample_local_id AS TEXT) = ?
+                   OR CAST(ts.notification_id AS TEXT) = ?
+                   OR lower(ts.raw_json) LIKE ?)
+              AND (? = '' OR ts.raw_json LIKE ?)
+            """,
+            (
+                normalized_account,
+                account_like_query,
+                normalized_query,
+                like_query,
+                numeric_query,
+                numeric_query,
+                numeric_query,
+                like_query,
+                normalized_label,
+                label_query,
+            ),
+        ).fetchone()
+    return int(row["total"] if row is not None else 0)
+
+
+def list_training_sample_page(
+    database_path: str,
+    query: str = "",
+    feedback_label: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    account_query: str = "",
+) -> dict[str, object]:
+    """分页列出训练样本明细。
+
+    参数：
+        database_path: SQLite 数据库文件路径。
+        account_query: 账号筛选关键字，支持邮箱或旧手机号片段。
+        query: 搜索关键字，支持样本 ID、通知 ID、原文片段；为兼容旧链接也保留邮箱匹配。
+        feedback_label: 用户反馈标签筛选，空字符串表示全部。
+        page: 当前页码，从 1 开始。
+        page_size: 每页样本数量。
+
+    返回：
+        dict[str, object]: 包含样本列表、总数、页码和每页数量的分页结果。
+    """
+
+    normalized_page = max(1, page)
+    normalized_page_size = _clamp_sample_page_size(page_size)
+    total = count_training_samples(
+        database_path,
+        account_query=account_query,
+        query=query,
+        feedback_label=feedback_label,
+    )
+    total_pages = max(1, (total + normalized_page_size - 1) // normalized_page_size)
+    normalized_page = min(normalized_page, total_pages)
+    # 样本原文较大，分页读取能显著降低后台页面响应体积。
+    offset = (normalized_page - 1) * normalized_page_size
+    items = list_training_samples(
+        database_path,
+        account_query=account_query,
+        query=query,
+        feedback_label=feedback_label,
+        limit=normalized_page_size,
+        offset=offset,
+    )
+    return {
+        "items": items,
+        "total": total,
+        "page": normalized_page,
+        "pageSize": normalized_page_size,
+    }
+
+
+def _clamp_sample_page_size(page_size: int) -> int:
+    """限制样本后台每页数量。
+
+    参数：
+        page_size: 调用方请求的每页数量。
+
+    返回：
+        int: 限制在 1 到 300 之间的安全分页大小。
+    """
+
+    try:
+        normalized_page_size = int(page_size)
+    except (TypeError, ValueError):
+        normalized_page_size = 20
+    return max(1, min(normalized_page_size, 300))
 
 
 def row_to_training_sample(row: sqlite3.Row) -> dict[str, object]:

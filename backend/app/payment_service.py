@@ -231,6 +231,7 @@ def list_payment_orders(
     query: str = "",
     state: str = "",
     limit: int = 100,
+    offset: int = 0,
 ) -> list[dict[str, object]]:
     """列出后台订单。
 
@@ -239,6 +240,7 @@ def list_payment_orders(
         query: 邮箱或订单号搜索关键字。
         state: 订单状态筛选，空字符串表示全部。
         limit: 最大返回数量。
+        offset: 跳过的订单数量，用于后台分页。
 
     返回：
         list[dict[str, object]]: 后台订单列表。
@@ -262,7 +264,7 @@ def list_payment_orders(
             WHERE (? = '' OR lower(o.order_id) LIKE ? OR lower(u.phone) LIKE ?)
               AND (? = '' OR o.payment_state = ?)
             ORDER BY o.created_at DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """,
             (
                 normalized_query,
@@ -270,11 +272,111 @@ def list_payment_orders(
                 like_query,
                 normalized_state,
                 normalized_state,
-                max(1, min(limit, 300)),
+                _clamp_order_page_size(limit),
+                max(0, offset),
             ),
         ).fetchall()
 
     return [row_to_payment_order(row) for row in rows]
+
+
+def count_payment_orders(database_path: str, query: str = "", state: str = "") -> int:
+    """统计符合筛选条件的订单数量。
+
+    参数：
+        database_path: SQLite 数据库文件路径。
+        query: 邮箱或订单号搜索关键字。
+        state: 订单状态筛选，空字符串表示全部。
+
+    返回：
+        int: 当前筛选条件下的订单总数。
+    """
+
+    init_database(database_path)
+    normalized_query = query.strip().lower()
+    like_query = f"%{normalized_query}%"
+    normalized_state = state.strip().upper()
+    if normalized_state not in PAYMENT_STATE_OPTIONS:
+        normalized_state = ""
+
+    with transaction(database_path) as db:
+        expire_stale_payment_orders(db)
+        row = db.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM payment_orders o
+            JOIN users u ON u.id = o.user_id
+            WHERE (? = '' OR lower(o.order_id) LIKE ? OR lower(u.phone) LIKE ?)
+              AND (? = '' OR o.payment_state = ?)
+            """,
+            (
+                normalized_query,
+                like_query,
+                like_query,
+                normalized_state,
+                normalized_state,
+            ),
+        ).fetchone()
+    return int(row["total"] if row is not None else 0)
+
+
+def list_payment_order_page(
+    database_path: str,
+    query: str = "",
+    state: str = "",
+    page: int = 1,
+    page_size: int = 20,
+) -> dict[str, object]:
+    """分页列出后台订单。
+
+    参数：
+        database_path: SQLite 数据库文件路径。
+        query: 邮箱或订单号搜索关键字。
+        state: 订单状态筛选，空字符串表示全部。
+        page: 当前页码，从 1 开始。
+        page_size: 每页订单数量。
+
+    返回：
+        dict[str, object]: 包含订单列表、总数、页码和每页数量的分页结果。
+    """
+
+    normalized_page = max(1, page)
+    normalized_page_size = _clamp_order_page_size(page_size)
+    total = count_payment_orders(database_path, query=query, state=state)
+    total_pages = max(1, (total + normalized_page_size - 1) // normalized_page_size)
+    normalized_page = min(normalized_page, total_pages)
+    # 后台页面只读取当前页，避免订单增长后一次性加载造成卡顿。
+    offset = (normalized_page - 1) * normalized_page_size
+    items = list_payment_orders(
+        database_path,
+        query=query,
+        state=state,
+        limit=normalized_page_size,
+        offset=offset,
+    )
+    return {
+        "items": items,
+        "total": total,
+        "page": normalized_page,
+        "pageSize": normalized_page_size,
+    }
+
+
+def _clamp_order_page_size(page_size: int) -> int:
+    """限制订单后台每页数量。
+
+    参数：
+        page_size: 调用方请求的每页数量。
+
+    返回：
+        int: 限制在 1 到 300 之间的安全分页大小。
+    """
+
+    try:
+        normalized_page_size = int(page_size)
+    except (TypeError, ValueError):
+        normalized_page_size = 20
+    return max(1, min(normalized_page_size, 300))
 
 
 def mark_payment_order_paid(database_path: str, order_id: str) -> dict[str, object]:

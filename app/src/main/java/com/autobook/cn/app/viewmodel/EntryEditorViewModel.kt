@@ -20,6 +20,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
 import javax.inject.Inject
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -357,7 +358,7 @@ class EntryEditorViewModel @Inject constructor(
                 editingLedger = ledgerRepository.getById(ledgerId)
                 editingLedger?.let { entry ->
                     _uiState.value = _uiState.value.copy(
-                        amount = entry.amount.toString(),
+                        amount = entry.amount.absoluteValue.toString(),
                         entryTimestamp = entry.timestamp,
                         entryTimeText = formatEntryTime(entry.timestamp),
                         category = entry.category,
@@ -371,7 +372,7 @@ class EntryEditorViewModel @Inject constructor(
                 resolvingPending = pendingRepository.getById(pendingId)
                 resolvingPending?.let { entry ->
                     _uiState.value = _uiState.value.copy(
-                        amount = entry.amount.toString(),
+                        amount = entry.amount.absoluteValue.toString(),
                         entryTimestamp = entry.timestamp,
                         entryTimeText = formatEntryTime(entry.timestamp),
                         category = entry.categoryHint,

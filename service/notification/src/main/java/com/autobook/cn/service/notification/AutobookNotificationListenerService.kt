@@ -7,11 +7,13 @@ import android.util.Log
 import com.autobook.cn.core.common.SafeLogFormatter
 import com.autobook.cn.core.data.ServiceDependenciesEntryPoint
 import com.autobook.cn.core.model.NotificationEvent
+import com.autobook.cn.core.model.ProcessDestination
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /** 监听系统通知，并把可疑交易通知送入记账处理链路。 */
@@ -107,6 +109,16 @@ class AutobookNotificationListenerService : NotificationListenerService() {
                 // 所有日志都走脱敏摘要，避免原始通知内容直接进入 logcat。
                 when (result) {
                     is com.autobook.cn.core.model.OperationResult.Success -> {
+                        val settings = entryPoint.settingsRepository().settings.first()
+                        if (
+                            result.data.destination == ProcessDestination.LEDGER &&
+                            settings.autoLedgerSuccessNotificationEnabled
+                        ) {
+                            AutoLedgerSuccessNotifier(applicationContext).notifySuccess(
+                                notificationId = result.data.notificationId,
+                                message = result.data.message,
+                            )
+                        }
                         NotificationListenerTraceRecorder.record(
                             applicationContext,
                             "${payloadIndexLabel}processSuccess outcome=${SafeLogFormatter.forOutcome(result.data)}",

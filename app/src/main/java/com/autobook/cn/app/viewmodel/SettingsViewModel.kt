@@ -2,6 +2,8 @@ package com.autobook.cn.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.autobook.cn.BuildConfig
+import com.autobook.cn.core.data.AppUpdateRepository
 import com.autobook.cn.core.common.CurrencyFormatter
 import com.autobook.cn.core.common.TimeFormatter
 import com.autobook.cn.core.data.AuthRepository
@@ -12,6 +14,7 @@ import com.autobook.cn.core.data.MembershipRepository
 import com.autobook.cn.core.data.PaymentRepository
 import com.autobook.cn.core.data.SettingsRepository
 import com.autobook.cn.core.model.AUTO_LEDGER_FREE_TRIAL_LIMIT
+import com.autobook.cn.core.model.AppReleaseInfo
 import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.AuthState
 import com.autobook.cn.core.model.CloudLearningState
@@ -47,6 +50,7 @@ import kotlinx.coroutines.launch
  */
 data class SettingsUiState(
     val autoAccountingEnabled: Boolean = true,
+    val autoLedgerSuccessNotificationEnabled: Boolean = true,
     val cloudAnalysisEnabled: Boolean = true,
     val authPhoneInput: String = "",
     val authCodeInput: String = "",
@@ -75,6 +79,8 @@ data class SettingsUiState(
     val enabledSources: Set<SettingsNotificationSource> = emptySet(),
     val bookkeepingDayCount: Int = 0,
     val bookkeepingEntryCount: Int = 0,
+    val appUpdateChecking: Boolean = false,
+    val appUpdatePrompt: AppReleaseInfo? = null,
     val modelStatusLabel: String = "规则模型",
     val modelLastPulledLabel: String = "尚未拉取",
 )
@@ -100,6 +106,7 @@ class SettingsViewModel @Inject constructor(
     private val membershipRepository: MembershipRepository,
     private val paymentRepository: PaymentRepository,
     private val cloudLearningRepository: CloudLearningRepository,
+    private val appUpdateRepository: AppUpdateRepository,
     private val appNoticeBus: AppNoticeBus,
     ledgerRepository: LedgerRepository,
 ) : ViewModel() {
@@ -109,6 +116,8 @@ class SettingsViewModel @Inject constructor(
     private val authCodeRequesting = MutableStateFlow(false)
     private val authCodeCooldownSeconds = MutableStateFlow(0)
     private val authLoginInProgress = MutableStateFlow(false)
+    private val appUpdateChecking = MutableStateFlow(false)
+    private val appUpdatePrompt = MutableStateFlow<AppReleaseInfo?>(null)
     private var lastSilentMembershipRefreshAt: Long = 0L
     private val authForm: Flow<SettingsAuthForm> = combine(
         authPhoneInput,
@@ -136,11 +145,15 @@ class SettingsViewModel @Inject constructor(
         authCodeRequesting,
         authCodeCooldownSeconds,
         authLoginInProgress,
-    ) { codeRequesting, cooldownSeconds, loginInProgress ->
+        appUpdateChecking,
+        appUpdatePrompt,
+    ) { codeRequesting, cooldownSeconds, loginInProgress, updateChecking, updatePrompt ->
         SettingsAuthInteractionState(
             codeRequesting = codeRequesting,
             cooldownSeconds = cooldownSeconds,
             loginInProgress = loginInProgress,
+            updateChecking = updateChecking,
+            updatePrompt = updatePrompt,
         )
     }
     private val bookkeepingStats: Flow<LedgerSummaryStats> = ledgerRepository.observeSummaryStats()
@@ -163,6 +176,7 @@ class SettingsViewModel @Inject constructor(
         val trialRemainingCount = membershipStatus.autoLedgerTrialRemaining
         SettingsUiState(
             autoAccountingEnabled = settings.autoAccountingEnabled,
+            autoLedgerSuccessNotificationEnabled = settings.autoLedgerSuccessNotificationEnabled,
             cloudAnalysisEnabled = settings.cloudAnalysisEnabled,
             authPhoneInput = account.form.phone,
             authCodeInput = account.form.code,
@@ -189,6 +203,8 @@ class SettingsViewModel @Inject constructor(
             enabledSources = settings.enabledSources.toSettingsNotificationSources(),
             bookkeepingDayCount = stats.dayCount,
             bookkeepingEntryCount = stats.entryCount,
+            appUpdateChecking = authInteraction.updateChecking,
+            appUpdatePrompt = authInteraction.updatePrompt,
             modelStatusLabel = cloudLearning.toModelStatusLabel(),
             modelLastPulledLabel = cloudLearning.toModelLastPulledLabel(),
         )
@@ -212,7 +228,7 @@ class SettingsViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect { shouldCloseAutoAccounting ->
                     if (shouldCloseAutoAccounting) {
-                        settingsRepository.setAutoAccountingEnabled(false)
+                        settingsRepository.disableAutoAccountingForTrialExhaustion()
                     }
                 }
         }
@@ -220,6 +236,19 @@ class SettingsViewModel @Inject constructor(
 
     fun setAutoAccountingEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setAutoAccountingEnabled(enabled) }
+    }
+
+    /**
+     * 用途说明：
+     * - 设置自动入账成功后的系统通知提醒开关。
+     *
+     * 参数说明：
+     * - enabled：是否在自动入账成功后弹出通知。
+     */
+    fun setAutoLedgerSuccessNotificationEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setAutoLedgerSuccessNotificationEnabled(enabled)
+        }
     }
 
     fun setCloudAnalysisEnabled(enabled: Boolean) {
@@ -303,7 +332,9 @@ class SettingsViewModel @Inject constructor(
                 membershipActionMessage.value = message
                 if (result is OperationResult.Success) {
                     membershipRepository.refresh()
-                    appNoticeBus.show("登录成功，会员状态已同步。")
+                    // 登录成功只走底部全局提示条，避免账号卡片或会员页残留“操作完成”这类过程文案。
+                    membershipActionMessage.value = ""
+                    appNoticeBus.show("登录成功")
                 }
             } finally {
                 // 防止登录请求异常中断后按钮一直停留在“登录中”。
@@ -376,7 +407,7 @@ class SettingsViewModel @Inject constructor(
                 val expiryLabel = status.toMembershipExpiresAtLabel()
                 "当前会员有效期至 $expiryLabel。若刚刚付款续费，请以有效期变化为准。"
             } else {
-                "暂未查到会员，请等待后台确认收款后再刷新。"
+                "暂未查到会员，会员由人工发放，可能存在 2 到 3 小时延迟，请稍后再查看。"
             }
         }
     }
@@ -468,6 +499,56 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 用途说明：
+     * - 手动检查 App 是否有新版本。
+     * - 这里只请求服务端小体积版本元数据，真正下载由 UI 打开系统浏览器处理。
+     */
+    fun checkAppUpdateNow() {
+        if (appUpdateChecking.value) {
+            return
+        }
+        appUpdateChecking.value = true
+        membershipActionMessage.value = "正在检查新版本..."
+        viewModelScope.launch {
+            try {
+                val result = appUpdateRepository.checkLatestRelease(
+                    currentVersionCode = BuildConfig.VERSION_CODE,
+                    currentVersionName = BuildConfig.VERSION_NAME,
+                )
+                when (result) {
+                    is OperationResult.Success -> {
+                        val release = result.data
+                        if (release.hasUpdate) {
+                            appUpdatePrompt.value = release
+                            // 版本结果由弹窗承载，避免复用会员提示状态后污染会员中心卡片。
+                            membershipActionMessage.value = ""
+                        } else {
+                            val message = "当前已是最新版本"
+                            // 没有新版本时只走底部提示条，不在会员页面留下无关文案。
+                            membershipActionMessage.value = ""
+                            appNoticeBus.show(message)
+                        }
+                    }
+                    is OperationResult.RetryableFailure -> membershipActionMessage.value = result.message
+                    is OperationResult.TerminalFailure -> membershipActionMessage.value = result.message
+                }
+            } finally {
+                // 检查结束后立即恢复入口可点击状态，避免网络异常导致按钮一直处于等待中。
+                appUpdateChecking.value = false
+            }
+        }
+    }
+
+    /**
+     * 用途说明：
+     * - 关闭新版本提示弹窗。
+     * - 用户选择稍后更新或成功拉起浏览器后都会调用，避免返回设置页时重复弹出旧结果。
+     */
+    fun dismissAppUpdatePrompt() {
+        appUpdatePrompt.value = null
+    }
+
     fun setCaptureEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setCaptureEnabled(enabled) }
     }
@@ -503,6 +584,7 @@ class SettingsViewModel @Inject constructor(
     /**
      * 用途说明：
      * - 创建会员支付订单占位流程。
+     * - 订单号只用于后台对账和人工发放会员，客户端不向用户展示内部订单编号。
      *
      * 参数说明：
      * - plan：用户选择的会员套餐。
@@ -510,7 +592,7 @@ class SettingsViewModel @Inject constructor(
     private fun createMembershipOrder(plan: MembershipPlan) {
         viewModelScope.launch {
             membershipActionMessage.value = when (val result = paymentRepository.createMembershipOrder(plan)) {
-                is OperationResult.Success -> "订单已创建：${result.data.orderId}"
+                is OperationResult.Success -> ""
                 is OperationResult.RetryableFailure -> result.message
                 is OperationResult.TerminalFailure -> result.message
             }
@@ -569,6 +651,8 @@ private data class SettingsAuthInteractionState(
     val codeRequesting: Boolean,
     val cooldownSeconds: Int,
     val loginInProgress: Boolean,
+    val updateChecking: Boolean,
+    val updatePrompt: AppReleaseInfo?,
 )
 
 /**
@@ -666,10 +750,10 @@ internal fun buildSettingsOverview(
     val manualEntries = entries.count { it.editedManually || it.traceSource == "manual" }
     val currentMonthIncome = currentMonthEntries
         .filter { it.direction == MoneyDirection.INCOME }
-        .sumOf { it.amount }
+        .sumOf { kotlin.math.abs(it.amount) }
     val currentMonthExpense = currentMonthEntries
         .filter { it.direction == MoneyDirection.EXPENSE }
-        .sumOf { it.amount }
+        .sumOf { kotlin.math.abs(it.amount) }
     val currentMonthBudget = monthlyBudgets[currentMonth.toString()]?.takeIf { it > 0.0 }
     val budgetRemaining = currentMonthBudget?.minus(currentMonthExpense)
     val budgetRatio = if (currentMonthBudget == null || currentMonthBudget <= 0.0) {
@@ -704,7 +788,7 @@ internal fun buildSettingsOverview(
         currentMonthIncome = CurrencyFormatter.format(currentMonthIncome),
         currentMonthExpense = CurrencyFormatter.format(currentMonthExpense),
         latestEntrySummary = latestEntry?.let { entry ->
-            "${entry.buildLedgerTitle()} · ${CurrencyFormatter.format(entry.amount)} · ${TimeFormatter.format(entry.timestamp)}"
+            "${entry.buildLedgerTitle()} · ${CurrencyFormatter.format(kotlin.math.abs(entry.amount))} · ${TimeFormatter.format(entry.timestamp)}"
         } ?: "暂无记账记录",
     )
 }

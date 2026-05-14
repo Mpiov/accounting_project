@@ -148,7 +148,7 @@ class LocalTransactionExtractorTest {
     }
 
     @Test
-    fun `unknown but strongly structured notification stays pending with ordinary rules`() = runTest {
+    fun `unknown but strongly structured notification reaches high confidence with ordinary rules`() = runTest {
         val result = localTransactionExtractor().extract(
             NotificationEvent(
                 packageName = "com.example.notice",
@@ -161,7 +161,7 @@ class LocalTransactionExtractorTest {
         assertTrue(result is OperationResult.Success)
         val candidate = (result as OperationResult.Success).data
         assertEquals(NotificationSourceApp.UNKNOWN, candidate.sourceApp)
-        assertEquals(ConfidenceLevel.MEDIUM, candidate.confidence.level)
+        assertEquals(ConfidenceLevel.HIGH, candidate.confidence.level)
     }
 
     @Test
@@ -197,6 +197,52 @@ class LocalTransactionExtractorTest {
         assertTrue(result is OperationResult.Success)
         val candidate = (result as OperationResult.Success).data
         assertEquals(MoneyDirection.EXPENSE, candidate.direction)
+    }
+
+    @Test
+    fun `unionpay card consumption with unknown source reaches high confidence by text structure`() = runTest {
+        val result = localTransactionExtractor().extract(
+            NotificationEvent(
+                packageName = "com.unionpay",
+                title = "云闪付",
+                text = "您尾号为3026的银行卡于14日17时30分消费17.20元",
+                postedAt = 444L,
+            ),
+        )
+
+        assertTrue(result is OperationResult.Success)
+        val candidate = (result as OperationResult.Success).data
+        assertEquals(17.20, candidate.amount)
+        assertEquals(MoneyDirection.EXPENSE, candidate.direction)
+        assertEquals(NotificationSourceApp.UNKNOWN, candidate.sourceApp)
+        assertEquals(ConfidenceLevel.HIGH, candidate.confidence.level)
+        assertTrue(candidate.confidence.score >= HIGH_CONFIDENCE_THRESHOLD)
+        assertTrue(candidate.modelFeatureSnapshotJson.contains("\"hasTailNumber\":true"), candidate.modelFeatureSnapshotJson)
+        assertTrue(candidate.modelFeatureSnapshotJson.contains("\"hasTimeDayKeyword\":true"), candidate.modelFeatureSnapshotJson)
+        assertTrue(candidate.modelFeatureSnapshotJson.contains("\"hasTimeHourKeyword\":true"), candidate.modelFeatureSnapshotJson)
+    }
+
+    @Test
+    fun `pos card expense with unknown source reaches high confidence by scene and clock time`() = runTest {
+        val result = localTransactionExtractor().extract(
+            NotificationEvent(
+                packageName = "com.example.notice",
+                title = "交易提醒",
+                text = "尾号3026卡5月14日17:30POS支出(无卡支付)17.20元。",
+                postedAt = 555L,
+            ),
+        )
+
+        assertTrue(result is OperationResult.Success)
+        val candidate = (result as OperationResult.Success).data
+        assertEquals(17.20, candidate.amount)
+        assertEquals(MoneyDirection.EXPENSE, candidate.direction)
+        assertEquals(NotificationSourceApp.UNKNOWN, candidate.sourceApp)
+        assertEquals(ConfidenceLevel.HIGH, candidate.confidence.level)
+        assertTrue(candidate.confidence.score >= HIGH_CONFIDENCE_THRESHOLD)
+        assertTrue(candidate.modelFeatureSnapshotJson.contains("\"hasTimeMonthKeyword\":true"), candidate.modelFeatureSnapshotJson)
+        assertTrue(candidate.modelFeatureSnapshotJson.contains("\"hasClockTime\":true"), candidate.modelFeatureSnapshotJson)
+        assertTrue(candidate.modelFeatureSnapshotJson.contains("\"hasTransactionSceneKeyword\":true"), candidate.modelFeatureSnapshotJson)
     }
 }
 

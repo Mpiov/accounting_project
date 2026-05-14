@@ -64,7 +64,7 @@ fun ChartDashboardScreen(
     modifier: Modifier = Modifier,
 ) {
     var selectedDirection by rememberSaveable { mutableStateOf(ChartDirection.EXPENSE) }
-    var selectedPeriod by rememberSaveable { mutableStateOf(ChartPeriod.WEEK) }
+    var selectedPeriod by rememberSaveable { mutableStateOf(ChartPeriod.DAY) }
 
     val filteredEntries = state.entries.filter { entry ->
         when (selectedDirection) {
@@ -530,7 +530,7 @@ private fun CategoryLegendRow(
 
 /**
  * 用途说明：
- * - 根据当前周期生成趋势桶，周视图按最近 6 周、月视图按全年 12 个月、年视图按最近 5 年展示。
+ * - 根据当前周期生成趋势桶，日视图按最近 7 天、周视图按最近 6 周、月视图按全年 12 个月、年视图按最近 5 年展示。
  *
  * 参数说明：
  * - entries：当前筛选后的账单列表。
@@ -544,6 +544,14 @@ private fun buildChartPoints(
 ): List<ChartTrendPoint> {
     val today = LocalDate.now()
     val buckets = when (period) {
+        ChartPeriod.DAY -> (6 downTo 0).map { dayOffset ->
+            val date = today.minusDays(dayOffset.toLong())
+            ChartBucket(
+                anchorDate = date,
+                label = buildDayBucketLabel(date = date, today = today),
+            )
+        }
+
         ChartPeriod.WEEK -> (5 downTo 0).map { weekOffset ->
             val weekStart = today.minusWeeks(weekOffset.toLong()).with(DayOfWeek.MONDAY)
             ChartBucket(
@@ -584,7 +592,7 @@ private fun buildChartPoints(
 /**
  * 用途说明：
  * - 统一决定趋势图里哪一个桶需要使用“更明显”的主色强调。
- * - 周趋势强调当前周，月趋势强调当前月份，年趋势强调当前年。
+ * - 日趋势强调今天，周趋势强调当前周，月趋势强调当前月份，年趋势强调当前年。
  *
  * 参数说明：
  * - period：当前趋势周期。
@@ -595,6 +603,7 @@ private fun resolveHighlightedAnchor(
     today: LocalDate,
 ): LocalDate {
     return when (period) {
+        ChartPeriod.DAY -> today
         ChartPeriod.WEEK -> today.with(DayOfWeek.MONDAY)
         // 月趋势直接高亮当前月份，而不是固定高亮最右侧的 12 月。
         ChartPeriod.MONTH -> LocalDate.of(today.year, today.monthValue, 1)
@@ -708,6 +717,9 @@ private fun List<ChartEntryUiModel>.sumForPeriod(
     direction: ChartDirection,
 ): Double {
     return when (period) {
+        ChartPeriod.DAY -> filter { it.date == anchorDate }
+            .sumOf { it.amountForDirection(direction) }
+
         ChartPeriod.WEEK -> {
             val weekEnd = anchorDate.plusDays(6)
             filter { it.date >= anchorDate && it.date <= weekEnd }
@@ -746,6 +758,25 @@ private fun ChartEntryUiModel.amountForDirection(direction: ChartDirection): Dou
  */
 private fun formatChartDetailAmount(amount: Double): String = CurrencyFormatter.format(amount)
 
+/**
+ * 用途说明：
+ * - 生成日趋势底部标签，优先使用“今天/昨天”，更早日期使用短日期。
+ *
+ * 参数说明：
+ * - date：当前趋势桶的日期。
+ * - today：今天日期，用于判断当前桶是否为今天或昨天。
+ */
+private fun buildDayBucketLabel(
+    date: LocalDate,
+    today: LocalDate,
+): String {
+    return when (date) {
+        today -> "今天"
+        today.minusDays(1) -> "昨天"
+        else -> "${date.monthValue}/${date.dayOfMonth}"
+    }
+}
+
 private fun formatChartAxisAmount(amount: Double): String {
     val absAmount = abs(amount)
     return if (absAmount >= 1_000) {
@@ -767,6 +798,7 @@ private enum class ChartDirection(
 private enum class ChartPeriod(
     val label: String,
 ) {
+    DAY("日"),
     WEEK("周"),
     MONTH("月"),
     YEAR("年"),

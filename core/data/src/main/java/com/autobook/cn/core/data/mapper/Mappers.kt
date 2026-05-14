@@ -11,6 +11,7 @@ import com.autobook.cn.core.model.NotificationSourceApp
 import com.autobook.cn.core.model.ParseConfidence
 import com.autobook.cn.core.model.PendingEntry
 import com.autobook.cn.core.model.TransactionCandidate
+import kotlin.math.absoluteValue
 
 /**
  * 通知领域模型转为 Room 实体。
@@ -66,7 +67,8 @@ fun NotificationEventEntity.toDomain(): NotificationEvent = NotificationEvent(
 fun LedgerEntry.toEntity(): LedgerEntryEntity = LedgerEntryEntity(
     id = id,
     sortId = sortId,
-    amount = amount,
+    // 账本内部统一保存正数金额，收入/支出语义只由 direction 表达，避免截图导入带负号时冲抵统计。
+    amount = amount.absoluteValue,
     direction = direction.name,
     channel = channel,
     timestamp = timestamp,
@@ -88,7 +90,8 @@ fun LedgerEntry.toEntity(): LedgerEntryEntity = LedgerEntryEntity(
 fun LedgerEntryEntity.toDomain(): LedgerEntry = LedgerEntry(
     id = id,
     sortId = sortId,
-    amount = amount,
+    // 兼容历史版本已经落库的负数金额，读取领域模型时兜底转正。
+    amount = amount.absoluteValue,
     direction = MoneyDirection.valueOf(direction),
     channel = channel,
     timestamp = timestamp,
@@ -116,7 +119,8 @@ fun TransactionCandidate.toLedgerEntry(
     editedManually: Boolean = false,
     noteOverride: String? = null,
 ): LedgerEntry = LedgerEntry(
-    amount = amount,
+    // 通知候选可能来自不同解析器，入账前统一归一化为正数。
+    amount = amount.absoluteValue,
     direction = direction,
     channel = channel,
     timestamp = timestamp,
@@ -140,7 +144,8 @@ fun TransactionCandidate.toPendingEntry(
     reason: String,
     notificationId: Long? = null,
 ): PendingEntry = PendingEntry(
-    amount = amount,
+    // 待确认同样保持正数金额，用户在页面上通过方向判断收入或支出。
+    amount = amount.absoluteValue,
     direction = direction,
     channel = channel,
     timestamp = timestamp,
@@ -163,7 +168,8 @@ fun TransactionCandidate.toPendingEntry(
 fun PendingEntry.toEntity(): PendingEntryEntity = PendingEntryEntity(
     id = id,
     sortId = sortId,
-    amount = amount,
+    // 入库前再次归一化，防止手动编辑或外部链路传入带符号金额。
+    amount = amount.absoluteValue,
     direction = direction.name,
     channel = channel,
     timestamp = timestamp,
@@ -188,7 +194,8 @@ fun PendingEntry.toEntity(): PendingEntryEntity = PendingEntryEntity(
 fun PendingEntryEntity.toDomain(): PendingEntry = PendingEntry(
     id = id,
     sortId = sortId,
-    amount = amount,
+    // 兼容历史待确认表中的负数金额，读取后统一给 UI 和统计正数。
+    amount = amount.absoluteValue,
     direction = MoneyDirection.valueOf(direction),
     channel = channel,
     timestamp = timestamp,

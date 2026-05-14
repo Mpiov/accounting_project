@@ -254,6 +254,8 @@ fun MainShell(
                     state = state,
                     homeResetKey = settingsHomeResetKey,
                     onAutoAccountingChanged = viewModel::setAutoAccountingEnabled,
+                    onAutoLedgerSuccessNotificationChanged =
+                        viewModel::setAutoLedgerSuccessNotificationEnabled,
                     onCloudAnalysisChanged = viewModel::setCloudAnalysisEnabled,
                     onAuthPhoneChanged = viewModel::setAuthPhoneInput,
                     onAuthCodeChanged = viewModel::setAuthCodeInput,
@@ -269,6 +271,8 @@ fun MainShell(
                     onNotificationRetentionChanged = viewModel::setNotificationRetentionDays,
                     onScreenshotRetentionChanged = viewModel::setScreenshotRetentionDays,
                     onSourceEnabledChanged = viewModel::setSourceEnabled,
+                    onCheckAppUpdate = viewModel::checkAppUpdateNow,
+                    onDismissAppUpdatePrompt = viewModel::dismissAppUpdatePrompt,
                 )
             }
         }

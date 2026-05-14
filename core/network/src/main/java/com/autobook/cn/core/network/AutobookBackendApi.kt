@@ -145,6 +145,25 @@ interface AutobookBackendApi {
         @Header("Authorization") authorization: String,
         @Query("currentVersion") currentVersion: String? = null,
     ): Response<BackendEnvelope<BackendCloudModelResponse>>
+
+    /**
+     * 用途说明：
+     * - 查询服务端发布的 Android 最新稳定版元数据。
+     * - 该接口不需要登录，只返回很小的 JSON，避免 4Mbps 服务器被 APK 自动下载流量压住。
+     *
+     * 参数说明：
+     * - platform：客户端平台，当前固定为 android。
+     * - channel：发布通道，当前固定为 stable。
+     * - currentVersionCode：当前安装包 versionCode，用于服务端判断是否有新版本。
+     * - currentVersionName：当前安装包展示版本名，便于服务端记录和排查。
+     */
+    @GET("v1/app/releases/latest")
+    suspend fun latestAppRelease(
+        @Query("currentVersionCode") currentVersionCode: Int,
+        @Query("currentVersionName") currentVersionName: String,
+        @Query("platform") platform: String = "android",
+        @Query("channel") channel: String = "stable",
+    ): Response<BackendEnvelope<BackendAppReleaseResponse>>
 }
 
 /**
@@ -310,6 +329,35 @@ data class BackendCloudModelResponse(
     val thresholds: Map<String, Double> = emptyMap(),
     val signature: String? = null,
     val notModified: Boolean = false,
+)
+
+/**
+ * 用途说明：
+ * - 服务端 App 更新元数据响应体。
+ *
+ * 参数说明：
+ * - latestVersionCode：服务端最新 Android versionCode。
+ * - latestVersionName：服务端最新 Android versionName。
+ * - minSupportedVersionCode：最低建议版本号。
+ * - forceUpdate：是否提示强更新。
+ * - apkUrl：APK 下载地址，客户端只负责交给浏览器打开。
+ * - apkSizeBytes：APK 大小，单位字节。
+ * - sha256：APK 摘要，当前先展示/保留，后续 App 内下载时可用于校验。
+ * - releaseNotes：版本说明。
+ * - publishedAt：发布时间戳，单位毫秒。
+ * - notModified：当前客户端是否已经是最新版本。
+ */
+data class BackendAppReleaseResponse(
+    val latestVersionCode: Int = 0,
+    val latestVersionName: String = "",
+    val minSupportedVersionCode: Int = 0,
+    val forceUpdate: Boolean = false,
+    val apkUrl: String = "",
+    val apkSizeBytes: Long = 0L,
+    val sha256: String? = null,
+    val releaseNotes: List<String> = emptyList(),
+    val publishedAt: Long? = null,
+    val notModified: Boolean = true,
 )
 
 /**

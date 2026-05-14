@@ -9,6 +9,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import javax.inject.Inject
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -64,7 +65,8 @@ class ChartViewModel @Inject constructor(
                         ChartEntryUiModel(
                             id = entry.id,
                             date = Instant.ofEpochMilli(entry.timestamp).atZone(ZoneId.systemDefault()).toLocalDate(),
-                            amount = entry.amount,
+                            // 图表只按方向区分收入/支出，金额本身统一使用正数，兼容历史截图导入负数数据。
+                            amount = entry.amount.absoluteValue,
                             direction = entry.direction,
                             category = entry.category,
                         )

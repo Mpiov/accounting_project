@@ -12,6 +12,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.inject.Inject
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -99,7 +100,7 @@ private fun LedgerEntry.toTimelineItem(): RecordTimelineItemUiModel {
 /** 为时间线金额统一添加正负号。 */
 private fun LedgerEntry.buildTimelineAmountLabel(): String {
     val sign = if (direction == MoneyDirection.INCOME) "+" else "-"
-    return "$sign${CurrencyFormatter.format(amount)}"
+    return "$sign${CurrencyFormatter.format(amount.absoluteValue)}"
 }
 
 private val RECORD_DATE_FORMATTER = DateTimeFormatter.ofPattern("M 月 d 日", Locale.CHINA)

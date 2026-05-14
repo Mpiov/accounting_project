@@ -26,6 +26,8 @@ services:
       AUTOBOOK_ADMIN_PASSWORD: ${AUTOBOOK_ADMIN_PASSWORD}
       # 会员支付订单默认 30 分钟内有效，超时后后台和查询接口会自动标记为过期。
       AUTOBOOK_PAYMENT_ORDER_EXPIRE_MINUTES: ${AUTOBOOK_PAYMENT_ORDER_EXPIRE_MINUTES:-30}
+      # Android 最新版本元数据清单路径；清单缺失时接口会安全返回暂无更新。
+      AUTOBOOK_RELEASE_MANIFEST_PATH: ${AUTOBOOK_RELEASE_MANIFEST_PATH:-/data/releases/android-stable.json}
       # 免费用户自动记账体验总次数，API 扣减和管理后台展示都以服务器配置为准。
       AUTOBOOK_AUTO_LEDGER_FREE_TRIAL_LIMIT: ${AUTOBOOK_AUTO_LEDGER_FREE_TRIAL_LIMIT:-10}
       # API 后台也会手动触发训练，因此必须和 trainer 容器读取同一组训练门槛配置。

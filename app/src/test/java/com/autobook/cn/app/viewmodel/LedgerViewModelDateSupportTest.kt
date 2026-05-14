@@ -84,11 +84,51 @@ class LedgerViewModelDateSupportTest {
         assertEquals("-20", day.expenseLabel)
     }
 
+    @Test
+    fun overviewSummaryCountsAllImageImportDetailsWithSignedAmounts() {
+        val today = LocalDate.now()
+        val entries = listOf(
+            testEntry(
+                id = 1L,
+                date = today,
+                amount = -280.0,
+                direction = MoneyDirection.EXPENSE,
+                traceSource = "image-import",
+            ),
+            testEntry(
+                id = 2L,
+                date = today,
+                amount = -120.0,
+                direction = MoneyDirection.EXPENSE,
+                traceSource = "image-import",
+            ),
+            testEntry(
+                id = 3L,
+                date = today,
+                amount = 88.0,
+                direction = MoneyDirection.INCOME,
+                traceSource = "image-import",
+            ),
+        )
+
+        val state = buildOverviewUiStateForTest(
+            entries = entries,
+            range = LedgerRangeFilter.MONTH,
+        )
+
+        // 截图识别导入的每一条明细都应进入首页统计；历史负数支出金额不能抵消总支出。
+        assertEquals("¥400.00", state.expenseSummary)
+        assertEquals("¥88.00", state.incomeSummary)
+        assertEquals("-¥312.00", state.netSummary)
+        assertEquals(3, state.recentEntries.size)
+    }
+
     private fun testEntry(
         id: Long,
         date: LocalDate,
         amount: Double = 10.0,
         direction: MoneyDirection = MoneyDirection.EXPENSE,
+        traceSource: String = "manual",
     ): LedgerEntry {
         return LedgerEntry(
             id = id,
@@ -98,10 +138,10 @@ class LedgerViewModelDateSupportTest {
             timestamp = date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli(),
             category = "测试",
             note = "测试商户$id",
-            traceSource = "manual",
+            traceSource = traceSource,
             tracePath = "manual-entry",
             traceModelVersion = "manual-v1",
-            editedManually = true,
+            editedManually = traceSource == "manual",
         )
     }
 }

@@ -7,9 +7,10 @@
 import json
 import re
 import secrets
+from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -186,6 +187,92 @@ def create_auth_code(delivery_mode: str) -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
+def _coerce_release_int(value: object, default: int = 0) -> int:
+    """读取版本清单中的非负整数。
+
+    参数：
+        value: JSON 清单中可能来自数字或字符串的原始值。
+        default: 解析失败时使用的兜底值。
+
+    返回：
+        int: 不小于 0 的整数，避免错误清单让客户端误判版本。
+    """
+
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_release_notes(value: object) -> list[str]:
+    """读取版本更新说明。
+
+    参数：
+        value: JSON 清单中的 releaseNotes 字段，可为字符串数组或单个字符串。
+
+    返回：
+        list[str]: 已过滤空白项的更新说明列表。
+    """
+
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def load_android_release_manifest() -> dict[str, object]:
+    """读取 Android 稳定版发布清单。
+
+    返回：
+        dict[str, object]: 版本元数据；清单不存在或格式错误时返回“暂无更新”的安全兜底。
+    """
+
+    manifest_path = Path(CONFIG.release_manifest_path)
+    if not manifest_path.exists():
+        return {}
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def build_release_response(
+    manifest: dict[str, object],
+    current_version_code: int,
+) -> dict[str, object]:
+    """构建客户端可消费的新版本响应。
+
+    参数：
+        manifest: 服务端维护的发布清单。
+        current_version_code: 客户端上报的当前 versionCode。
+
+    返回：
+        dict[str, object]: 统一响应 data 字段里的版本元数据。
+    """
+
+    latest_version_code = _coerce_release_int(manifest.get("latestVersionCode"))
+    min_supported_version_code = _coerce_release_int(manifest.get("minSupportedVersionCode"))
+    # 只用 versionCode 判断是否有更新，避免 0.1.10 与 0.1.9 这类字符串比较错误。
+    update_available = latest_version_code > max(0, current_version_code)
+    force_update = bool(manifest.get("forceUpdate")) or (
+        min_supported_version_code > 0 and current_version_code < min_supported_version_code
+    )
+    return {
+        "latestVersionCode": latest_version_code,
+        "latestVersionName": str(manifest.get("latestVersionName") or "").strip(),
+        "minSupportedVersionCode": min_supported_version_code,
+        "forceUpdate": bool(force_update and update_available),
+        "apkUrl": str(manifest.get("apkUrl") or "").strip(),
+        "apkSizeBytes": _coerce_release_int(manifest.get("apkSizeBytes")),
+        "sha256": str(manifest.get("sha256") or "").strip() or None,
+        "releaseNotes": _coerce_release_notes(manifest.get("releaseNotes")),
+        "publishedAt": _coerce_release_int(manifest.get("publishedAt")) or None,
+        "notModified": not update_available,
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     """服务健康检查。
@@ -195,6 +282,34 @@ def health() -> dict[str, str]:
     """
 
     return {"status": "ok"}
+
+
+@app.get("/v1/app/releases/latest")
+def latest_app_release(
+    platform: str = Query(default="android"),
+    channel: str = Query(default="stable"),
+    current_version_code: int = Query(default=0, alias="currentVersionCode"),
+    current_version_name: str = Query(default="", alias="currentVersionName"),
+) -> dict[str, object]:
+    """查询 App 最新版本元数据。
+
+    参数：
+        platform: 客户端平台，第一版只支持 android。
+        channel: 发布通道，第一版只支持 stable。
+        current_version_code: 客户端当前 versionCode；通过 `currentVersionCode` 查询参数传入。
+        current_version_name: 客户端当前 versionName；通过 `currentVersionName` 查询参数传入，仅用于后续排查。
+
+    返回：
+        dict[str, object]: 很小的版本 JSON 元数据，不直接承载 APK 文件。
+    """
+
+    normalized_platform = platform.strip().lower()
+    normalized_channel = channel.strip().lower()
+    if normalized_platform != "android" or normalized_channel != "stable":
+        # 未支持的平台和通道返回暂无更新，避免客户端因为灰度通道未配置而报错。
+        return ok(build_release_response({}, current_version_code))
+    _ = current_version_name
+    return ok(build_release_response(load_android_release_manifest(), current_version_code))
 
 
 @app.post("/v1/auth/sms-code")

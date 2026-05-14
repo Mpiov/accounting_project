@@ -110,7 +110,7 @@ class TransactionProcessingPipeline @Inject constructor(
                             is OperationResult.Success -> {
                                 // 第 10 次免费自动入账会把剩余额度扣到 0，立即关闭开关，界面与后台行为保持一致。
                                 if (!trialResult.data.isMember && trialResult.data.autoLedgerTrialRemaining <= 0) {
-                                    settingsRepository.setAutoAccountingEnabled(false)
+                                    settingsRepository.disableAutoAccountingForTrialExhaustion()
                                 }
                             }
                             is OperationResult.RetryableFailure -> {
@@ -124,7 +124,7 @@ class TransactionProcessingPipeline @Inject constructor(
                             is OperationResult.TerminalFailure -> {
                                 if (trialResult.code == AUTO_LEDGER_TRIAL_EXHAUSTED_CODE) {
                                     // 服务端确认体验耗尽后立即关闭本地开关，下一条通知不会继续尝试自动入账。
-                                    settingsRepository.setAutoAccountingEnabled(false)
+                                    settingsRepository.disableAutoAccountingForTrialExhaustion()
                                 }
                                 return routeCandidateToPending(
                                     notificationId = notificationId,

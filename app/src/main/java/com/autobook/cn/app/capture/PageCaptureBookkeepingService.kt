@@ -213,7 +213,7 @@ class PageCaptureBookkeepingService : Service() {
                             membership = trialResult.data
                             // 截图记账同样消耗自动入账体验，第 10 次成功后立即关闭总开关。
                             if (!trialResult.data.isMember && trialResult.data.autoLedgerTrialRemaining <= 0) {
-                                entryPoint.settingsRepository().setAutoAccountingEnabled(false)
+                                entryPoint.settingsRepository().disableAutoAccountingForTrialExhaustion()
                             }
                         }
                         is OperationResult.RetryableFailure -> {
@@ -233,7 +233,7 @@ class PageCaptureBookkeepingService : Service() {
                         is OperationResult.TerminalFailure -> {
                             if (trialResult.code == AUTO_LEDGER_TRIAL_EXHAUSTED_CODE) {
                                 // 服务端确认免费体验耗尽后关闭本地总开关，避免后续截图继续尝试自动落账。
-                                entryPoint.settingsRepository().setAutoAccountingEnabled(false)
+                                entryPoint.settingsRepository().disableAutoAccountingForTrialExhaustion()
                             }
                             entryPoint.pendingRepository().add(
                                 candidate.toPendingEntry(

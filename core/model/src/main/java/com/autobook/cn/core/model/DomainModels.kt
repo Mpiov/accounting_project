@@ -66,6 +66,43 @@ const val AUTO_LEDGER_FREE_TRIAL_LIMIT: Int = 10
 
 /**
  * 用途说明：
+ * - 服务端发布给客户端的 Android 新版本元数据。
+ * - 当前只用于提示用户并跳转浏览器下载，不在 App 内静默下载 APK，避免占用小带宽服务器。
+ *
+ * 参数说明：
+ * - latestVersionCode：服务端最新版本号，用于和本机 versionCode 做可靠比较。
+ * - latestVersionName：服务端最新版本展示名，例如 0.1.1。
+ * - minSupportedVersionCode：服务端建议的最低可用版本号，低于该值时可提示强制更新。
+ * - forceUpdate：是否要求用户尽快更新；第一版仍只做提示，不阻断主流程。
+ * - apkUrl：APK 下载地址，客户端会交给系统浏览器打开。
+ * - apkSizeBytes：APK 文件大小，便于下载前给用户预估流量。
+ * - sha256：APK 摘要，后续如果改成 App 内下载时可用于本地校验。
+ * - releaseNotes：版本更新说明。
+ * - publishedAt：发布时间戳，单位毫秒。
+ * - notModified：服务端确认当前客户端已经是最新版本。
+ */
+data class AppReleaseInfo(
+    val latestVersionCode: Int,
+    val latestVersionName: String,
+    val minSupportedVersionCode: Int,
+    val forceUpdate: Boolean,
+    val apkUrl: String,
+    val apkSizeBytes: Long,
+    val sha256: String?,
+    val releaseNotes: List<String>,
+    val publishedAt: Long?,
+    val notModified: Boolean,
+) {
+    /**
+     * 用途说明：
+     * - 判断当前响应是否代表确实存在可展示的新版本。
+     */
+    val hasUpdate: Boolean
+        get() = !notModified && latestVersionCode > 0
+}
+
+/**
+ * 用途说明：
  * - 数值型置信度封装。
  *
  * 参数说明：
@@ -175,6 +212,10 @@ data class PendingEntry(
 data class AppSettings(
     val onboardingCompleted: Boolean = false,
     val autoAccountingEnabled: Boolean = true,
+    /** 用途说明：自动记账是否因为免费体验耗尽被系统关闭；会员生效后可据此安全恢复。 */
+    val autoAccountingDisabledByTrialExhaustion: Boolean = false,
+    /** 用途说明：自动入账成功后是否弹出可点击通知，便于用户回到首页检查或修改账单。 */
+    val autoLedgerSuccessNotificationEnabled: Boolean = true,
     val cloudAnalysisEnabled: Boolean = true,
     val cloudLearningEnabled: Boolean = true,
     /** 用途说明：用户是否加入改善计划；开启后本地通知原文样本会按固定周期上传到服务器全局样本池。 */

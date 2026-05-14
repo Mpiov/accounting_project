@@ -1,5 +1,6 @@
 package com.autobook.cn.core.data
 
+import com.autobook.cn.core.model.AppReleaseInfo
 import com.autobook.cn.core.model.AppSettings
 import com.autobook.cn.core.model.AuthSession
 import com.autobook.cn.core.model.AuthState
@@ -496,6 +497,26 @@ interface PaymentRepository {
 
 /**
  * 用途说明：
+ * - 检查服务端发布的 App 新版本元数据。
+ * - 仓储只负责拉取和解析，不负责下载 APK 或打开浏览器，避免数据层依赖界面上下文。
+ */
+interface AppUpdateRepository {
+    /**
+     * 用途说明：
+     * - 请求服务端最新 Android 稳定版元数据，并由服务端根据当前 versionCode 判断是否有更新。
+     *
+     * 参数说明：
+     * - currentVersionCode：当前安装包 versionCode，只用整数比较避免版本名字符串比较错误。
+     * - currentVersionName：当前安装包展示版本名，便于服务端日志和排查。
+     */
+    suspend fun checkLatestRelease(
+        currentVersionCode: Int,
+        currentVersionName: String,
+    ): OperationResult<AppReleaseInfo>
+}
+
+/**
+ * 用途说明：
  * - 客户端可执行的服务器全局置信度模型。
  *
  * 参数说明：
@@ -637,6 +658,33 @@ interface SettingsRepository {
      * - enabled：自动记账总开关目标状态。
      */
     suspend fun setAutoAccountingEnabled(enabled: Boolean)
+
+    /**
+     * 用途说明：
+     * - 设置自动入账成功后的系统通知提醒开关。
+     *
+     * 参数说明：
+     * - enabled：是否在自动入账成功后弹出通知。
+     */
+    suspend fun setAutoLedgerSuccessNotificationEnabled(enabled: Boolean) = Unit
+
+    /**
+     * 用途说明：
+     * - 免费自动入账体验耗尽时关闭自动记账，并记录关闭原因。
+     * - 这个原因标记用于会员生效后自动恢复自动记账，避免用户付费后仍被本地旧开关挡住。
+     */
+    suspend fun disableAutoAccountingForTrialExhaustion() {
+        setAutoAccountingEnabled(false)
+    }
+
+    /**
+     * 用途说明：
+     * - 会员状态由服务器确认后，如果自动记账曾因免费体验耗尽被系统关闭，则恢复开关。
+     * - 默认实现留空，便于测试替身和旧实现不需要关心 DataStore 标记。
+     */
+    suspend fun restoreAutoAccountingAfterMembershipActivation(
+        allowLegacyTrialExhaustedRecovery: Boolean = false,
+    ) = Unit
 
     /**
      * 参数说明：

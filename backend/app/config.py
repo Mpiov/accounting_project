@@ -28,6 +28,7 @@ class AppConfig:
         admin_password: 管理后台登录密码，第一版只通过 SSH 隧道访问。
         admin_session_seconds: 管理后台会话有效期，单位秒。
         payment_order_expire_minutes: 支付订单默认有效期，单位分钟。
+        release_manifest_path: Android 最新版本元数据 JSON 文件路径。
         auto_ledger_free_trial_limit: 免费用户自动记账体验总次数，由服务器统一下发并扣减。
         training_schedule_hour: 定时训练检查的北京时间小时。
         training_min_new_samples: 自动训练需要的新增有效样本数。
@@ -53,6 +54,7 @@ class AppConfig:
     admin_password: str
     admin_session_seconds: int
     payment_order_expire_minutes: int
+    release_manifest_path: str
     auto_ledger_free_trial_limit: int
     training_schedule_hour: int
     training_min_new_samples: int
@@ -86,6 +88,7 @@ def load_config() -> AppConfig:
         admin_password=os.getenv("AUTOBOOK_ADMIN_PASSWORD", ""),
         admin_session_seconds=int(os.getenv("AUTOBOOK_ADMIN_SESSION_SECONDS", "7200")),
         payment_order_expire_minutes=int(os.getenv("AUTOBOOK_PAYMENT_ORDER_EXPIRE_MINUTES", "30")),
+        release_manifest_path=os.getenv("AUTOBOOK_RELEASE_MANIFEST_PATH", "/data/releases/android-stable.json"),
         auto_ledger_free_trial_limit=_read_non_negative_int("AUTOBOOK_AUTO_LEDGER_FREE_TRIAL_LIMIT", default=10),
         training_schedule_hour=int(os.getenv("AUTOBOOK_TRAINING_SCHEDULE_HOUR", "3")),
         training_min_new_samples=int(os.getenv("AUTOBOOK_TRAINING_MIN_NEW_SAMPLES", "1000")),

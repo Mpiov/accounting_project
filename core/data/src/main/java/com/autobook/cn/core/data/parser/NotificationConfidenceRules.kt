@@ -97,7 +97,11 @@ internal data class NotificationSemanticFeatures(
     val hasTailNumber: Boolean,
     val hasStrongAccountKeyword: Boolean,
     val hasGenericAccountKeyword: Boolean,
-    val hasExplicitTime: Boolean,
+    val hasTimeYearKeyword: Boolean,
+    val hasTimeMonthKeyword: Boolean,
+    val hasTimeDayKeyword: Boolean,
+    val hasTimeHourKeyword: Boolean,
+    val hasClockTime: Boolean,
     val hasTransactionSceneKeyword: Boolean,
     val hasCounterpartyKeyword: Boolean,
     val hasExtractedCounterparty: Boolean,
@@ -113,6 +117,10 @@ internal data class NotificationSemanticFeatures(
     /** 文档里的“金额可靠”更接近带币种或单位的明确金额，不把裸数字视为高可信证据。 */
     val hasReliableAmount: Boolean
         get() = amountKind != AmountSignalKind.BARE_NUMBER
+
+    /** 任一时间信号命中即可保留旧的汇总字段，方便旧样本和排查日志继续读取。 */
+    val hasExplicitTime: Boolean
+        get() = hasTimeYearKeyword || hasTimeMonthKeyword || hasTimeDayKeyword || hasTimeHourKeyword || hasClockTime
 
     /** 银行动账高置信度要求的“强结构信号”。 */
     val hasStrongBankStructureSignal: Boolean
@@ -431,7 +439,11 @@ internal object NotificationSemanticAnalyzer {
             hasTailNumber = ACCOUNT_TAIL_REGEX.containsMatchIn(textWindow.scoringText),
             hasStrongAccountKeyword = SemanticTag.ACCOUNT_STRONG in matchedTags,
             hasGenericAccountKeyword = SemanticTag.ACCOUNT_GENERIC in matchedTags,
-            hasExplicitTime = EXPLICIT_TIME_PATTERNS.any { pattern -> pattern.containsMatchIn(textWindow.scoringText) },
+            hasTimeYearKeyword = TIME_YEAR_REGEX.containsMatchIn(textWindow.scoringText),
+            hasTimeMonthKeyword = TIME_MONTH_REGEX.containsMatchIn(textWindow.scoringText),
+            hasTimeDayKeyword = TIME_DAY_REGEX.containsMatchIn(textWindow.scoringText),
+            hasTimeHourKeyword = TIME_HOUR_REGEX.containsMatchIn(textWindow.scoringText),
+            hasClockTime = CLOCK_TIME_REGEX.containsMatchIn(textWindow.scoringText),
             hasTransactionSceneKeyword = SemanticTag.TRANSACTION_SCENE in matchedTags,
             hasCounterpartyKeyword = SemanticTag.COUNTERPARTY in matchedTags,
             hasExtractedCounterparty = !counterparty.isNullOrBlank() && counterparty != "通知" && counterparty != "银行卡短信" && counterparty != channelLabel,
@@ -591,7 +603,7 @@ private val SEMANTIC_TAG_MATCHER by lazy(SYNCHRONIZED) {
             .forEach { add(it, SemanticTag.ACCOUNT_STRONG) }
         listOf("账户", "银行卡", "卡号")
             .forEach { add(it, SemanticTag.ACCOUNT_GENERIC) }
-        listOf("动账提醒", "账户通知", "交易提醒", "到账通知", "入账通知", "收款通知", "余额变动")
+        listOf("动账提醒", "账户通知", "交易提醒", "到账通知", "入账通知", "收款通知", "余额变动", "pos", "无卡支付", "刷卡", "银联")
             .forEach { add(it, SemanticTag.TRANSACTION_SCENE) }
         listOf("商户", "收款方", "收款人", "付款对象", "交易对手")
             .forEach { add(it, SemanticTag.COUNTERPARTY) }
@@ -652,11 +664,15 @@ private val GENERIC_NOTIFICATION_TITLES = setOf(
     "余额宝",
 )
 
-private val EXPLICIT_TIME_PATTERNS = listOf(
-    Regex("""\d{4}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}"""),
-    Regex("""\d{1,2}月\d{1,2}日\d{1,2}(?:时|点)\d{1,2}分"""),
-    Regex("""\d{1,2}:\d{2}"""),
-)
+private val TIME_YEAR_REGEX = Regex("""年""")
+
+private val TIME_MONTH_REGEX = Regex("""月""")
+
+private val TIME_DAY_REGEX = Regex("""日""")
+
+private val TIME_HOUR_REGEX = Regex("""时""")
+
+private val CLOCK_TIME_REGEX = Regex("""\d{1,2}:\d{2}""")
 
 private val CURRENCY_AMOUNT_REGEX = Regex(
     """(?:人民币|rmb|cny|￥|¥)\s*([0-9]+(?:\.[0-9]{1,2})?)|([0-9]+(?:\.[0-9]{1,2})?)\s*(?:元|块)""",
@@ -664,7 +680,7 @@ private val CURRENCY_AMOUNT_REGEX = Regex(
 
 private val BARE_AMOUNT_REGEX = Regex("""([0-9]+(?:\.[0-9]{1,2})?)""")
 
-private val ACCOUNT_TAIL_REGEX = Regex("""(?:尾号|卡号)\s*[0-9]{2,6}""")
+private val ACCOUNT_TAIL_REGEX = Regex("""尾号""")
 
 private val WHITESPACE_REGEX = Regex("""\s+""")
 

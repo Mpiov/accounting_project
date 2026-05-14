@@ -197,6 +197,35 @@ internal fun List<LedgerEntry>.filterByRange(
     }
 }
 
+/**
+ * 构建总览页 UI 状态的测试入口。
+ *
+ * 用途说明：
+ * - 让单元测试可以锁定截图导入等批量入账场景下的首页统计口径。
+ * - 生产代码仍通过私有快照对象调用，避免把内部状态结构暴露给 UI。
+ *
+ * 参数说明：
+ * - entries：账本记录列表。
+ * - pendingCount：待确认数量。
+ * - range：统计范围。
+ * - monthlyBudgets：月预算映射。
+ */
+internal fun buildOverviewUiStateForTest(
+    entries: List<LedgerEntry>,
+    pendingCount: Int = 0,
+    range: LedgerRangeFilter = LedgerRangeFilter.MONTH,
+    monthlyBudgets: Map<String, Double> = emptyMap(),
+): OverviewUiState {
+    return buildOverviewUiState(
+        snapshot = LedgerSourceSnapshot(
+            entries = entries,
+            pendingCount = pendingCount,
+            monthlyBudgets = monthlyBudgets,
+            range = range,
+        ),
+    )
+}
+
 /** 为月历视图生成固定 6 周网格，并补充每日收入/支出摘要。 */
 internal fun buildLedgerCalendarDays(
     entries: List<LedgerEntry>,
@@ -243,8 +272,8 @@ private fun List<LedgerEntry>.filterWithinYear(year: Int): List<LedgerEntry> {
 }
 
 private fun List<LedgerEntry>.summarize(): LedgerAmountSummary {
-    val income = filter { it.direction == MoneyDirection.INCOME }.sumOf { it.amount }
-    val expense = filter { it.direction == MoneyDirection.EXPENSE }.sumOf { it.amount }
+    val income = filter { it.direction == MoneyDirection.INCOME }.sumOf { it.amount.absoluteValue }
+    val expense = filter { it.direction == MoneyDirection.EXPENSE }.sumOf { it.amount.absoluteValue }
     return LedgerAmountSummary(
         income = income,
         expense = expense,
@@ -273,7 +302,7 @@ private fun buildBudgetState(
     val budgetAmount = monthlyBudgets[month.toString()]
     val spentAmount = monthEntries
         .filter { it.direction == MoneyDirection.EXPENSE }
-        .sumOf { it.amount }
+        .sumOf { it.amount.absoluteValue }
     if (budgetAmount == null || budgetAmount <= 0.0) {
         return LedgerBudgetState(
             amountLabel = null,
@@ -299,7 +328,7 @@ private fun buildBudgetState(
 
 private fun formatAmountByDirection(entry: LedgerEntry): String {
     val sign = if (entry.direction == MoneyDirection.INCOME) "+" else "-"
-    return "$sign${CurrencyFormatter.format(entry.amount)}"
+    return "$sign${CurrencyFormatter.format(entry.amount.absoluteValue)}"
 }
 
 /**

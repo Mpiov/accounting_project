@@ -217,6 +217,16 @@ private fun buildFeatureSnapshotJson(
     append(",")
     appendJsonBoolean("hasExplicitTime", features.hasExplicitTime)
     append(",")
+    appendJsonBoolean("hasTimeYearKeyword", features.hasTimeYearKeyword)
+    append(",")
+    appendJsonBoolean("hasTimeMonthKeyword", features.hasTimeMonthKeyword)
+    append(",")
+    appendJsonBoolean("hasTimeDayKeyword", features.hasTimeDayKeyword)
+    append(",")
+    appendJsonBoolean("hasTimeHourKeyword", features.hasTimeHourKeyword)
+    append(",")
+    appendJsonBoolean("hasClockTime", features.hasClockTime)
+    append(",")
     appendJsonBoolean("hasTransactionSceneKeyword", features.hasTransactionSceneKeyword)
     append(",")
     appendJsonBoolean("hasCounterpartyKeyword", features.hasCounterpartyKeyword)
@@ -370,9 +380,44 @@ private data class MlConfidenceFeatureVector(
                 )
                 addBinary(
                     key = KEY_EXPLICIT_TIME,
-                    label = "明确时间",
+                    label = "时间汇总",
                     enabled = features.hasExplicitTime,
                     defaultWeight = EXPLICIT_TIME_WEIGHT,
+                    modelConfig = modelConfig,
+                )
+                addBinary(
+                    key = KEY_TIME_YEAR,
+                    label = "时间年",
+                    enabled = features.hasTimeYearKeyword,
+                    defaultWeight = TIME_YEAR_WEIGHT,
+                    modelConfig = modelConfig,
+                )
+                addBinary(
+                    key = KEY_TIME_MONTH,
+                    label = "时间月",
+                    enabled = features.hasTimeMonthKeyword,
+                    defaultWeight = TIME_MONTH_WEIGHT,
+                    modelConfig = modelConfig,
+                )
+                addBinary(
+                    key = KEY_TIME_DAY,
+                    label = "时间日",
+                    enabled = features.hasTimeDayKeyword,
+                    defaultWeight = TIME_DAY_WEIGHT,
+                    modelConfig = modelConfig,
+                )
+                addBinary(
+                    key = KEY_TIME_HOUR,
+                    label = "时间时",
+                    enabled = features.hasTimeHourKeyword,
+                    defaultWeight = TIME_HOUR_WEIGHT,
+                    modelConfig = modelConfig,
+                )
+                addBinary(
+                    key = KEY_CLOCK_TIME,
+                    label = "时间冒号",
+                    enabled = features.hasClockTime,
+                    defaultWeight = CLOCK_TIME_WEIGHT,
                     modelConfig = modelConfig,
                 )
                 addBinary(
@@ -699,6 +744,11 @@ private fun legacyWeightAliases(key: String): Array<String> = when (key) {
     KEY_STRONG_ACCOUNT -> arrayOf("hasStrongAccountKeyword")
     KEY_GENERIC_ACCOUNT -> arrayOf("hasGenericAccountKeyword")
     KEY_EXPLICIT_TIME -> arrayOf("hasExplicitTime")
+    KEY_TIME_YEAR -> arrayOf("hasTimeYearKeyword")
+    KEY_TIME_MONTH -> arrayOf("hasTimeMonthKeyword")
+    KEY_TIME_DAY -> arrayOf("hasTimeDayKeyword")
+    KEY_TIME_HOUR -> arrayOf("hasTimeHourKeyword")
+    KEY_CLOCK_TIME -> arrayOf("hasClockTime")
     KEY_TRANSACTION_SCENE -> arrayOf("hasTransactionSceneKeyword")
     KEY_COUNTERPARTY -> arrayOf("hasCounterpartyKeyword")
     KEY_EXTRACTED_COUNTERPARTY -> arrayOf("hasExtractedCounterparty")
@@ -821,6 +871,11 @@ private const val KEY_TAIL_NUMBER = "structure.tail_number"
 private const val KEY_STRONG_ACCOUNT = "structure.strong_account_keyword"
 private const val KEY_GENERIC_ACCOUNT = "structure.generic_account_keyword"
 private const val KEY_EXPLICIT_TIME = "structure.explicit_time"
+private const val KEY_TIME_YEAR = "structure.time_year"
+private const val KEY_TIME_MONTH = "structure.time_month"
+private const val KEY_TIME_DAY = "structure.time_day"
+private const val KEY_TIME_HOUR = "structure.time_hour"
+private const val KEY_CLOCK_TIME = "structure.clock_time"
 private const val KEY_TRANSACTION_SCENE = "semantic.transaction_scene"
 private const val KEY_COUNTERPARTY = "semantic.counterparty"
 private const val KEY_EXTRACTED_COUNTERPARTY = "semantic.extracted_counterparty"
@@ -851,6 +906,11 @@ private const val TAIL_NUMBER_WEIGHT = 0.75f
 private const val STRONG_ACCOUNT_WEIGHT = 0.55f
 private const val GENERIC_ACCOUNT_WEIGHT = 0.25f
 private const val EXPLICIT_TIME_WEIGHT = 0.25f
+private const val TIME_YEAR_WEIGHT = 0.08f
+private const val TIME_MONTH_WEIGHT = 0.08f
+private const val TIME_DAY_WEIGHT = 0.08f
+private const val TIME_HOUR_WEIGHT = 0.08f
+private const val CLOCK_TIME_WEIGHT = 0.15f
 private const val TRANSACTION_SCENE_WEIGHT = 0.45f
 private const val COUNTERPARTY_KEYWORD_WEIGHT = 0.20f
 private const val EXTRACTED_COUNTERPARTY_WEIGHT = 0.10f

@@ -29,6 +29,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -74,6 +76,7 @@ import com.autobook.cn.app.viewmodel.SettingsNotificationSource
 import com.autobook.cn.app.viewmodel.SettingsUiState
 import com.autobook.cn.core.common.PermissionStatusChecker
 import com.autobook.cn.core.common.SettingsIntents
+import com.autobook.cn.core.model.AppReleaseInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -81,6 +84,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 /**
  * 主壳层下的设置页。
@@ -93,6 +97,7 @@ import java.time.temporal.ChronoUnit
  * - state：设置页聚合后的界面状态。
  * - homeResetKey：设置首页重置标记；从其它底部 Tab 回到设置页时递增，用于清空二级页。
  * - onAutoAccountingChanged：自动记账总开关变更回调。
+ * - onAutoLedgerSuccessNotificationChanged：自动入账成功通知开关变更回调。
  * - onCloudAnalysisChanged：云端 AI 分析开关变更回调。
  * - onAuthPhoneChanged：邮箱输入变更回调；参数名暂沿用旧账号契约。
  * - onAuthCodeChanged：邮箱验证码输入变更回调。
@@ -115,6 +120,7 @@ fun SettingsWorkspaceScreen(
     state: SettingsUiState,
     homeResetKey: Int,
     onAutoAccountingChanged: (Boolean) -> Unit,
+    onAutoLedgerSuccessNotificationChanged: (Boolean) -> Unit,
     onCloudAnalysisChanged: (Boolean) -> Unit,
     onAuthPhoneChanged: (String) -> Unit,
     onAuthCodeChanged: (String) -> Unit,
@@ -130,6 +136,8 @@ fun SettingsWorkspaceScreen(
     onNotificationRetentionChanged: (Int) -> Unit,
     onScreenshotRetentionChanged: (Int) -> Unit,
     onSourceEnabledChanged: (SettingsNotificationSource, Boolean) -> Unit,
+    onCheckAppUpdate: () -> Unit,
+    onDismissAppUpdatePrompt: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -162,6 +170,19 @@ fun SettingsWorkspaceScreen(
     var selectedDetailName by remember(homeResetKey) { mutableStateOf<String?>(null) }
     val selectedDetail = SettingsDetailDestination.entries.firstOrNull { detail ->
         detail.name == selectedDetailName
+    }
+
+    state.appUpdatePrompt?.let { release ->
+        AppUpdatePromptDialog(
+            release = release,
+            onDismiss = onDismissAppUpdatePrompt,
+            onOpenDownload = {
+                val opened = openAppUpdateDownloadInBrowser(context, release.apkUrl)
+                if (opened) {
+                    onDismissAppUpdatePrompt()
+                }
+            },
+        )
     }
 
     LaunchedEffect(state.authLoggedIn) {
@@ -278,6 +299,7 @@ fun SettingsWorkspaceScreen(
             },
             onStartYearlyMembership = onStartYearlyMembership,
             onRefreshMembershipAfterPayment = onRefreshMembershipAfterPayment,
+            onAutoLedgerSuccessNotificationChanged = onAutoLedgerSuccessNotificationChanged,
             onUserImprovementPlanChanged = onUserImprovementPlanChanged,
             onNotificationRetentionChanged = onNotificationRetentionChanged,
             onScreenshotRetentionChanged = onScreenshotRetentionChanged,
@@ -296,6 +318,7 @@ fun SettingsWorkspaceScreen(
         onLogout = onLogout,
         onPullCloudModel = onPullCloudModel,
         onOpenDetail = { detail -> selectedDetailName = detail.name },
+        onCheckAppUpdate = onCheckAppUpdate,
         modifier = modifier,
     )
 }
@@ -327,6 +350,7 @@ private fun SettingsHomeContent(
     onLogout: () -> Unit,
     onPullCloudModel: () -> Unit,
     onOpenDetail: (SettingsDetailDestination) -> Unit,
+    onCheckAppUpdate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -386,6 +410,14 @@ private fun SettingsHomeContent(
                 title = "数据留存",
                 summary = "通知原文和截图保留时间",
                 onClick = { onOpenDetail(SettingsDetailDestination.RETENTION) },
+            )
+            SettingsMenuDivider()
+            SettingsMenuRow(
+                // 版本检查只请求很小的 JSON 元数据；真正下载交给浏览器，避免后台自动占用服务器带宽。
+                icon = AutobookIconAsset.CloudSync,
+                title = "检查新版本",
+                summary = if (state.appUpdateChecking) "正在检查..." else "发现新版后通过浏览器下载",
+                onClick = onCheckAppUpdate,
             )
         }
     }
@@ -448,6 +480,7 @@ private enum class SettingsDetailDestination(
  * - hasAccessibilityAccess：无障碍权限是否开启。
  * - onBack：返回设置首页回调。
  * - onAutoAccountingChanged：自动记账开关变更回调。
+ * - onAutoLedgerSuccessNotificationChanged：自动入账成功通知开关变更回调。
  * - onCloudAnalysisChanged：旧云端分析开关回调；当前设置页不再暴露旧入口。
  * - onOpenNotificationSettings：打开通知监听系统设置回调。
  * - onOpenAppNotificationSettings：打开应用通知系统设置回调。
@@ -471,6 +504,7 @@ private fun SettingsDetailScreen(
     hasAccessibilityAccess: Boolean,
     onBack: () -> Unit,
     onAutoAccountingChanged: (Boolean) -> Unit,
+    onAutoLedgerSuccessNotificationChanged: (Boolean) -> Unit,
     onCloudAnalysisChanged: (Boolean) -> Unit,
     onOpenNotificationSettings: () -> Unit,
     onOpenAppNotificationSettings: () -> Unit,
@@ -528,6 +562,10 @@ private fun SettingsDetailScreen(
                         trialLimit = state.autoLedgerTrialLimit,
                         onCheckedChange = onAutoAccountingChanged,
                         onOpenNotificationSettings = onOpenNotificationSettings,
+                    )
+                    AutoLedgerSuccessNotificationToggleSection(
+                        enabled = state.autoLedgerSuccessNotificationEnabled,
+                        onCheckedChange = onAutoLedgerSuccessNotificationChanged,
                     )
                     AppNotificationToggleSection(
                         appNotificationsEnabled = hasAppNotificationsEnabled,
@@ -764,6 +802,75 @@ private fun SettingsMenuDivider() {
 }
 
 /**
+ * App 新版本提示弹窗。
+ *
+ * 用途说明：
+ * - 展示服务端返回的新版本信息，并让用户主动选择是否跳转浏览器下载 APK。
+ * - 当前不在 App 内下载文件，避免额外安装权限和小带宽服务器压力。
+ *
+ * 参数说明：
+ * - release：服务端返回的新版本元数据。
+ * - onDismiss：关闭弹窗回调。
+ * - onOpenDownload：用户确认下载时的浏览器跳转回调。
+ */
+@Composable
+private fun AppUpdatePromptDialog(
+    release: AppReleaseInfo,
+    onDismiss: () -> Unit,
+    onOpenDownload: () -> Unit,
+) {
+    val versionName = release.latestVersionName.ifBlank { release.latestVersionCode.toString() }
+    val notes = release.releaseNotes.takeIf { items -> items.isNotEmpty() }
+        ?: listOf("修复问题并优化体验")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = if (release.forceUpdate) "需要更新到 $versionName" else "发现新版本 $versionName",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "安装包大小：${formatApkSize(release.apkSizeBytes)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                notes.forEach { note ->
+                    Text(
+                        text = "• $note",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (release.apkUrl.isBlank()) {
+                    Text(
+                        text = "下载链接尚未配置，请稍后再试。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onOpenDownload,
+                enabled = release.apkUrl.isNotBlank(),
+            ) {
+                Text("立即更新")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("稍后再说")
+            }
+        },
+    )
+}
+
+/**
  * 来源管理二级页内容。
  *
  * 参数说明：
@@ -939,12 +1046,6 @@ private fun SettingsProfileHero(
                     onRequestLoginCode = onRequestLoginCode,
                     onLoginOrRegister = onLoginOrRegister,
                 )
-            } else if (state.membershipActionMessage.isNotBlank()) {
-                Text(
-                    text = state.membershipActionMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
             SettingsHeroStatsRow(
                 state = state,
@@ -1041,13 +1142,6 @@ private fun SettingsHeroAuthForm(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(if (state.authLoginInProgress) "登录中" else "登录/注册")
-        }
-        if (state.membershipActionMessage.isNotBlank()) {
-            Text(
-                text = state.membershipActionMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
@@ -1331,7 +1425,7 @@ private fun resolveSettingsGroupIcon(title: String): AutobookIconAsset {
         "账号" -> AutobookIconAsset.Account
         "会员中心" -> AutobookIconAsset.Crown
         "会员状态" -> AutobookIconAsset.Crown
-        "限时开通" -> AutobookIconAsset.Crown
+        "会员开通" -> AutobookIconAsset.Crown
         "扫码支付" -> AutobookIconAsset.Crown
         "截图能力" -> AutobookIconAsset.Screenshot
         "建议开启" -> AutobookIconAsset.Sparkle
@@ -1474,6 +1568,35 @@ private fun AppNotificationToggleSection(
         checked = appNotificationsEnabled,
         readOnly = true,
         onRowClick = onOpenAppNotificationSettings,
+    )
+}
+
+/**
+ * 自动入账成功通知开关。
+ *
+ * 用途说明：
+ * - 让用户选择自动入账成功后是否弹出系统通知。
+ * - 关闭后不影响自动入账本身，只是不再打断用户。
+ *
+ * 参数说明：
+ * - enabled：当前提醒开关状态。
+ * - onCheckedChange：用户切换开关后的回调。
+ */
+@Composable
+private fun AutoLedgerSuccessNotificationToggleSection(
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    ToggleRow(
+        title = "入账成功提醒",
+        summary = if (enabled) {
+            "自动入账成功后弹出通知，点击可回到首页查看或修改。"
+        } else {
+            "自动入账成功后不再弹出通知。"
+        },
+        leadingIcon = AutobookIconAsset.Notifications,
+        checked = enabled,
+        onCheckedChange = onCheckedChange,
     )
 }
 
@@ -1712,7 +1835,7 @@ private fun MembershipCenterCard(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 SettingsGroupHeader(
-                    title = "限时开通",
+                    title = "会员开通",
                     summary = selectedPlan.highlightSummary,
                 )
                 MembershipPlanGrid(
@@ -1742,13 +1865,6 @@ private fun MembershipCenterCard(
                         text = selectedPlan.payButtonText,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                    )
-                }
-                if (state.membershipActionMessage.isNotBlank()) {
-                    Text(
-                        text = state.membershipActionMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -2072,7 +2188,7 @@ private fun MembershipPaymentQrCard(
                 )
             }
             Text(
-                text = "后台确认收款后，刷新会显示服务器会员有效期；续费用户请以有效期是否延长为准。",
+                text = "会员由人工发放，可能存在 2 到 3 小时延迟，请耐心等待。",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -2590,6 +2706,66 @@ private fun startPersistentCaptureEntry(context: Context): Boolean {
         PageCaptureBookkeepingService.createStartPersistentIntent(context),
     )
     return true
+}
+
+/**
+ * 打开 App 新版本下载地址。
+ *
+ * 用途说明：
+ * - 把 APK 链接交给系统浏览器处理，避免 App 内下载、安装权限和 ROM 兼容问题。
+ * - 仅允许 http/https 链接，避免服务端配置错误时拉起非预期协议。
+ *
+ * 参数说明：
+ * - context：当前界面上下文，用于启动浏览器和展示失败提示。
+ * - rawUrl：服务端返回的 APK 下载地址。
+ *
+ * 返回值说明：
+ * - true：浏览器已成功拉起。
+ * - false：链接为空、协议不支持或系统没有可处理的浏览器。
+ */
+private fun openAppUpdateDownloadInBrowser(
+    context: Context,
+    rawUrl: String,
+): Boolean {
+    val uri = runCatching { Uri.parse(rawUrl.trim()) }.getOrNull()
+    val scheme = uri?.scheme?.lowercase()
+    if (uri == null || scheme !in setOf("http", "https")) {
+        Toast.makeText(context, "下载链接尚未配置，请稍后再试。", Toast.LENGTH_LONG).show()
+        return false
+    }
+    val opened = runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+        )
+        true
+    }.getOrDefault(false)
+    if (!opened) {
+        Toast.makeText(context, "无法打开浏览器，请稍后重试。", Toast.LENGTH_LONG).show()
+    }
+    return opened
+}
+
+/**
+ * 格式化 APK 文件大小。
+ *
+ * 用途说明：
+ * - 让用户在浏览器下载前能预估流量消耗，尤其适配当前 4Mbps 服务器带宽场景。
+ *
+ * 参数说明：
+ * - bytes：服务端返回的 APK 字节数。
+ */
+private fun formatApkSize(bytes: Long): String {
+    if (bytes <= 0L) {
+        return "未知"
+    }
+    val megabytes = bytes / (1024.0 * 1024.0)
+    return if (megabytes >= 1.0) {
+        "%.1f MB".format(Locale.US, megabytes)
+    } else {
+        "${(bytes / 1024L).coerceAtLeast(1L)} KB"
+    }
 }
 
 /**

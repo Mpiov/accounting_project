@@ -5,26 +5,27 @@
 
 from html import escape
 import hmac
-from urllib.parse import parse_qs, quote
+from urllib.parse import parse_qs, quote, urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from .admin_service import grant_member
-from .admin_service import list_member_statuses
+from .admin_service import list_member_status_page
 from .admin_service import revoke_member
 from .auth import parse_token, sign_token
 from .config import AppConfig
 from .config import load_config
 from .global_model_service import count_global_training_samples
 from .global_model_service import get_active_global_model
+from .payment_service import list_payment_order_page
 from .payment_service import list_payment_orders
 from .payment_service import mark_payment_order_paid
 from .response import now_millis
 from .training_sample_service import TRAINING_SAMPLE_LABELS
 from .training_sample_service import create_manual_training_sample
 from .training_sample_service import delete_training_sample
-from .training_sample_service import list_training_samples
+from .training_sample_service import list_training_sample_page
 from .training_job import TrainingPolicy
 from .training_job import list_training_jobs
 from .training_job import run_global_training
@@ -190,6 +191,42 @@ def render_page(title: str, body: str) -> HTMLResponse:
       color: var(--accent);
       font-size: 12px;
       font-weight: 700;
+    }}
+    .pager {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .pager-actions {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }}
+    .pager a {{
+      display: inline-flex;
+      align-items: center;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 10px;
+      color: var(--accent);
+      background: #fff;
+      text-decoration: none;
+      font-weight: 700;
+    }}
+    .pager .disabled {{
+      display: inline-flex;
+      align-items: center;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 10px;
+      color: #98a2b3;
+      background: #f8fafc;
     }}
     .state-created, .state-paying {{ background: #fff7ed; color: var(--warning); }}
     .state-paid {{ background: var(--accent-soft); color: var(--accent); }}
@@ -427,13 +464,21 @@ def logout() -> RedirectResponse:
 
 
 @router.get("")
-def admin_index(request: Request, q: str = "", message: str = "") -> Response:
+def admin_index(
+    request: Request,
+    q: str = "",
+    message: str = "",
+    page: int = 1,
+    page_size: int = 20,
+) -> Response:
     """展示会员管理首页。
 
     参数：
         request: FastAPI 请求对象。
         q: 邮箱或旧手机号搜索关键字。
         message: 操作结果提示。
+        page: 用户列表页码。
+        page_size: 用户列表每页数量。
 
     返回：
         HTMLResponse | RedirectResponse: 后台首页或登录页跳转。
@@ -443,12 +488,20 @@ def admin_index(request: Request, q: str = "", message: str = "") -> Response:
         return redirect_login()
 
     config = load_config()
-    members = list_member_statuses(config.database_path, query=q)
+    member_page = list_member_status_page(config.database_path, query=q, page=page, page_size=page_size)
+    members = member_page["items"]
     orders_section = render_recent_orders_section(config.database_path)
     global_model_section = render_global_model_section(config.database_path)
     training_section = render_training_section(config)
     message_html = f'<div class="message">{escape(message)}</div>' if message else ""
     rows = "\n".join(render_member_row(member) for member in members)
+    pager_html = render_pagination(
+        path="/admin",
+        current_page=int(member_page["page"]),
+        page_size=int(member_page["pageSize"]),
+        total=int(member_page["total"]),
+        params={"q": q},
+    )
     body = f"""
     {message_html}
     {orders_section}
@@ -461,6 +514,8 @@ def admin_index(request: Request, q: str = "", message: str = "") -> Response:
           邮箱/账号
           <input type="text" name="q" value="{escape(q)}">
         </label>
+        {render_page_size_select(int(member_page["pageSize"]))}
+        <input type="hidden" name="page" value="1">
         <button type="submit">查询</button>
       </form>
     </section>
@@ -503,13 +558,21 @@ def admin_index(request: Request, q: str = "", message: str = "") -> Response:
         </thead>
         <tbody>{rows or '<tr><td colspan="7" class="muted">暂无用户</td></tr>'}</tbody>
       </table>
+      {pager_html}
     </section>
     """
     return render_page(title="会员管理", body=body)
 
 
 @router.get("/orders")
-def admin_orders(request: Request, q: str = "", state: str = "", message: str = "") -> Response:
+def admin_orders(
+    request: Request,
+    q: str = "",
+    state: str = "",
+    message: str = "",
+    page: int = 1,
+    page_size: int = 20,
+) -> Response:
     """展示订单管理页。
 
     参数：
@@ -517,6 +580,8 @@ def admin_orders(request: Request, q: str = "", state: str = "", message: str = 
         q: 邮箱或订单号搜索关键字。
         state: 订单状态筛选。
         message: 操作结果提示。
+        page: 订单列表页码。
+        page_size: 订单列表每页数量。
 
     返回：
         Response: 订单后台页面或登录页跳转。
@@ -526,8 +591,22 @@ def admin_orders(request: Request, q: str = "", state: str = "", message: str = 
         return redirect_login()
 
     config = load_config()
-    orders = list_payment_orders(config.database_path, query=q, state=state, limit=100)
+    order_page = list_payment_order_page(
+        config.database_path,
+        query=q,
+        state=state,
+        page=page,
+        page_size=page_size,
+    )
+    orders = order_page["items"]
     rows = "\n".join(render_payment_order_row(order) for order in orders)
+    pager_html = render_pagination(
+        path="/admin/orders",
+        current_page=int(order_page["page"]),
+        page_size=int(order_page["pageSize"]),
+        total=int(order_page["total"]),
+        params={"q": q, "state": state},
+    )
     message_html = f'<div class="message">{escape(message)}</div>' if message else ""
     body = f"""
     {message_html}
@@ -547,6 +626,8 @@ def admin_orders(request: Request, q: str = "", state: str = "", message: str = 
             {render_payment_state_options(state)}
           </select>
         </label>
+        {render_page_size_select(int(order_page["pageSize"]))}
+        <input type="hidden" name="page" value="1">
         <button type="submit">查询</button>
       </form>
     </section>
@@ -571,20 +652,32 @@ def admin_orders(request: Request, q: str = "", state: str = "", message: str = 
         </thead>
         <tbody>{rows or '<tr><td colspan="9" class="muted">暂无订单</td></tr>'}</tbody>
       </table>
+      {pager_html}
     </section>
     """
     return render_page(title="订单管理", body=body)
 
 
 @router.get("/samples")
-def admin_samples(request: Request, q: str = "", label: str = "", message: str = "") -> Response:
+def admin_samples(
+    request: Request,
+    account: str = "",
+    q: str = "",
+    label: str = "",
+    message: str = "",
+    page: int = 1,
+    page_size: int = 20,
+) -> Response:
     """展示训练样本明细页。
 
     参数：
         request: FastAPI 请求对象。
-        q: 邮箱、样本 ID、通知 ID 或通知原文搜索关键字。
+        account: 账号筛选关键字，支持邮箱或旧手机号片段。
+        q: 样本 ID、通知 ID 或通知原文搜索关键字。
         label: 反馈标签筛选。
         message: 操作结果提示。
+        page: 样本列表页码。
+        page_size: 样本列表每页数量。
 
     返回：
         Response: 样本后台页面或登录页跳转。
@@ -594,8 +687,23 @@ def admin_samples(request: Request, q: str = "", label: str = "", message: str =
         return redirect_login()
 
     config = load_config()
-    samples = list_training_samples(config.database_path, query=q, feedback_label=label, limit=100)
+    sample_page = list_training_sample_page(
+        config.database_path,
+        account_query=account,
+        query=q,
+        feedback_label=label,
+        page=page,
+        page_size=page_size,
+    )
+    samples = sample_page["items"]
     rows = "\n".join(render_training_sample_row(sample) for sample in samples)
+    pager_html = render_pagination(
+        path="/admin/samples",
+        current_page=int(sample_page["page"]),
+        page_size=int(sample_page["pageSize"]),
+        total=int(sample_page["total"]),
+        params={"account": account, "q": q, "label": label},
+    )
     message_html = f'<div class="message">{escape(message)}</div>' if message else ""
     body = f"""
     {message_html}
@@ -606,7 +714,11 @@ def admin_samples(request: Request, q: str = "", label: str = "", message: str =
       </div>
       <form method="get" action="/admin/samples">
         <label>
-          邮箱/样本/通知/原文
+          账号邮箱
+          <input type="text" name="account" value="{escape(account)}">
+        </label>
+        <label>
+          样本/通知/原文
           <input type="text" name="q" value="{escape(q)}">
         </label>
         <label>
@@ -615,6 +727,8 @@ def admin_samples(request: Request, q: str = "", label: str = "", message: str =
             {render_training_sample_label_options(label)}
           </select>
         </label>
+        {render_page_size_select(int(sample_page["pageSize"]))}
+        <input type="hidden" name="page" value="1">
         <button type="submit">查询</button>
       </form>
     </section>
@@ -679,7 +793,7 @@ def admin_samples(request: Request, q: str = "", label: str = "", message: str =
     <section>
       <div class="section-title">
         <h2>样本明细</h2>
-        <span class="muted">默认展示最近 100 条；展开“完整 JSON”可查看服务器保存的每一行原始样本。</span>
+        <span class="muted">按页展示样本；展开“完整 JSON”可查看服务器保存的每一行原始样本。</span>
       </div>
       <table>
         <thead>
@@ -698,6 +812,7 @@ def admin_samples(request: Request, q: str = "", label: str = "", message: str =
         </thead>
         <tbody>{rows or '<tr><td colspan="10" class="muted">暂无样本</td></tr>'}</tbody>
       </table>
+      {pager_html}
     </section>
     """
     return render_page(title="训练样本", body=body)
@@ -943,6 +1058,107 @@ def render_training_section(config: AppConfig) -> str:
           <p class="muted">读取失败：{escape(str(exc))}</p>
         </section>
         """
+
+
+def render_pagination(
+    path: str,
+    current_page: int,
+    page_size: int,
+    total: int,
+    params: dict[str, object],
+) -> str:
+    """渲染后台列表分页控件。
+
+    参数：
+        path: 当前列表页面路径。
+        current_page: 当前页码，从 1 开始。
+        page_size: 每页记录数量。
+        total: 当前筛选条件下的总记录数。
+        params: 需要在翻页时保留的筛选参数。
+
+    返回：
+        str: 分页信息和上一页、下一页链接 HTML。
+    """
+
+    total_pages = max(1, (max(0, total) + max(1, page_size) - 1) // max(1, page_size))
+    normalized_page = max(1, min(current_page, total_pages))
+    start = 0 if total <= 0 else (normalized_page - 1) * page_size + 1
+    end = min(total, normalized_page * page_size)
+    prev_html = render_page_link(path, "上一页", normalized_page - 1, page_size, params, normalized_page > 1)
+    next_html = render_page_link(
+        path,
+        "下一页",
+        normalized_page + 1,
+        page_size,
+        params,
+        normalized_page < total_pages,
+    )
+    return f"""
+    <div class="pager">
+      <span>共 {total} 条，第 {normalized_page}/{total_pages} 页，当前 {start}-{end} 条</span>
+      <div class="pager-actions">{prev_html}{next_html}</div>
+    </div>
+    """
+
+
+def render_page_size_select(selected_page_size: int) -> str:
+    """渲染每页数量选择框。
+
+    参数：
+        selected_page_size: 当前列表正在使用的每页数量。
+
+    返回：
+        str: 每页数量 `<select>` HTML。
+    """
+
+    options = []
+    for size in [20, 50, 100]:
+        selected = " selected" if selected_page_size == size else ""
+        options.append(f'<option value="{size}"{selected}>{size} 条/页</option>')
+    return f"""
+    <label>
+      每页
+      <select name="page_size">
+        {"".join(options)}
+      </select>
+    </label>
+    """
+
+
+def render_page_link(
+    path: str,
+    label: str,
+    page: int,
+    page_size: int,
+    params: dict[str, object],
+    enabled: bool,
+) -> str:
+    """渲染单个分页链接。
+
+    参数：
+        path: 当前列表页面路径。
+        label: 链接显示文本。
+        page: 目标页码。
+        page_size: 每页记录数量。
+        params: 翻页时需要保留的筛选参数。
+        enabled: 是否允许点击。
+
+    返回：
+        str: `<a>` 或禁用态 `<span>` HTML。
+    """
+
+    if not enabled:
+        return f'<span class="disabled">{escape(label)}</span>'
+    query_params = {
+        key: value
+        for key, value in params.items()
+        if value is not None and str(value) != ""
+    }
+    query_params["page"] = page
+    query_params["page_size"] = page_size
+    # urlencode 统一处理中文搜索关键字，避免手写拼接导致 URL 乱码。
+    href = f"{path}?{urlencode(query_params)}"
+    return f'<a href="{escape(href)}">{escape(label)}</a>'
 
 
 @router.post("/memberships/grant")

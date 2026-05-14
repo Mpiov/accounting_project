@@ -116,6 +116,7 @@ class ScreenSmokeTest {
                 state = SettingsUiState(),
                 homeResetKey = 0,
                 onAutoAccountingChanged = {},
+                onAutoLedgerSuccessNotificationChanged = {},
                 onCloudAnalysisChanged = {},
                 onAuthPhoneChanged = {},
                 onAuthCodeChanged = {},

@@ -48,6 +48,11 @@ BOOLEAN_FEATURES = {
     "structure.strong_account_keyword": "hasStrongAccountKeyword",
     "structure.generic_account_keyword": "hasGenericAccountKeyword",
     "structure.explicit_time": "hasExplicitTime",
+    "structure.time_year": "hasTimeYearKeyword",
+    "structure.time_month": "hasTimeMonthKeyword",
+    "structure.time_day": "hasTimeDayKeyword",
+    "structure.time_hour": "hasTimeHourKeyword",
+    "structure.clock_time": "hasClockTime",
     "semantic.transaction_scene": "hasTransactionSceneKeyword",
     "semantic.counterparty": "hasCounterpartyKeyword",
     "semantic.extracted_counterparty": "hasExtractedCounterparty",
@@ -77,6 +82,16 @@ DEFAULT_THRESHOLDS = {
     "threshold.direction_conflict_max_score": 0.61,
     "threshold.unreliable_amount_max_score": 0.85,
     "threshold.weak_marketing_max_score": 0.55,
+}
+POSITIVE_WEIGHT_FLOORS = {
+    # 这些基础结构信号来自产品规则判断，训练样本缺少新字段或样本分布偏斜时仍保留默认正向先验。
+    "structure.tail_number": 0.75,
+    "structure.time_year": 0.08,
+    "structure.time_month": 0.08,
+    "structure.time_day": 0.08,
+    "structure.time_hour": 0.08,
+    "structure.clock_time": 0.15,
+    "semantic.transaction_scene": 0.45,
 }
 
 
@@ -413,7 +428,19 @@ def _train_logistic_regression(examples: list[TrainingExample]) -> dict[str, obj
     weights = {"bias": round(float(classifier.intercept_[0]), 6)}
     for column_name, coefficient in zip(FEATURE_COLUMNS, classifier.coef_[0], strict=True):
         weights[column_name] = round(float(coefficient), 6)
+    apply_positive_weight_floors(weights)
     return {"weights": weights, "metrics": metrics}
+
+
+def apply_positive_weight_floors(weights: dict[str, float]) -> None:
+    """为基础正向特征保留默认权重下限。
+
+    参数：
+        weights: 逻辑回归训练后准备发布的权重字典。
+    """
+
+    for column_name, floor_value in POSITIVE_WEIGHT_FLOORS.items():
+        weights[column_name] = round(max(float(weights.get(column_name, 0.0)), floor_value), 6)
 
 
 def _build_skip_message(

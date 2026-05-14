@@ -85,77 +85,75 @@ internal fun resolveLedgerCategoryIcon(
 /**
  * 用途说明：
  * - 为收入分类匹配对应图标，和快速记账收入分类保持一致。
+ * - 这里只做完整分类名匹配，避免“到账”等通知语义覆盖用户手动选择的标准分类。
  *
  * 参数说明：
  * - category：收入分类文本。
  */
 private fun resolveIncomeLedgerCategoryIcon(category: String): AutobookIconAsset {
-    return when {
-        category.containsAnyLedgerCategoryKeyword("工资", "薪资", "薪水") -> AutobookIconAsset.CatSalary
-        category.containsAnyLedgerCategoryKeyword("奖金", "绩效", "提成") -> AutobookIconAsset.CatBonus
-        category.containsAnyLedgerCategoryKeyword("投资", "理财", "收益", "利息") -> AutobookIconAsset.CatInvest
-        category.containsAnyLedgerCategoryKeyword("兼职", "副业", "劳务") -> AutobookIconAsset.CatPartTime
-        category.containsAnyLedgerCategoryKeyword("红包") -> AutobookIconAsset.CatRedPacket
-        category.containsAnyLedgerCategoryKeyword("报销") -> AutobookIconAsset.CatReimburse
-        category.containsAnyLedgerCategoryKeyword("退款", "退回", "退费") -> AutobookIconAsset.CatRefund
-        category.containsAnyLedgerCategoryKeyword("收款", "到账", "转入", "入账") -> AutobookIconAsset.CatReceive
-        else -> AutobookIconAsset.CatReceive
-    }
-}
+    val normalizedCategory = category.trim()
 
-/**
- * 用途说明：
- * - 为支出分类匹配对应图标，和快速记账支出分类保持一致。
- *
- * 参数说明：
- * - category：支出分类文本。
- */
-private fun resolveExpenseLedgerCategoryIcon(category: String): AutobookIconAsset {
-    return when {
-        category.containsAnyLedgerCategoryKeyword("餐饮", "吃", "饭", "餐", "食", "外卖", "饮", "奶茶", "咖啡") -> AutobookIconAsset.CatFood
-        category.containsAnyLedgerCategoryKeyword("购物", "淘宝", "京东", "拼多多", "超市") -> AutobookIconAsset.CatShopping
-        category.containsAnyLedgerCategoryKeyword("日用", "生活", "用品", "洗护", "纸巾") -> AutobookIconAsset.CatDaily
-        category.containsAnyLedgerCategoryKeyword("交通", "公交", "地铁", "打车", "出租", "高铁", "火车", "机票") -> AutobookIconAsset.CatTransport
-        category.containsAnyLedgerCategoryKeyword("蔬菜", "买菜") -> AutobookIconAsset.CatVegetable
-        category.containsAnyLedgerCategoryKeyword("水果") -> AutobookIconAsset.CatFruit
-        category.containsAnyLedgerCategoryKeyword("零食", "小吃") -> AutobookIconAsset.CatSnack
-        category.containsAnyLedgerCategoryKeyword("运动", "健身") -> AutobookIconAsset.CatSport
-        category.containsAnyLedgerCategoryKeyword("娱乐", "电影", "游戏") -> AutobookIconAsset.CatFun
-        category.containsAnyLedgerCategoryKeyword("通讯", "话费", "流量") -> AutobookIconAsset.CatPhone
-        category.containsAnyLedgerCategoryKeyword("服饰", "衣服", "鞋", "帽") -> AutobookIconAsset.CatClothes
-        category.containsAnyLedgerCategoryKeyword("美容", "美妆", "护肤") -> AutobookIconAsset.CatBeauty
-        category.containsAnyLedgerCategoryKeyword("住房", "房租", "房贷", "物业") -> AutobookIconAsset.CatHouse
-        category.containsAnyLedgerCategoryKeyword("居家", "家居", "家具", "水电", "燃气") -> AutobookIconAsset.CatHome
-        category.containsAnyLedgerCategoryKeyword("孩子", "儿童", "宝宝") -> AutobookIconAsset.CatChild
-        category.containsAnyLedgerCategoryKeyword("长辈", "父母", "老人") -> AutobookIconAsset.CatElder
-        category.containsAnyLedgerCategoryKeyword("社交", "朋友", "聚会") -> AutobookIconAsset.CatSocial
-        category.containsAnyLedgerCategoryKeyword("旅行", "旅游", "酒店") -> AutobookIconAsset.CatTravel
-        category.containsAnyLedgerCategoryKeyword("烟酒", "香烟", "酒") -> AutobookIconAsset.CatWine
-        category.containsAnyLedgerCategoryKeyword("数码", "电子", "电脑", "耳机") -> AutobookIconAsset.CatDigital
-        category.containsAnyLedgerCategoryKeyword("汽车", "停车", "加油", "洗车", "保养") -> AutobookIconAsset.CatCar
-        category.containsAnyLedgerCategoryKeyword("医疗", "医院", "药") -> AutobookIconAsset.CatMedical
-        category.containsAnyLedgerCategoryKeyword("书籍", "图书") -> AutobookIconAsset.CatBook
-        category.containsAnyLedgerCategoryKeyword("学习", "教育", "课程", "培训") -> AutobookIconAsset.CatStudy
-        category.containsAnyLedgerCategoryKeyword("宠物") -> AutobookIconAsset.CatPet
-        category.containsAnyLedgerCategoryKeyword("礼金", "份子") -> AutobookIconAsset.CatCashGift
-        category.containsAnyLedgerCategoryKeyword("礼物") -> AutobookIconAsset.CatGift
-        category.containsAnyLedgerCategoryKeyword("办公") -> AutobookIconAsset.CatOffice
-        category.containsAnyLedgerCategoryKeyword("维修", "修理") -> AutobookIconAsset.CatRepair
-        category.containsAnyLedgerCategoryKeyword("捐赠", "公益") -> AutobookIconAsset.CatDonate
-        category.containsAnyLedgerCategoryKeyword("彩票") -> AutobookIconAsset.CatLottery
-        category.containsAnyLedgerCategoryKeyword("亲友", "家人") -> AutobookIconAsset.CatFamily
+    return when (normalizedCategory) {
+        // 分类名称来自快速记账收入分类，完整匹配可以保证编辑后的图标立即跟随分类变化。
+        "工资" -> AutobookIconAsset.CatSalary
+        "奖金" -> AutobookIconAsset.CatBonus
+        "投资" -> AutobookIconAsset.CatInvest
+        "兼职" -> AutobookIconAsset.CatPartTime
+        "红包" -> AutobookIconAsset.CatRedPacket
+        "报销" -> AutobookIconAsset.CatReimburse
+        "退款" -> AutobookIconAsset.CatRefund
+        "收款" -> AutobookIconAsset.CatReceive
+        "其他" -> AutobookIconAsset.CatOther
         else -> AutobookIconAsset.CatOther
     }
 }
 
 /**
  * 用途说明：
- * - 提供分类图标匹配用的关键词判断，避免在每个分支重复写 `any + contains`。
+ * - 为支出分类匹配对应图标，和快速记账支出分类保持一致。
+ * - 这里只按账单的标准分类字段做完整匹配，不再用关键词包含，避免“零食”被“餐饮”的“食”误判。
  *
  * 参数说明：
- * - keywords：当前分类可能命中的关键词集合。
+ * - category：支出分类文本。
  */
-private fun String.containsAnyLedgerCategoryKeyword(vararg keywords: String): Boolean {
-    // 分类文本通常很短，顺序匹配足够轻量，也不会引入正则的额外复杂度。
-    return keywords.any { keyword -> contains(keyword) }
+private fun resolveExpenseLedgerCategoryIcon(category: String): AutobookIconAsset {
+    val normalizedCategory = category.trim()
+
+    return when (normalizedCategory) {
+        // 分类名称来自快速记账支出分类，完整匹配可以避免不同分类之间互相抢图标。
+        "餐饮" -> AutobookIconAsset.CatFood
+        "购物" -> AutobookIconAsset.CatShopping
+        "日用" -> AutobookIconAsset.CatDaily
+        "交通" -> AutobookIconAsset.CatTransport
+        "蔬菜" -> AutobookIconAsset.CatVegetable
+        "水果" -> AutobookIconAsset.CatFruit
+        "零食" -> AutobookIconAsset.CatSnack
+        "运动" -> AutobookIconAsset.CatSport
+        "娱乐" -> AutobookIconAsset.CatFun
+        "通讯" -> AutobookIconAsset.CatPhone
+        "服饰" -> AutobookIconAsset.CatClothes
+        "美容" -> AutobookIconAsset.CatBeauty
+        "住房" -> AutobookIconAsset.CatHouse
+        "居家" -> AutobookIconAsset.CatHome
+        "孩子" -> AutobookIconAsset.CatChild
+        "长辈" -> AutobookIconAsset.CatElder
+        "社交" -> AutobookIconAsset.CatSocial
+        "旅行" -> AutobookIconAsset.CatTravel
+        "烟酒" -> AutobookIconAsset.CatWine
+        "数码" -> AutobookIconAsset.CatDigital
+        "汽车" -> AutobookIconAsset.CatCar
+        "医疗" -> AutobookIconAsset.CatMedical
+        "书籍" -> AutobookIconAsset.CatBook
+        "学习" -> AutobookIconAsset.CatStudy
+        "宠物" -> AutobookIconAsset.CatPet
+        "礼金" -> AutobookIconAsset.CatCashGift
+        "礼物" -> AutobookIconAsset.CatGift
+        "办公" -> AutobookIconAsset.CatOffice
+        "维修" -> AutobookIconAsset.CatRepair
+        "捐赠" -> AutobookIconAsset.CatDonate
+        "彩票" -> AutobookIconAsset.CatLottery
+        "亲友" -> AutobookIconAsset.CatFamily
+        "其他" -> AutobookIconAsset.CatOther
+        else -> AutobookIconAsset.CatOther
+    }
 }
