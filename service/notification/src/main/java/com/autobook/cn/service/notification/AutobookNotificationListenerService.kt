@@ -116,6 +116,8 @@ class AutobookNotificationListenerService : NotificationListenerService() {
                         ) {
                             AutoLedgerSuccessNotifier(applicationContext).notifySuccess(
                                 notificationId = result.data.notificationId,
+                                amount = result.data.amount,
+                                direction = result.data.direction,
                                 message = result.data.message,
                             )
                         }

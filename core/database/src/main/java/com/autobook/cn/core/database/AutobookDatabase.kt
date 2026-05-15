@@ -17,8 +17,8 @@ import com.autobook.cn.core.database.entity.PendingStatsEntity
  * 保存通知原文、账本记录和待确认记录的 Room 数据库。
  *
  * 用途说明：
- * - 统一承载通知处理链涉及的三类核心数据表。
- * - 当前项目尚未上线，训练样本结构调整时直接提升版本并走破坏式迁移。
+ * - 统一承载通知处理链涉及的核心数据表。
+ * - 项目已经上线，后续版本升级必须提供显式迁移，避免用户本地账本被清空。
  */
 @Database(
     entities = [
@@ -29,7 +29,7 @@ import com.autobook.cn.core.database.entity.PendingStatsEntity
         PendingStatsEntity::class,
         ModelTrainingSampleEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class AutobookDatabase : RoomDatabase() {

@@ -132,10 +132,10 @@ class ModelTrainingSampleRepositoryImplTest {
 
     /**
      * 用途说明：
-     * - 确认新样本默认进入待上传批次，服务端成功后本地会标记为已同步。
+     * - 确认自动入账未复核样本不会进入上传批次，避免模型把自己的判断当成训练真相。
      */
     @Test
-    fun `upload batch only returns dirty samples until marked uploaded`() = runTest {
+    fun `upload batch skips unreviewed auto ledger samples`() = runTest {
         val dao = RecordingModelTrainingSampleDao()
         val repository = ModelTrainingSampleRepositoryImpl(dao)
 
@@ -167,22 +167,9 @@ class ModelTrainingSampleRepositoryImplTest {
             ledgerEntryId = 7L,
         )
 
-        val firstBatch = repository.loadUploadBatch(limit = 200)
-        assertEquals(listOf(1L), firstBatch.sampleIds)
-        assertTrue(firstBatch.jsonl.contains(""""sampleLocalId":1"""))
-
-        repository.markUploadBatchAttempted(
-            sampleIds = firstBatch.sampleIds,
-            attemptedAt = 1_746_117_700_000L,
-        )
-        repository.markUploadBatchUploaded(
-            sampleIds = firstBatch.sampleIds,
-            uploadedAt = 1_746_117_800_000L,
-        )
-
-        val secondBatch = repository.loadUploadBatch(limit = 200)
-        assertEquals(emptyList<Long>(), secondBatch.sampleIds)
-        assertEquals("", secondBatch.jsonl)
+        val uploadBatch = repository.loadUploadBatch(limit = 200)
+        assertEquals(emptyList<Long>(), uploadBatch.sampleIds)
+        assertEquals("", uploadBatch.jsonl)
     }
 
     /**
@@ -294,7 +281,7 @@ class ModelTrainingSampleRepositoryImplTest {
         dao.insert(filteredTemplate.copy(id = 0L, notificationId = 106L, feedbackLabel = "UNKNOWN_LABEL", rawText = "未知标签通知"))
 
         val initialBatch = repository.loadUploadBatch(limit = 200)
-        assertEquals(listOf(4L), initialBatch.sampleIds)
+        assertEquals(emptyList<Long>(), initialBatch.sampleIds)
 
         repository.markPendingConfirmed(
             pendingEntryId = 22L,
@@ -303,8 +290,101 @@ class ModelTrainingSampleRepositoryImplTest {
         )
 
         val confirmedBatch = repository.loadUploadBatch(limit = 200)
-        assertEquals(setOf(2L, 4L), confirmedBatch.sampleIds.toSet())
+        assertEquals(setOf(2L), confirmedBatch.sampleIds.toSet())
     }
+
+    /**
+     * 用途说明：
+     * - 确认 6 类用户明确反馈标签能够上传，并在服务端确认后从待上传队列移出。
+     */
+    @Test
+    fun `upload batch returns only six user reviewed labels until marked uploaded`() = runTest {
+        val dao = RecordingModelTrainingSampleDao()
+        val repository = ModelTrainingSampleRepositoryImpl(dao)
+        val template = reviewedSampleTemplate()
+        val labels = listOf(
+            "USER_CONFIRMED_POSITIVE",
+            "USER_CONFIRMED_EDITED",
+            "USER_DISMISSED_NEGATIVE",
+            "USER_MARKED_FALSE_POSITIVE",
+            "USER_EDITED_LEDGER",
+            "USER_DELETED_LEDGER",
+        )
+
+        labels.forEachIndexed { index, label ->
+            dao.insert(
+                template.copy(
+                    id = 0L,
+                    notificationId = 200L + index,
+                    rawText = "用户反馈样本 $label",
+                    feedbackLabel = label,
+                    uploadState = "PENDING",
+                ),
+            )
+        }
+
+        val firstBatch = repository.loadUploadBatch(limit = 200)
+        assertEquals((1L..6L).toList(), firstBatch.sampleIds)
+        labels.forEach { label -> assertTrue(firstBatch.jsonl.contains(""""feedbackLabel":"$label"""")) }
+
+        repository.markUploadBatchUploaded(
+            sampleIds = firstBatch.sampleIds,
+            uploadedAt = 1_746_117_800_000L,
+        )
+
+        val secondBatch = repository.loadUploadBatch(limit = 200)
+        assertEquals(emptyList<Long>(), secondBatch.sampleIds)
+        assertEquals("", secondBatch.jsonl)
+    }
+}
+
+/**
+ * 用途说明：
+ * - 构造一条测试用的已反馈样本模板，便于批量验证不同反馈标签。
+ */
+private fun reviewedSampleTemplate(): ModelTrainingSampleEntity {
+    return ModelTrainingSampleEntity(
+        id = 0L,
+        notificationId = 1L,
+        pendingEntryId = null,
+        ledgerEntryId = null,
+        createdAt = 1_746_117_600_000L,
+        updatedAt = 1_746_117_600_000L,
+        packageName = "com.tencent.mm",
+        rawTitle = "微信支付",
+        rawText = "向便利店支付 18.80 元",
+        rawPostedAt = 1_746_117_600_000L,
+        sourceApp = "WECHAT",
+        modelVersion = "local-linear-confidence-v1",
+        parsePath = "local-parser",
+        amount = 18.8,
+        direction = "EXPENSE",
+        channel = "微信",
+        candidateTimestamp = 1_746_117_600_000L,
+        candidateCategory = "餐饮",
+        candidateNote = null,
+        confidenceScore = 0.91f,
+        confidenceLevel = "HIGH",
+        confidenceReason = "测试样本",
+        featureSnapshotJson = "{}",
+        routeDestination = "PENDING",
+        processStatus = "PENDING_REVIEW",
+        feedbackLabel = "USER_CONFIRMED_POSITIVE",
+        feedbackSource = "test",
+        feedbackAt = 1_746_117_600_000L,
+        editedManually = false,
+        feedbackNote = null,
+        correctedAmount = null,
+        correctedDirection = null,
+        correctedChannel = null,
+        correctedTimestamp = null,
+        correctedCategory = null,
+        correctedNote = null,
+        changedFieldsJson = null,
+        uploadState = "PENDING",
+        uploadedAt = null,
+        lastUploadAttemptAt = null,
+    )
 }
 
 /**

@@ -16,7 +16,7 @@ import javax.inject.Singleton
 /**
  * 用途说明：
  * - 构建普通 Room 数据库并通过 Hilt 暴露各个 DAO。
- * - 当前项目仍处于前后端能力整合阶段，优先保持本地数据库实现简单、稳定、便于调试。
+ * - 项目已经上线，数据库构建必须依赖显式迁移，避免版本升级时清空用户账本。
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -34,8 +34,8 @@ object DatabaseModule {
         @ApplicationContext context: Context,
     ): AutobookDatabase {
         return Room.databaseBuilder(context, AutobookDatabase::class.java, DATABASE_NAME)
-            // 当前项目尚未上线，数据库结构调整时优先保证开发迭代效率。
-            .fallbackToDestructiveMigration()
+            // 生产账本数据不可丢失；缺少迁移时让 Room 明确失败，防止静默清库。
+            .addMigrations(*AutobookMigrations.ALL)
             .build()
     }
 

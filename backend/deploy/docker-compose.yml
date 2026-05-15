@@ -30,7 +30,7 @@ services:
       AUTOBOOK_RELEASE_MANIFEST_PATH: ${AUTOBOOK_RELEASE_MANIFEST_PATH:-/data/releases/android-stable.json}
       # 免费用户自动记账体验总次数，API 扣减和管理后台展示都以服务器配置为准。
       AUTOBOOK_AUTO_LEDGER_FREE_TRIAL_LIMIT: ${AUTOBOOK_AUTO_LEDGER_FREE_TRIAL_LIMIT:-10}
-      # API 后台也会手动触发训练，因此必须和 trainer 容器读取同一组训练门槛配置。
+      # API 后台人工选择样本发布模型时会读取训练门槛配置；自动训练已关闭。
       AUTOBOOK_TRAINING_SCHEDULE_HOUR: ${AUTOBOOK_TRAINING_SCHEDULE_HOUR:-3}
       AUTOBOOK_TRAINING_MIN_NEW_SAMPLES: ${AUTOBOOK_TRAINING_MIN_NEW_SAMPLES:-1000}
       AUTOBOOK_TRAINING_MIN_TOTAL_SAMPLES: ${AUTOBOOK_TRAINING_MIN_TOTAL_SAMPLES:-100}
@@ -49,32 +49,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-
-  trainer:
-    build:
-      context: ./api
-    container_name: autobook-trainer
-    restart: unless-stopped
-    command: ["python", "-m", "app.training_scheduler"]
-    environment:
-      # 训练容器和 API 共用同一个 SQLite 数据库，读取全局样本池并发布全局模型。
-      AUTOBOOK_DB_PATH: /data/autobook.sqlite3
-      # 训练任务会加载完整配置对象，令牌密钥沿用 API 配置即可。
-      AUTOBOOK_TOKEN_SECRET: ${AUTOBOOK_TOKEN_SECRET}
-      # 训练容器也加载完整配置对象，因此保留同名变量以便环境自检时配置一致。
-      AUTOBOOK_AUTO_LEDGER_FREE_TRIAL_LIMIT: ${AUTOBOOK_AUTO_LEDGER_FREE_TRIAL_LIMIT:-10}
-      # 默认北京时间凌晨 3 点检查一次；样本不足时只记录 SKIPPED，不发布模型。
-      AUTOBOOK_TRAINING_SCHEDULE_HOUR: ${AUTOBOOK_TRAINING_SCHEDULE_HOUR:-3}
-      AUTOBOOK_TRAINING_MIN_NEW_SAMPLES: ${AUTOBOOK_TRAINING_MIN_NEW_SAMPLES:-1000}
-      AUTOBOOK_TRAINING_MIN_TOTAL_SAMPLES: ${AUTOBOOK_TRAINING_MIN_TOTAL_SAMPLES:-100}
-      AUTOBOOK_TRAINING_MIN_PER_CLASS: ${AUTOBOOK_TRAINING_MIN_PER_CLASS:-10}
-      AUTOBOOK_TRAINING_MIN_ACCURACY: ${AUTOBOOK_TRAINING_MIN_ACCURACY:-0.65}
-      AUTOBOOK_TRAINING_MAX_FALSE_POSITIVE_RATE: ${AUTOBOOK_TRAINING_MAX_FALSE_POSITIVE_RATE:-0.25}
-    volumes:
-      - ./data:/data
-    depends_on:
-      api:
-        condition: service_healthy
 
   gateway:
     image: nginx:1.27-alpine

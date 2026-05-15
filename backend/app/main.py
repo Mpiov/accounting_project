@@ -32,6 +32,7 @@ from .schemas import (
     SmsCodeRequest,
     UploadTrainingSamplesRequest,
 )
+from .training_labels import is_trainable_feedback_label
 
 CONFIG = load_config()
 app = FastAPI(title="AutoBook API", version="0.1.0")
@@ -621,12 +622,17 @@ def upload_training_samples(
     accepted = 0
     updated = 0
     duplicated = 0
+    rejected = 0
 
     with transaction(CONFIG.database_path) as db:
         for sample in body.samples:
             now = now_millis()
             sample_local_id = _extract_sample_local_id(sample)
             sample_payload = sample.model_dump(mode="json")
+            if not is_trainable_feedback_label(sample_payload.get("feedbackLabel")):
+                # 旧客户端可能继续上传自动入账未复核或已过滤未复核样本，服务端必须兜底拒收，避免污染全局模型。
+                rejected += 1
+                continue
             raw_json = json.dumps(sample_payload, ensure_ascii=False, separators=(",", ":"))
             existing_row = None
             if sample_local_id is not None:
@@ -719,7 +725,7 @@ def upload_training_samples(
             )
             updated += 1
 
-    return ok({"accepted": accepted, "updated": updated, "duplicated": duplicated, "rejected": 0, "nextCursor": None})
+    return ok({"accepted": accepted, "updated": updated, "duplicated": duplicated, "rejected": rejected, "nextCursor": None})
 
 
 @app.get("/v1/cloud-learning/global-model")

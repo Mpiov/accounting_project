@@ -410,6 +410,10 @@ data class NotificationProcessOutcome(
     val destination: ProcessDestination,
     val status: NotificationProcessStatus,
     val screenshotRef: String? = null,
+    /** 用途说明：自动入账成功时透传解析出的金额，便于通知栏直接展示具体入账金额；非入账结果保持为空。 */
+    val amount: Double? = null,
+    /** 用途说明：自动入账成功时透传解析出的收支方向，便于通知栏说明本次记录是收入还是支出；非入账结果保持为空。 */
+    val direction: MoneyDirection? = null,
     val message: String? = null,
 )
 

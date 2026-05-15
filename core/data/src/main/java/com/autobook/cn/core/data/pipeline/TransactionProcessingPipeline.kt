@@ -150,6 +150,8 @@ class TransactionProcessingPipeline @Inject constructor(
                             destination = ProcessDestination.LEDGER,
                             status = NotificationProcessStatus.LEDGER_POSTED,
                             screenshotRef = candidate.screenshotRef,
+                            amount = candidate.amount,
+                            direction = candidate.direction,
                             message = "Auto-posted with confidence ${candidate.confidence.score}",
                         ),
                     )

@@ -30,12 +30,12 @@ class AppConfig:
         payment_order_expire_minutes: 支付订单默认有效期，单位分钟。
         release_manifest_path: Android 最新版本元数据 JSON 文件路径。
         auto_ledger_free_trial_limit: 免费用户自动记账体验总次数，由服务器统一下发并扣减。
-        training_schedule_hour: 定时训练检查的北京时间小时。
-        training_min_new_samples: 自动训练需要的新增有效样本数。
-        training_min_total_samples: 自动训练需要的总有效样本数。
-        training_min_per_class: 自动训练需要的每类最小样本数。
-        training_min_accuracy: 自动发布所需的最低验证准确率。
-        training_max_false_positive_rate: 自动发布允许的最高负样本误判率。
+        training_schedule_hour: 历史定时训练字段，自动训练关闭后仅保留配置兼容。
+        training_min_new_samples: 人工发布模型需要的新增有效样本数。
+        training_min_total_samples: 人工发布模型需要的总有效样本数。
+        training_min_per_class: 人工发布模型需要的每类最小样本数。
+        training_min_accuracy: 人工发布模型所需的最低验证准确率。
+        training_max_false_positive_rate: 人工发布模型允许的最高负样本误判率。
     """
 
     database_path: str

@@ -26,11 +26,15 @@
 
 会员默认是免费状态，只有服务器数据库把账号标记为有效会员后，机器学习模型接口才会放行。订单创建后默认 30 分钟过期；当前未接真实微信支付回调时，管理员可以在 SSH 隧道管理后台的“订单”页确认收款并自动开通会员。训练样本会进入服务器全局样本池，登录用户开启“用户改善计划”后即可提交样本，不要求会员；后续训练任务基于所有用户贡献的数据发布统一全局模型，不生成单用户定制模型。上传接口优先按 `userId + sampleLocalId` 更新同一条本地样本，用户后续纠错会覆盖服务器旧样本。
 
+生产注意：只有 6 类用户明确反馈标签允许进入训练样本池：`USER_CONFIRMED_POSITIVE`、`USER_CONFIRMED_EDITED`、`USER_EDITED_LEDGER`、`USER_DISMISSED_NEGATIVE`、`USER_MARKED_FALSE_POSITIVE`、`USER_DELETED_LEDGER`。`AUTO_LEDGER_UNREVIEWED` 和 `FILTERED_UNREVIEWED` 只是系统自己的未复核判断，不能作为正负样本，否则会让模型学习自己的历史错误。
+
 模型权重使用客户端稳定特征键，例如 `source.trusted_payment`、`amount.with_currency`、`semantic.transaction_scene` 和 `risk.asset_valuation`。客户端会保存下发的版本、权重和风险阈值，并在会员解析时优先使用服务器全局模型。
 
 ## 全局模型训练
 
-训练任务运行在独立 `trainer` 容器中，默认北京时间每天凌晨 3 点检查一次。它不是每天强制发布模型，而是按以下规则执行：
+自动训练已关闭。服务器不会再按定时任务自动训练或发布模型，模型只能由管理员在管理后台样本页人工勾选样本后发布。
+
+人工发布仍会按以下规则校验：
 
 - 新增有效标签样本少于 `AUTOBOOK_TRAINING_MIN_NEW_SAMPLES` 时跳过。
 - 总有效标签样本少于 `AUTOBOOK_TRAINING_MIN_TOTAL_SAMPLES` 时跳过。
@@ -38,13 +42,13 @@
 - 验证准确率低于 `AUTOBOOK_TRAINING_MIN_ACCURACY` 时跳过。
 - 负样本误判率高于 `AUTOBOOK_TRAINING_MAX_FALSE_POSITIVE_RATE` 时跳过。
 
-`api` 和 `trainer` 容器都会读取同一组 `AUTOBOOK_TRAINING_*` 环境变量。管理后台手动训练和 CLI 手动训练默认沿用这些服务器配置；只有显式填写表单或传入命令行参数时才临时覆盖。
+`api` 容器读取 `AUTOBOOK_TRAINING_*` 环境变量作为人工发布门槛。后台样本页勾选样本后会使用这些门槛；CLI 必须显式传入样本 ID 才能训练。
 
-手动检查一次训练：
+CLI 人工选择样本训练：
 
 ```bash
 cd /opt/autobook
-sudo docker compose exec -T api python -m app.admin_cli run-global-training
+sudo docker compose exec -T api python -m app.admin_cli run-global-training --sample-id 123 --sample-id 456
 ```
 
 查看最近训练任务：
@@ -53,8 +57,6 @@ sudo docker compose exec -T api python -m app.admin_cli run-global-training
 cd /opt/autobook
 sudo docker compose exec -T api python -m app.admin_cli show-training-jobs
 ```
-
-前期样本很少时可以在管理后台手动触发强制训练，但正负样本必须同时存在，否则逻辑回归无法训练。
 
 ## 临时会员管理
 

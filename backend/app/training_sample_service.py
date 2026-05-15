@@ -10,6 +10,7 @@ from .admin_service import ensure_user, normalize_phone
 from .database import init_database, transaction
 from .global_model_service import GLOBAL_MODEL_SCOPE
 from .response import now_millis
+from .training_labels import TRAINABLE_FEEDBACK_LABELS
 
 TRAINING_SAMPLE_LABELS = [
     "",
@@ -602,6 +603,8 @@ def _normalize_training_label(feedback_label: str) -> str:
     normalized_label = feedback_label.strip().upper()
     if normalized_label not in TRAINING_SAMPLE_LABELS or not normalized_label:
         raise ValueError("请选择有效的样本标签")
+    if normalized_label not in TRAINABLE_FEEDBACK_LABELS:
+        raise ValueError("后台新增训练样本只能选择用户明确反馈后的 6 类有效标签")
     return normalized_label
 
 

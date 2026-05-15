@@ -8,6 +8,8 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.autobook.cn.core.common.CurrencyFormatter
+import com.autobook.cn.core.model.MoneyDirection
 
 /**
  * 自动入账成功通知发送器。
@@ -27,10 +29,14 @@ class AutoLedgerSuccessNotifier(
      *
      * 参数说明：
      * - notificationId：本地通知事件主键，用于生成稳定通知 ID，避免多条通知互相覆盖。
+     * - amount：本次自动入账金额，存在时会展示在通知标题中，方便用户不用点开 App 也能核对。
+     * - direction：本次自动入账的收支方向，存在时会展示为“收入”或“支出”。
      * - message：流水线返回的处理摘要，可为空；当前只作为调试扩展，不直接向用户展示内部置信度。
      */
     fun notifySuccess(
         notificationId: Long,
+        amount: Double?,
+        direction: MoneyDirection?,
         message: String?,
     ) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
@@ -41,7 +47,7 @@ class AutoLedgerSuccessNotifier(
             buildStableNotificationId(notificationId),
             NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("自动入账成功")
+                .setContentTitle(buildContentTitle(amount = amount, direction = direction))
                 .setContentText(buildContentText(message))
                 .setContentIntent(buildOpenHomeIntent(notificationId))
                 .setAutoCancel(true)
@@ -97,6 +103,29 @@ class AutoLedgerSuccessNotifier(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
+}
+
+/**
+ * 构造自动入账成功通知标题。
+ *
+ * 参数说明：
+ * - amount：本次自动入账金额；为空时回退为通用成功标题。
+ * - direction：本次自动入账方向；UNKNOWN 或为空时只展示“账单”，避免误导用户。
+ */
+private fun buildContentTitle(
+    amount: Double?,
+    direction: MoneyDirection?,
+): String {
+    if (amount == null) {
+        return "自动入账成功"
+    }
+    val directionLabel = when (direction) {
+        MoneyDirection.INCOME -> "收入"
+        MoneyDirection.EXPENSE -> "支出"
+        MoneyDirection.UNKNOWN, null -> "账单"
+    }
+    // 金额只展示绝对值，方向单独由“收入/支出”说明，避免出现“支出 -¥13.20”这种重复表达。
+    return "$directionLabel ${CurrencyFormatter.format(kotlin.math.abs(amount))} 已入账"
 }
 
 /**

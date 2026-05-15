@@ -771,12 +771,10 @@ private const val FEEDBACK_USER_DELETED_LEDGER = "USER_DELETED_LEDGER"
 
 /**
  * 用途说明：
- * - 限定客户端允许上传到云端样本池的反馈标签。
- * - 待用户确认、重复待确认、原文样本、空标签和未知标签都没有稳定训练含义，因此先留在本地等待后续用户反馈或直接不参与同步。
+ * - 限定客户端允许上传到云端样本池的 6 类用户明确反馈标签。
+ * - 自动入账未复核和已过滤未复核都只是系统自己的判断，不能作为监督信号，否则会形成模型自我污染。
  */
 private val UPLOADABLE_FEEDBACK_LABELS = listOf(
-    FEEDBACK_AUTO_LEDGER_UNREVIEWED,
-    FEEDBACK_FILTERED_UNREVIEWED,
     FEEDBACK_USER_CONFIRMED_POSITIVE,
     FEEDBACK_USER_CONFIRMED_EDITED,
     FEEDBACK_USER_DISMISSED_NEGATIVE,

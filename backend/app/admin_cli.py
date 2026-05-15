@@ -98,6 +98,7 @@ def run_training(args: Namespace) -> dict[str, object]:
         database_path=config.database_path,
         trigger_type=args.trigger,
         policy=build_training_policy(args=args, config=config),
+        selected_sample_ids=args.sample_id,
     )
 
 
@@ -112,7 +113,7 @@ def build_training_policy(args: Namespace, config: AppConfig) -> TrainingPolicy:
     """
 
     return TrainingPolicy(
-        # CLI 不传参数时必须读取环境配置，保证和定时训练、管理后台手动训练使用同一套门槛。
+        # CLI 不传参数时必须读取环境配置，保证和管理后台人工发布使用同一套门槛。
         min_new_samples=args.min_new_samples
         if args.min_new_samples is not None
         else config.training_min_new_samples,
@@ -182,18 +183,25 @@ def build_parser() -> ArgumentParser:
     model_parser = subparsers.add_parser("show-global-model", help="查看当前发布给会员客户端的全局模型")
     model_parser.set_defaults(handler=show_global_model)
 
-    training_parser = subparsers.add_parser("run-global-training", help="执行一次全局模型训练检查")
+    training_parser = subparsers.add_parser("run-global-training", help="使用人工选择的样本训练并发布全局模型")
     training_parser.add_argument("--trigger", default="manual", help="触发来源，默认 manual")
     training_parser.add_argument("--force", action="store_true", help="忽略数量和质量门槛；正负样本必须同时存在")
-    training_parser.add_argument("--min-new-samples", type=int, default=None, help="自动训练所需新增有效样本数；不填则读取服务器配置")
-    training_parser.add_argument("--min-total-samples", type=int, default=None, help="自动训练所需总有效样本数；不填则读取服务器配置")
-    training_parser.add_argument("--min-per-class", type=int, default=None, help="自动训练所需每类最小样本数；不填则读取服务器配置")
-    training_parser.add_argument("--min-accuracy", type=float, default=None, help="自动发布所需最低验证准确率；不填则读取服务器配置")
+    training_parser.add_argument(
+        "--sample-id",
+        action="append",
+        type=int,
+        default=[],
+        help="人工选择参与训练的样本 ID；可重复传入。未传时不会发布模型",
+    )
+    training_parser.add_argument("--min-new-samples", type=int, default=None, help="人工发布所需新增有效样本数；不填则读取服务器配置")
+    training_parser.add_argument("--min-total-samples", type=int, default=None, help="人工发布所需总有效样本数；不填则读取服务器配置")
+    training_parser.add_argument("--min-per-class", type=int, default=None, help="人工发布所需每类最小样本数；不填则读取服务器配置")
+    training_parser.add_argument("--min-accuracy", type=float, default=None, help="人工发布所需最低验证准确率；不填则读取服务器配置")
     training_parser.add_argument(
         "--max-false-positive-rate",
         type=float,
         default=None,
-        help="自动发布允许的最高负样本误判率；不填则读取服务器配置",
+        help="人工发布允许的最高负样本误判率；不填则读取服务器配置",
     )
     training_parser.set_defaults(handler=run_training)
 

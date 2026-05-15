@@ -30,6 +30,8 @@ from .training_job import TrainingPolicy
 from .training_job import list_training_jobs
 from .training_job import run_global_training
 from .training_job import training_dataset_summary
+from .training_labels import TRAINABLE_NEGATIVE_LABELS
+from .training_labels import TRAINABLE_POSITIVE_LABELS
 
 router = APIRouter(prefix="/admin", include_in_schema=False)
 
@@ -341,6 +343,20 @@ async def read_form(request: Request) -> dict[str, str]:
     return {key: values[0] if values else "" for key, values in parsed.items()}
 
 
+async def read_form_multi(request: Request) -> dict[str, list[str]]:
+    """读取保留同名字段的 HTML 表单。
+
+    参数：
+        request: FastAPI 请求对象。
+
+    返回：
+        dict[str, list[str]]: 每个字段名对应全部提交值，供样本多选发布使用。
+    """
+
+    body = (await request.body()).decode("utf-8")
+    return parse_qs(body, keep_blank_values=True)
+
+
 def read_int_form(form: dict[str, str], name: str, default: int) -> int:
     """读取整数表单字段。
 
@@ -355,6 +371,23 @@ def read_int_form(form: dict[str, str], name: str, default: int) -> int:
     raw_value = form.get(name, "").strip()
     # 后台表单允许管理员不填写，此时应沿用服务器环境配置，避免悄悄退回硬编码旧值。
     return int(raw_value) if raw_value else default
+
+
+def coerce_positive_int(value: object) -> int | None:
+    """把表单值转换为正整数。
+
+    参数：
+        value: 表单提交的原始文本。
+
+    返回：
+        int | None: 合法正整数返回数值，否则返回 None。
+    """
+
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
 
 
 def build_admin_session() -> str:
@@ -696,7 +729,7 @@ def admin_samples(
         page_size=page_size,
     )
     samples = sample_page["items"]
-    rows = "\n".join(render_training_sample_row(sample) for sample in samples)
+    rows = "\n".join(render_training_sample_row(sample, selectable=True) for sample in samples)
     pager_html = render_pagination(
         path="/admin/samples",
         current_page=int(sample_page["page"]),
@@ -793,11 +826,12 @@ def admin_samples(
     <section>
       <div class="section-title">
         <h2>样本明细</h2>
-        <span class="muted">按页展示样本；展开“完整 JSON”可查看服务器保存的每一行原始样本。</span>
+        <span class="muted">勾选人工确认过的样本后，才能训练并发布模型。</span>
       </div>
       <table>
         <thead>
           <tr>
+            <th>选择</th>
             <th>ID</th>
             <th>账号</th>
             <th>来源</th>
@@ -810,8 +844,11 @@ def admin_samples(
             <th>操作</th>
           </tr>
         </thead>
-        <tbody>{rows or '<tr><td colspan="10" class="muted">暂无样本</td></tr>'}</tbody>
+        <tbody>{rows or '<tr><td colspan="11" class="muted">暂无样本</td></tr>'}</tbody>
       </table>
+      <form id="train-selected-form" method="post" action="/admin/training/run-selected">
+        <button type="submit" onclick="return confirm('确认使用选中的样本训练并发布新模型？')">用选中样本训练并发布</button>
+      </form>
       {pager_html}
     </section>
     """
@@ -1018,20 +1055,9 @@ def render_training_section(config: AppConfig) -> str:
               <tr><th>正/负样本</th><td>{summary["positiveSamples"]} / {summary["negativeSamples"]}</td></tr>
             </tbody>
           </table>
-          <form method="post" action="/admin/training/run" style="margin-top: 14px;">
-            <label>
-              新增样本门槛
-              <input type="number" name="min_new_samples" value="{config.training_min_new_samples}" min="1" max="100000">
-            </label>
-            <p class="muted">
-              当前自动训练配置：新增有效样本 ≥ {config.training_min_new_samples}，总有效样本 ≥ {config.training_min_total_samples}，正负样本各 ≥ {config.training_min_per_class}。
-            </p>
-            <label>
-              <span>强制训练</span>
-              <input type="checkbox" name="force">
-            </label>
-            <button type="submit">手动训练</button>
-          </form>
+          <p class="muted">
+            自动训练已关闭。请进入样本页人工勾选样本后发布模型；未选择样本不会训练。
+          </p>
           <table style="margin-top: 14px;">
             <thead>
               <tr>
@@ -1215,12 +1241,12 @@ async def revoke_membership(request: Request) -> Response:
         return RedirectResponse(url=f"/admin?message={quote(str(exc))}", status_code=303)
 
 
-@router.post("/training/run")
-async def run_training_job(request: Request) -> Response:
-    """手动触发全局训练检查。
+@router.post("/training/run-selected")
+async def run_selected_training_job(request: Request) -> Response:
+    """使用管理员选中的样本训练并发布模型。
 
     参数：
-        request: FastAPI 请求对象。
+        request: FastAPI 请求对象，表单中包含一个或多个 sample_id。
 
     返回：
         Response: 操作结果跳转。
@@ -1230,24 +1256,29 @@ async def run_training_job(request: Request) -> Response:
         return redirect_login()
 
     config = load_config()
-    form = await read_form(request)
+    form = await read_form_multi(request)
+    sample_ids = [coerce_positive_int(value) for value in form.get("sample_id", [])]
+    selected_sample_ids = [sample_id for sample_id in sample_ids if sample_id is not None]
+    if not selected_sample_ids:
+        return RedirectResponse(url="/admin/samples?message=请先勾选要参与训练的样本", status_code=303)
     try:
         result = run_global_training(
             database_path=config.database_path,
-            trigger_type="admin",
+            trigger_type="admin_selected",
             policy=TrainingPolicy(
-                min_new_samples=read_int_form(form, "min_new_samples", config.training_min_new_samples),
+                min_new_samples=config.training_min_new_samples,
                 min_total_samples=config.training_min_total_samples,
                 min_per_class=config.training_min_per_class,
                 min_accuracy=config.training_min_accuracy,
                 max_false_positive_rate=config.training_max_false_positive_rate,
-                force="force" in form,
+                force=False,
             ),
+            selected_sample_ids=selected_sample_ids,
         )
         message = f"训练任务 {result['state']}：{result.get('message') or result['jobId']}"
-        return RedirectResponse(url=f"/admin?message={quote(message)}", status_code=303)
+        return RedirectResponse(url=f"/admin/samples?message={quote(message)}", status_code=303)
     except Exception as exc:
-        return RedirectResponse(url=f"/admin?message={quote(str(exc))}", status_code=303)
+        return RedirectResponse(url=f"/admin/samples?message={quote(str(exc))}", status_code=303)
 
 
 def render_member_row(member: dict[str, object]) -> str:
@@ -1328,17 +1359,27 @@ def render_payment_order_row(order: dict[str, object], compact: bool = False) ->
     """
 
 
-def render_training_sample_row(sample: dict[str, object]) -> str:
+def render_training_sample_row(
+    sample: dict[str, object],
+    selectable: bool = False,
+) -> str:
     """渲染训练样本表格行。
 
     参数：
         sample: 单条训练样本摘要和完整 JSON。
+        selectable: 是否展示参与人工训练发布的复选框。
 
     返回：
         str: 表格行 HTML。
     """
 
     sample_id = str(sample.get("id", ""))
+    select_cell = ""
+    if selectable:
+        select_cell = f"""
+      <td>
+        <input form="train-selected-form" type="checkbox" name="sample_id" value="{escape(sample_id)}">
+      </td>"""
     source_text = "\n".join(
         value
         for value in [
@@ -1363,6 +1404,7 @@ def render_training_sample_row(sample: dict[str, object]) -> str:
         update_text = f"<br><span class=\"muted\">更新 {escape(format_millis(updated_at))}</span>"
     return f"""
     <tr>
+      {select_cell}
       <td>
         <strong>{escape(sample_id)}</strong><br>
         <span class="muted">本地 {escape(format_optional(sample.get("sampleLocalId")))}</span><br>
@@ -1488,8 +1530,8 @@ def format_training_label(label: str) -> str:
     """
 
     normalized = label.strip().upper()
-    positive_labels = {"AUTO_LEDGER_UNREVIEWED", "USER_CONFIRMED_POSITIVE", "USER_CONFIRMED_EDITED", "USER_EDITED_LEDGER"}
-    negative_labels = {"FILTERED_UNREVIEWED", "USER_DISMISSED_NEGATIVE", "USER_MARKED_FALSE_POSITIVE", "USER_DELETED_LEDGER"}
+    positive_labels = TRAINABLE_POSITIVE_LABELS
+    negative_labels = TRAINABLE_NEGATIVE_LABELS
     css_class = "label-pending"
     if normalized in positive_labels:
         css_class = "label-positive"

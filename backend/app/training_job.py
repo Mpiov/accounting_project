@@ -7,27 +7,19 @@
 from dataclasses import dataclass
 import json
 import math
+from collections.abc import Sequence
 from uuid import uuid4
 
 from .database import init_database, transaction
+from .global_model_service import BOOTSTRAP_MODEL_PAYLOAD
 from .global_model_service import GLOBAL_MODEL_SCOPE
 from .global_model_service import count_global_training_samples
 from .global_model_service import get_active_global_model
 from .global_model_service import publish_global_model
 from .response import now_millis
-
-POSITIVE_LABELS = {
-    "AUTO_LEDGER_UNREVIEWED",
-    "USER_CONFIRMED_POSITIVE",
-    "USER_CONFIRMED_EDITED",
-    "USER_EDITED_LEDGER",
-}
-NEGATIVE_LABELS = {
-    "FILTERED_UNREVIEWED",
-    "USER_DISMISSED_NEGATIVE",
-    "USER_MARKED_FALSE_POSITIVE",
-    "USER_DELETED_LEDGER",
-}
+from .training_labels import TRAINABLE_NEGATIVE_LABELS
+from .training_labels import TRAINABLE_POSITIVE_LABELS
+from .training_labels import normalize_feedback_label
 
 SOURCE_CLASSES = {
     "source.trusted_payment": "TRUSTED_PAYMENT",
@@ -85,13 +77,29 @@ DEFAULT_THRESHOLDS = {
 }
 POSITIVE_WEIGHT_FLOORS = {
     # 这些基础结构信号来自产品规则判断，训练样本缺少新字段或样本分布偏斜时仍保留默认正向先验。
+    "source.trusted_payment": 1.55,
+    "source.trusted_bank": 1.40,
+    "source.trusted_finance": 0.55,
+    "amount.with_currency": 1.20,
+    "amount.with_unit": 1.00,
+    "direction.income": 1.05,
+    "direction.expense": 1.05,
     "structure.tail_number": 0.75,
+    "structure.strong_account_keyword": 0.55,
+    "structure.generic_account_keyword": 0.25,
+    "structure.explicit_time": 0.25,
     "structure.time_year": 0.08,
     "structure.time_month": 0.08,
     "structure.time_day": 0.08,
     "structure.time_hour": 0.08,
     "structure.clock_time": 0.15,
     "semantic.transaction_scene": 0.45,
+    "semantic.counterparty": 0.20,
+    "semantic.extracted_counterparty": 0.10,
+    "semantic.currency_keyword": 0.25,
+    "semantic.bank_entity": 0.35,
+    "semantic.finance_settled": 0.55,
+    "semantic.finance_entity": 0.25,
 }
 
 
@@ -135,6 +143,7 @@ def run_global_training(
     database_path: str,
     trigger_type: str = "manual",
     policy: TrainingPolicy | None = None,
+    selected_sample_ids: Sequence[int] | None = None,
 ) -> dict[str, object]:
     """执行一次全局模型训练检查。
 
@@ -142,6 +151,7 @@ def run_global_training(
         database_path: SQLite 数据库文件路径。
         trigger_type: 触发来源，例如 manual、admin 或 scheduled。
         policy: 训练发布策略；为空时使用生产默认门槛。
+        selected_sample_ids: 管理员人工选择的样本 ID；为空时不会训练发布模型。
 
     返回：
         dict[str, object]: 训练任务结果摘要。
@@ -154,12 +164,27 @@ def run_global_training(
     _insert_training_job(database_path, job_id=job_id, trigger_type=trigger_type)
 
     try:
-        examples = load_labeled_examples(database_path)
+        normalized_sample_ids = normalize_selected_sample_ids(selected_sample_ids)
+        if not normalized_sample_ids:
+            sample_count = count_global_training_samples(database_path)
+            return _finish_training_job(
+                database_path=database_path,
+                job_id=job_id,
+                state="SKIPPED",
+                sample_count=sample_count,
+                message="自动训练已关闭，请在管理后台样本页人工选择样本后发布模型",
+            )
+
+        examples = load_labeled_examples(
+            database_path=database_path,
+            selected_sample_ids=normalized_sample_ids,
+        )
         sample_count = count_global_training_samples(database_path)
         positive_count = sum(1 for example in examples if example.label == 1)
         negative_count = sum(1 for example in examples if example.label == 0)
         labeled_count = len(examples)
-        new_sample_count = max(0, labeled_count - int(active_model.get("trainedSampleCount") or 0))
+        # 人工选择样本发布时，样本 ID 集合本身就是管理员确认过的发布范围，不再按线上模型历史样本数抵扣。
+        new_sample_count = labeled_count
 
         skip_message = _build_skip_message(
             policy=current_policy,
@@ -169,16 +194,26 @@ def run_global_training(
             new_sample_count=new_sample_count,
         )
         if skip_message:
+            default_model = publish_default_model_if_needed(
+                database_path=database_path,
+                active_model=active_model,
+                reason=skip_message,
+                training_job_id=job_id,
+            )
+            state = "DEFAULT_PUBLISHED" if default_model is not None else "SKIPPED"
+            model_version = str(default_model["modelVersion"]) if default_model is not None else None
+            message = f"{skip_message}；已发布默认模型" if default_model is not None else f"{skip_message}；当前已是默认模型"
             return _finish_training_job(
                 database_path=database_path,
                 job_id=job_id,
-                state="SKIPPED",
+                state=state,
                 sample_count=sample_count,
                 labeled_sample_count=labeled_count,
                 positive_count=positive_count,
                 negative_count=negative_count,
                 new_sample_count=new_sample_count,
-                message=skip_message,
+                model_version=model_version,
+                message=message,
             )
 
         trained = _train_logistic_regression(examples)
@@ -229,27 +264,45 @@ def run_global_training(
         )
 
 
-def load_labeled_examples(database_path: str) -> list[TrainingExample]:
+def load_labeled_examples(
+    database_path: str,
+    selected_sample_ids: Sequence[int] | None = None,
+) -> list[TrainingExample]:
     """从全局样本池读取可训练样本。
 
     参数：
         database_path: SQLite 数据库文件路径。
+        selected_sample_ids: 管理员人工选择的样本 ID；为空时读取全部有效标签样本，仅供后台统计使用。
 
     返回：
         list[TrainingExample]: 已映射好标签和特征的训练样本。
     """
 
     init_database(database_path)
+    normalized_sample_ids = normalize_selected_sample_ids(selected_sample_ids)
     with transaction(database_path) as db:
-        rows = db.execute(
-            """
-            SELECT id, raw_json
-            FROM training_samples
-            WHERE contribution_scope = ?
-            ORDER BY id ASC
-            """,
-            (GLOBAL_MODEL_SCOPE,),
-        ).fetchall()
+        if normalized_sample_ids:
+            placeholders = ",".join("?" for _ in normalized_sample_ids)
+            rows = db.execute(
+                f"""
+                SELECT id, raw_json
+                FROM training_samples
+                WHERE contribution_scope = ?
+                  AND id IN ({placeholders})
+                ORDER BY id ASC
+                """,
+                (GLOBAL_MODEL_SCOPE, *normalized_sample_ids),
+            ).fetchall()
+        else:
+            rows = db.execute(
+                """
+                SELECT id, raw_json
+                FROM training_samples
+                WHERE contribution_scope = ?
+                ORDER BY id ASC
+                """,
+                (GLOBAL_MODEL_SCOPE,),
+            ).fetchall()
 
     examples: list[TrainingExample] = []
     for row in rows:
@@ -270,6 +323,32 @@ def load_labeled_examples(database_path: str) -> list[TrainingExample]:
     return examples
 
 
+def normalize_selected_sample_ids(selected_sample_ids: Sequence[int] | None) -> list[int]:
+    """归一化管理员选择的样本 ID。
+
+    参数：
+        selected_sample_ids: 表单或命令行传入的样本 ID 序列。
+
+    返回：
+        list[int]: 去重、过滤非法值并保持原始顺序后的正整数 ID。
+    """
+
+    if selected_sample_ids is None:
+        return []
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for raw_id in selected_sample_ids:
+        try:
+            sample_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if sample_id <= 0 or sample_id in seen:
+            continue
+        normalized.append(sample_id)
+        seen.add(sample_id)
+    return normalized
+
+
 def resolve_training_label(raw_sample: dict[str, object]) -> int | None:
     """把用户反馈标签映射成二分类训练标签。
 
@@ -280,12 +359,12 @@ def resolve_training_label(raw_sample: dict[str, object]) -> int | None:
         int | None: 正样本返回 1，负样本返回 0，暂不可靠的样本返回 None。
     """
 
-    label = str(raw_sample.get("feedbackLabel") or "")
-    if label in POSITIVE_LABELS:
+    label = normalize_feedback_label(raw_sample.get("feedbackLabel"))
+    if label in TRAINABLE_POSITIVE_LABELS:
         return 1
-    if label in NEGATIVE_LABELS:
+    if label in TRAINABLE_NEGATIVE_LABELS:
         return 0
-    # 待确认、重复待确认、纯原文样本等状态没有最终用户反馈，第一版先不参与训练。
+    # 自动入账未复核、已过滤未复核、待确认、重复待确认和纯原文样本都没有用户监督信号。
     return None
 
 
@@ -474,6 +553,69 @@ def _build_skip_message(
     if positive_count < policy.min_per_class or negative_count < policy.min_per_class:
         return f"正负样本分布不足：正样本 {positive_count}，负样本 {negative_count}"
     return None
+
+
+def publish_default_model_if_needed(
+    database_path: str,
+    active_model: dict[str, object],
+    reason: str,
+    training_job_id: str,
+) -> dict[str, object] | None:
+    """在样本不足时确保线上使用默认模型。
+
+    参数：
+        database_path: SQLite 数据库文件路径。
+        active_model: 当前线上激活模型。
+        reason: 本次训练跳过原因，会写入默认模型指标，便于后台追踪。
+        training_job_id: 当前训练任务 ID。
+
+    返回：
+        dict[str, object] | None: 需要切回默认模型时返回新模型；已经是默认权重时返回 None。
+    """
+
+    if active_model_has_default_weights(active_model):
+        return None
+    return publish_global_model(
+        database_path=database_path,
+        weights=dict(BOOTSTRAP_MODEL_PAYLOAD["weights"]),
+        thresholds=dict(BOOTSTRAP_MODEL_PAYLOAD["thresholds"]),
+        trained_sample_count=0,
+        model_version=f"global-linear-confidence-default-{now_millis()}",
+        feature_columns=list(BOOTSTRAP_MODEL_PAYLOAD["weights"].keys()),
+        metrics={
+            "mode": "default_weights",
+            "reason": reason,
+            "previousModel": str(active_model.get("modelVersion") or ""),
+        },
+        training_job_id=training_job_id,
+    )
+
+
+def active_model_has_default_weights(active_model: dict[str, object]) -> bool:
+    """判断当前激活模型是否已经等价于默认权重。
+
+    参数：
+        active_model: 当前线上激活模型。
+
+    返回：
+        bool: 默认模型权重全部一致时返回 True。
+    """
+
+    weights = active_model.get("weights")
+    if not isinstance(weights, dict):
+        return False
+    default_weights = BOOTSTRAP_MODEL_PAYLOAD["weights"]
+    if not isinstance(default_weights, dict):
+        return False
+    for key, default_value in default_weights.items():
+        try:
+            actual_value = float(weights.get(key))
+            expected_value = float(default_value)
+        except (TypeError, ValueError):
+            return False
+        if abs(actual_value - expected_value) > 0.000001:
+            return False
+    return True
 
 
 def _build_quality_message(policy: TrainingPolicy, metrics: dict[str, object]) -> str | None:

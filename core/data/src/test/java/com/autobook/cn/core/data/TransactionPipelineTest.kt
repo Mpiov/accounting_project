@@ -205,6 +205,8 @@ class TransactionPipelineTest {
         val data = (outcome as OperationResult.Success).data
         assertEquals(ProcessDestination.LEDGER, data.destination)
         assertEquals(1, ledgerAddCount)
+        assertEquals(100.0, data.amount)
+        assertEquals(MoneyDirection.EXPENSE, data.direction)
         assertEquals("Auto-posted with confidence 0.9", data.message)
         assertEquals(listOf(ProcessDestination.LEDGER), trainingSampleRepository.destinations)
     }

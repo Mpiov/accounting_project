@@ -24,13 +24,18 @@ local.properties
 build_log.txt
 
 # 本地脚本、下载与临时目录
+.deps/
 .pydeps/
 .vendor/
 pydeps/
 temp/
 .tmp/
+.tmp_*/
+.tmp_*.tar
 models/
 third_party/
+*_tmp*.sqlite3
+backend/_tmp*.sqlite3
 
 # 已移除的本地推理实验目录
 core/llm/

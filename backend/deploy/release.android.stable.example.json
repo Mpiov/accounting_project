@@ -1,15 +1,14 @@
 {
-  "latestVersionCode": 2,
-  "latestVersionName": "0.1.1",
+  "latestVersionCode": 5,
+  "latestVersionName": "0.1.4",
   "minSupportedVersionCode": 1,
   "forceUpdate": false,
-  "apkUrl": "https://pan.baidu.com/s/1UFHYOBgWVhH57jx9CtjA7w?pwd=2txq",
+  "apkUrl": "https://pan.quark.cn/s/07970f32910a?pwd=cZzn",
   "apkSizeBytes": 0,
   "sha256": "",
   "releaseNotes": [
-    "发布轻松记 0.1.1 安装包",
-    "新增设置页检查新版本入口",
-    "优化自动记账稳定性相关诊断"
+    "发布轻松记 0.1.4 最新安装包",
+    "同步最新自动记账与版本更新体验优化"
   ],
-  "publishedAt": 1777973422365
+  "publishedAt": 1778766417505
 }
