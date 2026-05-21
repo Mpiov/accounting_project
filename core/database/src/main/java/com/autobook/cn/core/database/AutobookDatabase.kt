@@ -29,7 +29,7 @@ import com.autobook.cn.core.database.entity.PendingStatsEntity
         PendingStatsEntity::class,
         ModelTrainingSampleEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 abstract class AutobookDatabase : RoomDatabase() {

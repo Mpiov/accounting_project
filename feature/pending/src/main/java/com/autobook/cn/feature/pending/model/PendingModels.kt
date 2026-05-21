@@ -45,7 +45,9 @@ data class PendingItemUiModel(
  *
  * 参数说明：
  * - items：当前待确认列表项。
+ * - isLoading：待确认列表首次加载是否仍在进行；加载中不能展示空状态，避免用户误以为没有待确认。
  */
 data class PendingUiState(
     val items: List<PendingItemUiModel> = emptyList(),
+    val isLoading: Boolean = true,
 )

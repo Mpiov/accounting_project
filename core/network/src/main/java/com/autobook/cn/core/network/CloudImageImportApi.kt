@@ -14,6 +14,10 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -33,11 +37,13 @@ import org.json.JSONObject
  * - imageRef：图片引用，当前直接使用内容 Uri 字符串。
  * - promptVersion：提示词版本，便于后续灰度和回放。
  * - requireManualConfirmation：当前结果是否必须人工确认。
+ * - referenceTimestamp：客户端当前参考时间；图片缺少年份时按它补齐年份。
  */
 data class CloudImageImportRequest(
     val imageRef: String,
     val promptVersion: String,
     val requireManualConfirmation: Boolean = true,
+    val referenceTimestamp: Long = System.currentTimeMillis(),
 )
 
 /**
@@ -85,6 +91,7 @@ data class CloudImageImportResponse(
  * - transactionState：候选状态，如 ACTIVE / REFUNDED / RETURNED。
  * - stateReason：状态判断原因。
  * - evidence：证据片段。
+ * - sourceHasExplicitYear：截图原文中交易时间是否明确出现年份。
  */
 data class CloudImageImportCandidateResponse(
     val amount: Double? = null,
@@ -96,6 +103,7 @@ data class CloudImageImportCandidateResponse(
     val transactionState: String = "UNKNOWN",
     val stateReason: String = "",
     val evidence: String = "",
+    val sourceHasExplicitYear: Boolean? = null,
 )
 
 /**
@@ -150,6 +158,7 @@ class DirectCloudImageImportApi @Inject constructor(
                         requireManualConfirmation = request.requireManualConfirmation,
                         mimeType = imagePayload.mimeType,
                         base64Data = imagePayload.base64Data,
+                        referenceTimestamp = request.referenceTimestamp,
                     )
 
                     val connection = (URL(buildEndpointUrl()).openConnection() as HttpURLConnection).apply {
@@ -195,7 +204,10 @@ class DirectCloudImageImportApi @Inject constructor(
                                 requiresManualConfirmation = true,
                             )
                         } else {
-                            parseResponse(responseText) ?: CloudImageImportResponse(
+                            parseResponse(
+                                responseText = responseText,
+                                referenceTimestamp = request.referenceTimestamp,
+                            ) ?: CloudImageImportResponse(
                                 amount = null,
                                 direction = "EXPENSE",
                                 category = "待分类",
@@ -279,16 +291,20 @@ class DirectCloudImageImportApi @Inject constructor(
      * - requireManualConfirmation：当前是否强制人工确认。
      * - mimeType：图片 MIME 类型。
      * - base64Data：图片的 Base64 内容。
+     * - referenceTimestamp：客户端当前参考时间，用于提示模型处理无年份截图。
      */
     private fun buildRequestBody(
         promptVersion: String,
         requireManualConfirmation: Boolean,
         mimeType: String,
         base64Data: String,
+        referenceTimestamp: Long,
     ): String {
+        val referenceDateLabel = formatReferenceDate(referenceTimestamp)
         val textPrompt = """
             你是一个记账助手，请从图片中识别所有用户的交易候选记录，而不是只挑一条。
             当前提示词版本：$promptVersion。
+            客户端当前日期：$referenceDateLabel。图片交易时间没有明确年份时，必须使用客户端当前年份补齐，不要自行猜测其它年份。
             本次结果必须作为建议返回，requiresManualConfirmation 应保持为 $requireManualConfirmation。
             请严格返回一个 JSON 对象，不要使用 Markdown，不要输出额外解释。
             在微信、QQ这类气泡聊天场景下，只看右侧气泡，不要让左侧气泡影响上下文。
@@ -298,12 +314,14 @@ class DirectCloudImageImportApi @Inject constructor(
             3.出现"您的3.0元补贴尚未使用"，表明这是噪音，抛弃。
             4.如果图片里能看到支付时间、到账时间、交易时间或账单时间，必须尽量识别并填入 transactionTime。
             5.不要单独返回商户、对方、订单号字段；如果能识别到这些信息，全部写入 note。
+            6.sourceHasExplicitYear 必须只描述截图原文，不描述你补齐后的 transactionTime；截图原文有“2026年/2026-/2026/”这类年份时填 true，否则填 false。
             JSON 结构如下：
             {
               "candidates": [
                 {
                   "amount": 可能为数字或 null,
                   "transactionTime": "yyyy-MM-dd HH:mm:ss 格式字符串或 null",
+                  "sourceHasExplicitYear": true 或 false,
                   "direction": "INCOME" | "EXPENSE" | "UNKNOWN",
                   "category": "字符串，无法确认时填待分类",
                   "note": "字符串，可为空；商户、对方、订单号等补充信息都写在这里",
@@ -350,7 +368,10 @@ class DirectCloudImageImportApi @Inject constructor(
      * 参数说明：
      * - responseText：云端大模型返回的原始 JSON 文本。
      */
-    private fun parseResponse(responseText: String): CloudImageImportResponse? {
+    private fun parseResponse(
+        responseText: String,
+        referenceTimestamp: Long,
+    ): CloudImageImportResponse? {
         val root = JSONObject(responseText)
         val candidates = root.optJSONArray("candidates") ?: return null
         if (candidates.length() == 0) return null
@@ -369,14 +390,18 @@ class DirectCloudImageImportApi @Inject constructor(
             .trim()
         val payload = JSONObject(normalizedJson)
         val parsedCandidates = payload.optJSONArray("candidates")
-            ?.let(::parseImageCandidates)
+            ?.let { parseImageCandidates(array = it, referenceTimestamp = referenceTimestamp) }
             .orEmpty()
         val primaryCandidate = parsedCandidates.firstOrNull()
+        val rawTransactionTime = payload.optStringOrNull("transactionTime") ?: payload.optStringOrNull("timestamp")
+        val topLevelSourceHasExplicitYear = payload.optBooleanOrNull("sourceHasExplicitYear")
         return CloudImageImportResponse(
             amount = primaryCandidate?.amount,
             timestamp = primaryCandidate?.timestamp
                 ?: ImageImportTimeParser.parseToTimestamp(
-                    rawValue = payload.optStringOrNull("transactionTime") ?: payload.optStringOrNull("timestamp"),
+                    rawValue = rawTransactionTime,
+                    referenceTimestamp = referenceTimestamp,
+                    sourceHasExplicitYear = topLevelSourceHasExplicitYear,
                 ),
             direction = primaryCandidate?.direction ?: payload.optString("direction", "EXPENSE"),
             category = primaryCandidate?.category ?: payload.optString("category", "待分类"),
@@ -464,15 +489,22 @@ private data class InlineImagePayload(
  * 参数说明：
  * - array：模型返回的候选数组。
  */
-private fun parseImageCandidates(array: JSONArray): List<CloudImageImportCandidateResponse> {
+private fun parseImageCandidates(
+    array: JSONArray,
+    referenceTimestamp: Long,
+): List<CloudImageImportCandidateResponse> {
     return buildList {
         for (index in 0 until array.length()) {
             val item = array.optJSONObject(index) ?: continue
+            val rawTransactionTime = item.optStringOrNull("transactionTime") ?: item.optStringOrNull("timestamp")
+            val sourceHasExplicitYear = item.optBooleanOrNull("sourceHasExplicitYear")
             add(
                 CloudImageImportCandidateResponse(
                     amount = item.optDoubleOrNull("amount"),
                     timestamp = ImageImportTimeParser.parseToTimestamp(
-                        rawValue = item.optStringOrNull("transactionTime") ?: item.optStringOrNull("timestamp"),
+                        rawValue = rawTransactionTime,
+                        referenceTimestamp = referenceTimestamp,
+                        sourceHasExplicitYear = sourceHasExplicitYear,
                     ),
                     direction = item.optString("direction", "EXPENSE"),
                     category = item.optString("category", "待分类"),
@@ -485,6 +517,7 @@ private fun parseImageCandidates(array: JSONArray): List<CloudImageImportCandida
                     transactionState = item.optString("transactionState", "UNKNOWN"),
                     stateReason = item.optString("stateReason", ""),
                     evidence = item.optString("evidence", ""),
+                    sourceHasExplicitYear = sourceHasExplicitYear,
                 ),
             )
         }
@@ -497,6 +530,10 @@ private fun JSONObject.optDoubleOrNull(key: String): Double? {
 
 private fun JSONObject.optStringOrNull(key: String): String? {
     return if (isNull(key)) null else optString(key)
+}
+
+private fun JSONObject.optBooleanOrNull(key: String): Boolean? {
+    return if (isNull(key) || !has(key)) null else optBoolean(key)
 }
 
 /**
@@ -600,3 +637,18 @@ private const val INITIAL_JPEG_QUALITY = 85
 private const val MIN_JPEG_QUALITY = 45
 private const val JPEG_QUALITY_STEP = 10
 private const val TAG = "CloudImageImportApi"
+
+/**
+ * 把客户端参考时间格式化成提示词中的日期文本。
+ *
+ * 参数说明：
+ * - timestamp：客户端当前参考时间戳。
+ */
+private fun formatReferenceDate(timestamp: Long): String {
+    return Instant.ofEpochMilli(timestamp)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
+        .format(REFERENCE_DATE_FORMATTER)
+}
+
+private val REFERENCE_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.CHINA)

@@ -21,6 +21,7 @@ object ImageImportTimeParser {
      * 参数说明：
      * - rawValue：模型或规则层返回的时间文本。
      * - referenceTimestamp：用于补全年份或日期的参考时间，默认使用当前时间。
+     * - sourceHasExplicitYear：截图原文是否明确出现年份；为空时从时间文本里自动判断。
      *
      * 返回值说明：
      * - 解析成功时返回毫秒时间戳；无法稳定识别时返回 `null`。
@@ -28,15 +29,28 @@ object ImageImportTimeParser {
     fun parseToTimestamp(
         rawValue: String?,
         referenceTimestamp: Long = System.currentTimeMillis(),
+        sourceHasExplicitYear: Boolean? = null,
     ): Long? {
         val normalizedValue = normalize(rawValue) ?: return null
         val referenceDateTime = Instant.ofEpochMilli(referenceTimestamp)
             .atZone(DEFAULT_ZONE_ID)
             .toLocalDateTime()
+        val hasExplicitYear = sourceHasExplicitYear ?: containsExplicitYear(rawValue)
 
-        FULL_DATE_TIME_FORMATTERS.forEach { formatter ->
-            runCatching {
-                return LocalDateTime.parse(normalizedValue, formatter).toEpochMillis()
+        if (hasExplicitYear) {
+            FULL_DATE_TIME_FORMATTERS.forEach { formatter ->
+                runCatching {
+                    return LocalDateTime.parse(normalizedValue, formatter).toEpochMillis()
+                }
+            }
+        } else {
+            FULL_DATE_TIME_FORMATTERS.forEach { formatter ->
+                runCatching {
+                    // 云端模型仍可能按 schema 补出一个完整年份；当它声明原图没有年份时，客户端用当前年份覆盖模型猜测。
+                    return LocalDateTime.parse(normalizedValue, formatter)
+                        .withYear(referenceDateTime.year)
+                        .toEpochMillis()
+                }
             }
         }
 
@@ -58,6 +72,17 @@ object ImageImportTimeParser {
         }
 
         return null
+    }
+
+    /**
+     * 判断时间文本本身是否明确包含年份。
+     *
+     * 参数说明：
+     * - rawValue：模型返回或规则提取出的原始时间文本。
+     */
+    fun containsExplicitYear(rawValue: String?): Boolean {
+        val text = rawValue?.trim().orEmpty()
+        return EXPLICIT_YEAR_PATTERN.containsMatchIn(text)
     }
 
     /**
@@ -159,3 +184,12 @@ private val TIME_TEXT_PATTERNS = listOf(
     Regex("""\d{1,2}:\d{2}:\d{2}"""),
     Regex("""\d{1,2}:\d{2}"""),
 )
+
+/**
+ * 明确年份识别规则。
+ *
+ * 用途说明：
+ * - 只把“2026-05”“2026/05”“2026年05”这类日期年份视为明确年份。
+ * - 避免把订单号、卡号或金额里的四位数字误当作年份。
+ */
+private val EXPLICIT_YEAR_PATTERN = Regex("""(?:^|[^\d])\d{4}\s*[-/年]""")

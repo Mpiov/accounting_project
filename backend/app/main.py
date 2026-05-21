@@ -19,6 +19,7 @@ from .auth import build_token_pair, hash_value, require_user
 from .auth_code_delivery import AuthCodeDeliveryError, deliver_auth_code
 from .config import load_config
 from .database import init_database, transaction
+from .feedback_service import create_user_feedback
 from .global_model_service import GLOBAL_MODEL_SCOPE
 from .global_model_service import ensure_bootstrap_global_model
 from .global_model_service import get_active_global_model
@@ -31,6 +32,7 @@ from .schemas import (
     RefreshRequest,
     SmsCodeRequest,
     UploadTrainingSamplesRequest,
+    UserFeedbackRequest,
 )
 from .training_labels import is_trainable_feedback_label
 
@@ -311,6 +313,36 @@ def latest_app_release(
         return ok(build_release_response({}, current_version_code))
     _ = current_version_name
     return ok(build_release_response(load_android_release_manifest(), current_version_code))
+
+
+@app.post("/v1/user-feedback")
+def submit_user_feedback(
+    body: UserFeedbackRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    """提交用户反馈。
+    参数：
+        body: 用户反馈正文、联系方式、设备信息和 App 版本。
+        authorization: Bearer 访问令牌，用于绑定反馈到登录账号。
+    返回：
+        dict[str, object]: 反馈主键和服务器接收时间。
+    """
+
+    user = require_user(authorization, CONFIG.token_secret)
+    received_at = now_millis()
+    try:
+        feedback = create_user_feedback(
+            database_path=CONFIG.database_path,
+            user_id=user["id"],
+            content=body.content,
+            contact=body.contact,
+            device_id=body.deviceId,
+            app_version=body.appVersion,
+            created_at=received_at,
+        )
+    except ValueError as exc:
+        raise fail(400, "BAD_REQUEST", str(exc)) from exc
+    return ok(feedback)
 
 
 @app.post("/v1/auth/sms-code")

@@ -39,4 +39,15 @@ interface NotificationEventDao {
 
     @Query("SELECT * FROM notification_events ORDER BY postedAt DESC")
     fun observeAll(): Flow<List<NotificationEventEntity>>
+
+    /**
+     * 用途说明：
+     * - 观察指定通知 ID 集合的原始通知记录。
+     * - Room 会按主键查询，待确认页只传当前列表关联的少量 ID，避免全量通知历史映射拖慢首屏。
+     *
+     * 参数说明：
+     * - ids：通知事件主键集合。
+     */
+    @Query("SELECT * FROM notification_events WHERE id IN (:ids)")
+    fun observeByIds(ids: Set<Long>): Flow<List<NotificationEventEntity>>
 }

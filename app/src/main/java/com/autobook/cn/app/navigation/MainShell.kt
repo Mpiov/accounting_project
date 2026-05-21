@@ -224,7 +224,18 @@ fun MainShell(
                 val viewModel: ChartViewModel = hiltViewModel()
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-                ChartDashboardScreen(state = state)
+                ChartDashboardScreen(
+                    state = state,
+                    onOpenCategoryRecords = { request ->
+                        rootNavController.navigate(
+                            AutobookDestination.RecordsCategory.createRoute(
+                                direction = request.direction,
+                                period = request.period,
+                                category = request.category,
+                            ),
+                        )
+                    },
+                )
             }
             composable(AutobookDestination.MainPending.route) {
                 val viewModel: PendingViewModel = hiltViewModel()
@@ -273,6 +284,9 @@ fun MainShell(
                     onSourceEnabledChanged = viewModel::setSourceEnabled,
                     onCheckAppUpdate = viewModel::checkAppUpdateNow,
                     onDismissAppUpdatePrompt = viewModel::dismissAppUpdatePrompt,
+                    onFeedbackContentChanged = viewModel::setFeedbackContentInput,
+                    onFeedbackContactChanged = viewModel::setFeedbackContactInput,
+                    onSubmitUserFeedback = viewModel::submitUserFeedback,
                 )
             }
         }

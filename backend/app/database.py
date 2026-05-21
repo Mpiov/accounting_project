@@ -193,6 +193,19 @@ def init_database(database_path: str) -> None:
                 message TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS user_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                contact TEXT,
+                device_id TEXT,
+                app_version TEXT,
+                status TEXT NOT NULL DEFAULT 'OPEN',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_model_versions_active
             ON model_versions(model_scope, is_active, published_at);
 
@@ -298,5 +311,23 @@ def init_database(database_path: str) -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_memberships_updated
             ON memberships(updated_at DESC)
+            """
+        )
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_user_feedback_created
+            ON user_feedback(created_at DESC, id DESC)
+            """
+        )
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_user_feedback_user_created
+            ON user_feedback(user_id, created_at DESC)
+            """
+        )
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_user_feedback_status_created
+            ON user_feedback(status, created_at DESC)
             """
         )

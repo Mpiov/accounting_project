@@ -91,4 +91,19 @@ class UploadTrainingSamplesRequest(BaseModel):
     samples: list[TrainingSample] = Field(default_factory=list, max_length=200)
 
 
+class UserFeedbackRequest(BaseModel):
+    """用户反馈提交请求。
+    参数：
+        content: 用户填写的反馈正文。
+        contact: 用户额外留下的联系方式，可为空。
+        deviceId: 客户端设备标识，用于定位机型或单设备问题。
+        appVersion: 客户端 App 版本号。
+    """
+
+    content: str = Field(min_length=5, max_length=2000)
+    contact: str | None = Field(default=None, max_length=200)
+    deviceId: str | None = Field(default=None, max_length=128)
+    appVersion: str | None = Field(default=None, max_length=64)
+
+
 JsonDict = dict[str, Any]

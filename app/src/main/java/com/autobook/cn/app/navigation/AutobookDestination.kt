@@ -1,5 +1,6 @@
 package com.autobook.cn.app.navigation
 
+import android.net.Uri
 import com.autobook.cn.core.model.MoneyDirection
 import java.time.YearMonth
 
@@ -26,6 +27,31 @@ sealed class AutobookDestination(val route: String) {
     data object BudgetSettings : AutobookDestination("budget/settings")
 
     data object RecordsAll : AutobookDestination("records/all")
+
+    data object RecordsCategory : AutobookDestination(
+        "records/category?direction={direction}&period={period}&category={category}",
+    ) {
+        const val BASE_ROUTE: String = "records/category"
+
+        /**
+         * 用途说明：
+         * - 生成图表分类下钻到详细记录页的路由。
+         *
+         * 参数说明：
+         * - direction：目标收支方向。
+         * - period：目标周期，和图表页周期枚举名称保持一致。
+         * - category：目标分类；为空时展示当前方向在目标周期内的全部记录。
+         */
+        fun createRoute(
+            direction: MoneyDirection,
+            period: String,
+            category: String,
+        ): String {
+            return "$BASE_ROUTE?direction=${direction.name}" +
+                "&period=${Uri.encode(period)}" +
+                "&category=${Uri.encode(category)}"
+        }
+    }
 
     /**
      * 用途说明：

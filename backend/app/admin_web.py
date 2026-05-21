@@ -16,6 +16,7 @@ from .admin_service import revoke_member
 from .auth import parse_token, sign_token
 from .config import AppConfig
 from .config import load_config
+from .feedback_service import list_user_feedback_page
 from .global_model_service import count_global_training_samples
 from .global_model_service import get_active_global_model
 from .payment_service import list_payment_order_page
@@ -286,6 +287,7 @@ def render_page(title: str, body: str) -> HTMLResponse:
         <a href="/admin">会员与训练</a>
         <a href="/admin/orders">订单</a>
         <a href="/admin/samples">样本</a>
+        <a href="/admin/feedback">反馈</a>
       </nav>
     </div>
     <form method="post" action="/admin/logout">
@@ -853,6 +855,103 @@ def admin_samples(
     </section>
     """
     return render_page(title="训练样本", body=body)
+
+
+@router.get("/feedback")
+def admin_feedback(
+    request: Request,
+    account: str = "",
+    q: str = "",
+    status: str = "",
+    message: str = "",
+    page: int = 1,
+    page_size: int = 20,
+) -> Response:
+    """展示用户反馈列表。
+    参数：
+        request: FastAPI 请求对象。
+        account: 登录邮箱筛选关键字。
+        q: 反馈正文、联系方式、设备或版本搜索关键字。
+        status: 反馈处理状态筛选。
+        message: 操作结果提示。
+        page: 反馈列表页码。
+        page_size: 每页数量。
+    返回：
+        Response: 反馈后台页面或登录页跳转。
+    """
+
+    if not has_admin_session(request):
+        return redirect_login()
+
+    config = load_config()
+    feedback_page = list_user_feedback_page(
+        config.database_path,
+        account_query=account,
+        query=q,
+        status=status,
+        page=page,
+        page_size=page_size,
+    )
+    rows = "\n".join(render_user_feedback_row(item) for item in feedback_page["items"])
+    pager_html = render_pagination(
+        path="/admin/feedback",
+        current_page=int(feedback_page["page"]),
+        page_size=int(feedback_page["pageSize"]),
+        total=int(feedback_page["total"]),
+        params={"account": account, "q": q, "status": status},
+    )
+    message_html = f'<div class="message">{escape(message)}</div>' if message else ""
+    body = f"""
+    {message_html}
+    <section>
+      <div class="section-title">
+        <h2>用户反馈</h2>
+        <a class="badge" href="/admin">返回会员管理</a>
+      </div>
+      <form method="get" action="/admin/feedback">
+        <label>
+          账号邮箱
+          <input type="text" name="account" value="{escape(account)}">
+        </label>
+        <label>
+          内容/联系方式/设备
+          <input type="text" name="q" value="{escape(q)}">
+        </label>
+        <label>
+          状态
+          <select name="status">
+            {render_feedback_status_options(status)}
+          </select>
+        </label>
+        {render_page_size_select(int(feedback_page["pageSize"]))}
+        <input type="hidden" name="page" value="1">
+        <button type="submit">查询</button>
+      </form>
+    </section>
+    <section>
+      <div class="section-title">
+        <h2>反馈明细</h2>
+        <span class="muted">按提交时间倒序展示，便于优先处理最新问题。</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>账号</th>
+            <th>反馈内容</th>
+            <th>联系方式</th>
+            <th>设备</th>
+            <th>App</th>
+            <th>状态</th>
+            <th>提交时间</th>
+          </tr>
+        </thead>
+        <tbody>{rows or '<tr><td colspan="8" class="muted">暂无反馈</td></tr>'}</tbody>
+      </table>
+      {pager_html}
+    </section>
+    """
+    return render_page(title="用户反馈", body=body)
 
 
 @router.post("/samples/create")
@@ -1580,6 +1679,74 @@ def format_changed_fields(value: object) -> str:
     if not isinstance(value, list) or not value:
         return "-"
     return "，".join(str(item) for item in value)
+
+
+def render_user_feedback_row(feedback: dict[str, object]) -> str:
+    """渲染用户反馈表格行。
+    参数：
+        feedback: 单条用户反馈数据。
+    返回：
+        str: 可直接插入 `<tbody>` 的 HTML 行。
+    """
+
+    content = str(feedback.get("content") or "")
+    return f"""
+    <tr>
+      <td>{escape(str(feedback.get("id") or ""))}</td>
+      <td>{escape(str(feedback.get("phone") or ""))}</td>
+      <td class="sample-raw">{escape(content)}</td>
+      <td>{escape(format_optional(feedback.get("contact")))}</td>
+      <td>{escape(format_optional(feedback.get("device_id")))}</td>
+      <td>{escape(format_optional(feedback.get("app_version")))}</td>
+      <td>{format_feedback_status(str(feedback.get("status") or ""))}</td>
+      <td>{escape(format_millis(feedback.get("created_at")))}</td>
+    </tr>
+    """
+
+
+def render_feedback_status_options(selected_status: str) -> str:
+    """渲染用户反馈状态筛选选项。
+    参数：
+        selected_status: 当前选中的状态。
+    返回：
+        str: `<option>` HTML 文本。
+    """
+
+    normalized = selected_status.strip().upper()
+    options = [
+        ("", "全部"),
+        ("OPEN", "待处理"),
+        ("REVIEWING", "处理中"),
+        ("RESOLVED", "已解决"),
+        ("IGNORED", "暂不处理"),
+    ]
+    return "\n".join(
+        f'<option value="{escape(value)}"{" selected" if value == normalized else ""}>{escape(label)}</option>'
+        for value, label in options
+    )
+
+
+def format_feedback_status(status: str) -> str:
+    """格式化反馈处理状态。
+    参数：
+        status: 数据库中的状态值。
+    返回：
+        str: 带样式的状态标签 HTML。
+    """
+
+    normalized = status.strip().upper() or "OPEN"
+    label_map = {
+        "OPEN": "待处理",
+        "REVIEWING": "处理中",
+        "RESOLVED": "已解决",
+        "IGNORED": "暂不处理",
+    }
+    css_class = "state-created"
+    if normalized == "RESOLVED":
+        css_class = "state-paid"
+    if normalized == "IGNORED":
+        css_class = "state-cancelled"
+    return f'<span class="badge {css_class}">{escape(label_map.get(normalized, normalized))}</span>'
 
 
 def truncate_text(value: str, max_length: int) -> str:

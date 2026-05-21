@@ -13,6 +13,7 @@ import com.autobook.cn.core.data.LedgerSummaryStats
 import com.autobook.cn.core.data.MembershipRepository
 import com.autobook.cn.core.data.PaymentRepository
 import com.autobook.cn.core.data.SettingsRepository
+import com.autobook.cn.core.data.UserFeedbackRepository
 import com.autobook.cn.core.model.AUTO_LEDGER_FREE_TRIAL_LIMIT
 import com.autobook.cn.core.model.AppReleaseInfo
 import com.autobook.cn.core.model.AppSettings
@@ -81,6 +82,9 @@ data class SettingsUiState(
     val bookkeepingEntryCount: Int = 0,
     val appUpdateChecking: Boolean = false,
     val appUpdatePrompt: AppReleaseInfo? = null,
+    val feedbackContentInput: String = "",
+    val feedbackContactInput: String = "",
+    val feedbackSubmitting: Boolean = false,
     val modelStatusLabel: String = "规则模型",
     val modelLastPulledLabel: String = "尚未拉取",
 )
@@ -107,6 +111,7 @@ class SettingsViewModel @Inject constructor(
     private val paymentRepository: PaymentRepository,
     private val cloudLearningRepository: CloudLearningRepository,
     private val appUpdateRepository: AppUpdateRepository,
+    private val userFeedbackRepository: UserFeedbackRepository,
     private val appNoticeBus: AppNoticeBus,
     ledgerRepository: LedgerRepository,
 ) : ViewModel() {
@@ -118,7 +123,30 @@ class SettingsViewModel @Inject constructor(
     private val authLoginInProgress = MutableStateFlow(false)
     private val appUpdateChecking = MutableStateFlow(false)
     private val appUpdatePrompt = MutableStateFlow<AppReleaseInfo?>(null)
+    private val feedbackContentInput = MutableStateFlow("")
+    private val feedbackContactInput = MutableStateFlow("")
+    private val feedbackSubmitting = MutableStateFlow(false)
     private var lastSilentMembershipRefreshAt: Long = 0L
+    private val appUpdateInteractionState: Flow<SettingsAppUpdateInteractionState> = combine(
+        appUpdateChecking,
+        appUpdatePrompt,
+    ) { checking, prompt ->
+        SettingsAppUpdateInteractionState(
+            checking = checking,
+            prompt = prompt,
+        )
+    }
+    private val feedbackFormState: Flow<SettingsFeedbackFormState> = combine(
+        feedbackContentInput,
+        feedbackContactInput,
+        feedbackSubmitting,
+    ) { content, contact, submitting ->
+        SettingsFeedbackFormState(
+            content = content,
+            contact = contact,
+            submitting = submitting,
+        )
+    }
     private val authForm: Flow<SettingsAuthForm> = combine(
         authPhoneInput,
         authCodeInput,
@@ -145,15 +173,25 @@ class SettingsViewModel @Inject constructor(
         authCodeRequesting,
         authCodeCooldownSeconds,
         authLoginInProgress,
-        appUpdateChecking,
-        appUpdatePrompt,
-    ) { codeRequesting, cooldownSeconds, loginInProgress, updateChecking, updatePrompt ->
+        appUpdateInteractionState,
+    ) { codeRequesting, cooldownSeconds, loginInProgress, updateInteraction ->
         SettingsAuthInteractionState(
             codeRequesting = codeRequesting,
             cooldownSeconds = cooldownSeconds,
             loginInProgress = loginInProgress,
-            updateChecking = updateChecking,
-            updatePrompt = updatePrompt,
+            updateChecking = updateInteraction.checking,
+            updatePrompt = updateInteraction.prompt,
+        )
+    }
+    private val settingsInteractionState: Flow<SettingsInteractionState> = combine(
+        membershipActionMessage,
+        authInteractionState,
+        feedbackFormState,
+    ) { actionMessage, authInteraction, feedbackForm ->
+        SettingsInteractionState(
+            actionMessage = actionMessage,
+            authInteraction = authInteraction,
+            feedbackForm = feedbackForm,
         )
     }
     private val bookkeepingStats: Flow<LedgerSummaryStats> = ledgerRepository.observeSummaryStats()
@@ -166,14 +204,15 @@ class SettingsViewModel @Inject constructor(
     val uiState: StateFlow<SettingsUiState> = combine(
         settingsRepository.settings,
         accountState,
-        membershipActionMessage,
-        authInteractionState,
+        settingsInteractionState,
         bookkeepingStats,
-    ) { settings, account, actionMessage, authInteraction, stats ->
+    ) { settings, account, interaction, stats ->
         val cloudLearning = account.cloudLearning
         val membershipStatus = account.membershipStatus
         val authState = account.authState
         val trialRemainingCount = membershipStatus.autoLedgerTrialRemaining
+        val authInteraction = interaction.authInteraction
+        val feedbackForm = interaction.feedbackForm
         SettingsUiState(
             autoAccountingEnabled = settings.autoAccountingEnabled,
             autoLedgerSuccessNotificationEnabled = settings.autoLedgerSuccessNotificationEnabled,
@@ -196,7 +235,7 @@ class SettingsViewModel @Inject constructor(
             membershipServerTime = membershipStatus.serverTime,
             membershipServerRefreshedAt = membershipStatus.refreshedAt,
             cloudLearningSummary = cloudLearning.message,
-            membershipActionMessage = actionMessage,
+            membershipActionMessage = interaction.actionMessage,
             captureEnabled = settings.captureEnabled,
             notificationRetentionDays = settings.notificationRetentionDays,
             screenshotRetentionDays = settings.screenshotRetentionDays,
@@ -205,6 +244,9 @@ class SettingsViewModel @Inject constructor(
             bookkeepingEntryCount = stats.entryCount,
             appUpdateChecking = authInteraction.updateChecking,
             appUpdatePrompt = authInteraction.updatePrompt,
+            feedbackContentInput = feedbackForm.content,
+            feedbackContactInput = feedbackForm.contact,
+            feedbackSubmitting = feedbackForm.submitting,
             modelStatusLabel = cloudLearning.toModelStatusLabel(),
             modelLastPulledLabel = cloudLearning.toModelLastPulledLabel(),
         )
@@ -549,6 +591,60 @@ class SettingsViewModel @Inject constructor(
         appUpdatePrompt.value = null
     }
 
+    /**
+     * 用途说明：
+     * - 更新用户反馈正文输入框内容。
+     *
+     * 参数说明：
+     * - content：用户在反馈页填写的问题、建议或体验描述。
+     */
+    fun setFeedbackContentInput(content: String) {
+        feedbackContentInput.value = content
+    }
+
+    /**
+     * 用途说明：
+     * - 更新用户反馈联系方式输入框内容。
+     *
+     * 参数说明：
+     * - contact：用户额外留下的联系方式，可为空。
+     */
+    fun setFeedbackContactInput(contact: String) {
+        feedbackContactInput.value = contact
+    }
+
+    /**
+     * 用途说明：
+     * - 把用户反馈提交到云服务端，并复用全局底部提示条展示结果。
+     */
+    fun submitUserFeedback() {
+        if (feedbackSubmitting.value) {
+            return
+        }
+        feedbackSubmitting.value = true
+        viewModelScope.launch {
+            try {
+                val result = userFeedbackRepository.submitFeedback(
+                    content = feedbackContentInput.value,
+                    contact = feedbackContactInput.value,
+                )
+                val message = when (result) {
+                    is OperationResult.Success -> {
+                        feedbackContentInput.value = ""
+                        feedbackContactInput.value = ""
+                        "反馈已提交，感谢你的帮助"
+                    }
+                    is OperationResult.RetryableFailure -> result.message
+                    is OperationResult.TerminalFailure -> result.message
+                }
+                membershipActionMessage.value = ""
+                appNoticeBus.show(message)
+            } finally {
+                feedbackSubmitting.value = false
+            }
+        }
+    }
+
     fun setCaptureEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setCaptureEnabled(enabled) }
     }
@@ -640,6 +736,34 @@ private data class SettingsAccountState(
 
 /**
  * 用途说明：
+ * - 保存设置页版本检查入口的临时状态。
+ *
+ * 参数说明：
+ * - checking：当前是否正在向服务端检查新版本。
+ * - prompt：服务端返回的可更新版本信息，为空表示没有待展示弹窗。
+ */
+private data class SettingsAppUpdateInteractionState(
+    val checking: Boolean,
+    val prompt: AppReleaseInfo?,
+)
+
+/**
+ * 用途说明：
+ * - 保存用户反馈表单的输入和提交状态，避免 UI 组合主状态时直接合并过多 Flow。
+ *
+ * 参数说明：
+ * - content：反馈正文输入框内容。
+ * - contact：联系方式输入框内容。
+ * - submitting：当前是否正在提交反馈。
+ */
+private data class SettingsFeedbackFormState(
+    val content: String,
+    val contact: String,
+    val submitting: Boolean,
+)
+
+/**
+ * 用途说明：
  * - 保存账号区临时交互状态，避免验证码发送、倒计时和登录中状态散落在 UI 层自行推导。
  *
  * 参数说明：
@@ -653,6 +777,21 @@ private data class SettingsAuthInteractionState(
     val loginInProgress: Boolean,
     val updateChecking: Boolean,
     val updatePrompt: AppReleaseInfo?,
+)
+
+/**
+ * 用途说明：
+ * - 汇总设置页所有轻交互状态，作为主 UI 状态的中间层。
+ *
+ * 参数说明：
+ * - actionMessage：会员或检查更新流程的提示文本。
+ * - authInteraction：登录、验证码和版本检查相关交互状态。
+ * - feedbackForm：用户反馈表单状态。
+ */
+private data class SettingsInteractionState(
+    val actionMessage: String,
+    val authInteraction: SettingsAuthInteractionState,
+    val feedbackForm: SettingsFeedbackFormState,
 )
 
 /**

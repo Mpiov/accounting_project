@@ -61,6 +61,7 @@ import kotlin.math.min
 @Composable
 fun ChartDashboardScreen(
     state: ChartUiState,
+    onOpenCategoryRecords: (ChartCategoryDrilldownRequest) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var selectedDirection by rememberSaveable { mutableStateOf(ChartDirection.EXPENSE) }
@@ -79,7 +80,7 @@ fun ChartDashboardScreen(
         direction = selectedDirection,
     )
     val categoryBreakdown = buildChartCategories(
-        entries = filteredEntries,
+        entries = filteredEntries.filterByCurrentChartPeriod(selectedPeriod),
         direction = selectedDirection,
     )
 
@@ -108,10 +109,31 @@ fun ChartDashboardScreen(
             CategoryDonutCard(
                 selectedDirection = selectedDirection,
                 categories = categoryBreakdown,
+                onCategoryClick = { category ->
+                    category.toDrilldownRequest(
+                        selectedDirection = selectedDirection,
+                        selectedPeriod = selectedPeriod,
+                    )?.let(onOpenCategoryRecords)
+                },
             )
         }
     }
 }
+
+/**
+ * 用途说明：
+ * - 图表页点击某个分类后，向导航层传递的下钻请求。
+ *
+ * 参数说明：
+ * - direction：目标记录的真实收支方向；结余模式会被转换为收入或支出。
+ * - period：目标记录的统计周期，和图表页当前选中的周期保持一致。
+ * - category：目标分类；为空时表示查看当前方向在本周期内的全部记录。
+ */
+data class ChartCategoryDrilldownRequest(
+    val direction: MoneyDirection,
+    val period: String,
+    val category: String,
+)
 
 /**
  * 用途说明：
@@ -390,6 +412,7 @@ private fun TrendBarCanvas(
 private fun CategoryDonutCard(
     selectedDirection: ChartDirection,
     categories: List<ChartCategoryItem>,
+    onCategoryClick: (ChartCategoryItem) -> Unit,
 ) {
     Card(
         shape = AutobookUiTokens.panelShape,
@@ -425,7 +448,10 @@ private fun CategoryDonutCard(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         categories.take(5).forEach { item ->
-                            CategoryLegendRow(item = item)
+                            CategoryLegendRow(
+                                item = item,
+                                onClick = { onCategoryClick(item) },
+                            )
                         }
                     }
                 }
@@ -482,8 +508,13 @@ private fun CategoryDonutChart(
 @Composable
 private fun CategoryLegendRow(
     item: ChartCategoryItem,
+    onClick: () -> Unit,
 ) {
     Surface(
+        modifier = Modifier.autobookClippedClickable(
+            shape = AutobookUiTokens.innerPanelShape,
+            onClick = onClick,
+        ),
         shape = AutobookUiTokens.innerPanelShape,
         border = autobookCardBorder(),
         color = autobookSoftFillColor(),
@@ -663,14 +694,14 @@ private fun buildChartCategories(
         if (total <= 0.0) return emptyList()
         return listOf(
             ChartCategoryItem(
-                category = "收入",
+                category = INCOME_CATEGORY_LABEL,
                 amount = totalIncome,
                 ratio = (totalIncome / total).toFloat(),
                 ratioLabel = "${((totalIncome / total) * 100).toInt()}%",
                 color = chartIncomeColor,
             ),
             ChartCategoryItem(
-                category = "支出",
+                category = EXPENSE_CATEGORY_LABEL,
                 amount = totalExpense,
                 ratio = (totalExpense / total).toFloat(),
                 ratioLabel = "${((totalExpense / total) * 100).toInt()}%",
@@ -742,6 +773,60 @@ private fun List<ChartEntryUiModel>.sumForPeriod(
  * 参数说明：
  * - direction：当前图表模式。
  */
+/**
+ * 用途说明：
+ * - 将分类占比数据收窄到图表页当前选中的周期，保证右侧分类金额和点入后的明细口径一致。
+ *
+ * 参数说明：
+ * - period：当前图表周期。
+ */
+private fun List<ChartEntryUiModel>.filterByCurrentChartPeriod(
+    period: ChartPeriod,
+): List<ChartEntryUiModel> {
+    val today = LocalDate.now()
+    return when (period) {
+        ChartPeriod.DAY -> filter { entry -> entry.date == today }
+        ChartPeriod.WEEK -> {
+            val weekStart = today.with(DayOfWeek.MONDAY)
+            val weekEnd = weekStart.plusDays(6)
+            filter { entry -> entry.date >= weekStart && entry.date <= weekEnd }
+        }
+        ChartPeriod.MONTH -> filter { entry ->
+            entry.date.year == today.year && entry.date.monthValue == today.monthValue
+        }
+        ChartPeriod.YEAR -> filter { entry -> entry.date.year == today.year }
+    }
+}
+
+/**
+ * 用途说明：
+ * - 将分类统计项转换成可导航的记录明细请求。
+ *
+ * 参数说明：
+ * - selectedDirection：图表页当前方向。
+ * - selectedPeriod：图表页当前周期。
+ */
+private fun ChartCategoryItem.toDrilldownRequest(
+    selectedDirection: ChartDirection,
+    selectedPeriod: ChartPeriod,
+): ChartCategoryDrilldownRequest? {
+    val targetDirection = when (selectedDirection) {
+        ChartDirection.EXPENSE -> MoneyDirection.EXPENSE
+        ChartDirection.INCOME -> MoneyDirection.INCOME
+        ChartDirection.NET -> when (category) {
+            INCOME_CATEGORY_LABEL -> MoneyDirection.INCOME
+            EXPENSE_CATEGORY_LABEL -> MoneyDirection.EXPENSE
+            else -> return null
+        }
+    }
+    return ChartCategoryDrilldownRequest(
+        direction = targetDirection,
+        period = selectedPeriod.name,
+        // 结余模式里的“收入/支出”是聚合入口，不是真实分类，所以传空分类展示对应方向全部记录。
+        category = if (selectedDirection == ChartDirection.NET) "" else category,
+    )
+}
+
 private fun ChartEntryUiModel.amountForDirection(direction: ChartDirection): Double {
     return when (direction) {
         ChartDirection.EXPENSE, ChartDirection.INCOME -> amount
@@ -849,6 +934,12 @@ private data class ChartCategoryItem(
 )
 
 /** 用途说明：收入图表色，统一使用绿色，和全局收入金额语义保持一致。 */
+/** 用途说明：结余分类图中代表收入聚合入口的固定文案。 */
+private const val INCOME_CATEGORY_LABEL = "收入"
+
+/** 用途说明：结余分类图中代表支出聚合入口的固定文案。 */
+private const val EXPENSE_CATEGORY_LABEL = "支出"
+
 private val chartIncomeColor = AutobookIncomeColor
 
 /** 用途说明：支出图表色，统一使用红色，和全局支出金额语义保持一致。 */

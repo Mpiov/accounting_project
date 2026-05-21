@@ -23,7 +23,7 @@ class NotificationPayloadExtractorTest {
     }
 
     @Test
-    fun `keeps first and last text lines as independent payloads`() {
+    fun `uses text lines as body candidates without splitting notification`() {
         val payloads = NotificationPayloadExtractor.extractAll(
             title = "微信支付",
             bigTitle = null,
@@ -33,15 +33,13 @@ class NotificationPayloadExtractorTest {
             tickerText = null,
         )
 
-        assertEquals(2, payloads.size)
-        assertEquals("微信支付", payloads[0].title)
-        assertEquals("已支付￥1.00", payloads[0].text)
-        assertEquals("微信支付", payloads[1].title)
-        assertEquals("订单号123456", payloads[1].text)
+        assertEquals(1, payloads.size)
+        assertEquals("微信支付", payloads.single().title)
+        assertEquals("已支付￥1.00", payloads.single().text)
     }
 
     @Test
-    fun `deduplicates identical first and last text lines`() {
+    fun `collapses duplicated transaction text lines into one payload`() {
         val payloads = NotificationPayloadExtractor.extractAll(
             title = "银行卡通知",
             bigTitle = null,
@@ -53,6 +51,25 @@ class NotificationPayloadExtractorTest {
 
         assertEquals(1, payloads.size)
         assertEquals("支出人民币18.00元", payloads.single().text)
+    }
+
+    @Test
+    fun `prefers most complete bank text line from multiple notification fields`() {
+        val payloads = NotificationPayloadExtractor.extractAll(
+            title = "动账通知",
+            bigTitle = null,
+            text = "尾号3026卡消费13.20元",
+            bigText = null,
+            textLines = listOf(
+                "尾号3026卡消费13.20元",
+                "尾号3026卡5月15日11:20POS支出(无卡支付)13.20元。请点击查看详情。",
+            ),
+            tickerText = null,
+        )
+
+        assertEquals(1, payloads.size)
+        assertEquals("动账通知", payloads.single().title)
+        assertEquals("尾号3026卡5月15日11:20POS支出(无卡支付)13.20元。请点击查看详情。", payloads.single().text)
     }
 
     @Test

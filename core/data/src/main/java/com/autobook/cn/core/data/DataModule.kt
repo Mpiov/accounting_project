@@ -15,6 +15,7 @@ import com.autobook.cn.core.data.impl.PaymentRepositoryImpl
 import com.autobook.cn.core.data.impl.NotificationTraceRepositoryImpl
 import com.autobook.cn.core.data.impl.PendingRepositoryImpl
 import com.autobook.cn.core.data.impl.SettingsRepositoryImpl
+import com.autobook.cn.core.data.impl.UserFeedbackRepositoryImpl
 import com.autobook.cn.core.data.parser.LocalTransactionExtractor
 import com.autobook.cn.core.data.pipeline.ModelRouterImpl
 import com.autobook.cn.core.network.CloudImageImportApi
@@ -77,6 +78,9 @@ abstract class DataBindingsModule {
 
     @Binds
     abstract fun bindCloudLearningRepository(impl: CloudLearningRepositoryImpl): CloudLearningRepository
+
+    @Binds
+    abstract fun bindUserFeedbackRepository(impl: UserFeedbackRepositoryImpl): UserFeedbackRepository
 
     @Binds
     abstract fun bindCloudModelStore(impl: CloudModelStoreImpl): CloudModelStore

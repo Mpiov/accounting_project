@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -55,7 +56,13 @@ fun PendingWorkspaceScreen(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 112.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (state.items.isEmpty()) {
+        if (state.isLoading) {
+            item(key = "pending_loading") {
+                PendingLoadingCard(
+                    modifier = Modifier.padding(top = mainPageTopInset()),
+                )
+            }
+        } else if (state.items.isEmpty()) {
             item(key = "pending_empty") {
                 PendingEmptyCard(
                     onOpenLedger = onOpenLedger,
@@ -76,6 +83,52 @@ fun PendingWorkspaceScreen(
                     onConfirm = { onConfirm(item.id) },
                     onEdit = { onEdit(item.id) },
                     onIgnore = { onIgnore(item.id) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 待确认列表加载态。
+ *
+ * 用途说明：
+ * - 首次订阅 Room Flow 时数据还没回来，不能立即展示“当前无需处理待确认”。
+ * - 这里用轻量加载卡承接过渡，避免真实存在待确认项时先闪一下空状态。
+ *
+ * 参数说明：
+ * - modifier：外层修饰符。
+ */
+@Composable
+private fun PendingLoadingCard(
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = AutobookUiTokens.panelShape,
+        border = autobookCardBorder(),
+        colors = autobookCardColors(),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(22.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "正在加载待确认",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "稍等片刻，账单会马上显示。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

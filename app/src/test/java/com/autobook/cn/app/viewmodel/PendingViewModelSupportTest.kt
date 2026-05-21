@@ -3,6 +3,7 @@ package com.autobook.cn.app.viewmodel
 import com.autobook.cn.core.model.MoneyDirection
 import com.autobook.cn.core.model.ParseConfidence
 import com.autobook.cn.core.model.PendingEntry
+import com.autobook.cn.feature.pending.model.PendingUiState
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -10,6 +11,19 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class PendingViewModelSupportTest {
+    /**
+     * 用途说明：
+     * - 锁定待确认页默认状态为加载中。
+     * - Room 首次返回前不能展示空状态，否则真实存在待确认时会先闪“无待确认”。
+     */
+    @Test
+    fun pendingUiStateDefaultsToLoading() {
+        val state = PendingUiState()
+
+        assertTrue(state.isLoading)
+        assertTrue(state.items.isEmpty())
+    }
+
     @Test
     fun toPendingItemUiModelKeepsDirectConfirmForKnownDirection() {
         val item = testPendingEntry(direction = MoneyDirection.EXPENSE)

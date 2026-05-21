@@ -6,6 +6,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.time.LocalDateTime
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -54,9 +56,65 @@ class AutobookMigrationTest {
                 assertLedgerAmount(connection, id = 1L, expectedAmount = 125.5)
                 assertLedgerAmount(connection, id = 2L, expectedAmount = 20.0)
                 assertPendingAmount(connection, id = 1L, expectedAmount = 8.8)
-                assertLedgerStats(connection)
+                assertLedgerStats(
+                    connection = connection,
+                    expectedCount = 2,
+                    expectedFirstTimestamp = 1000L,
+                    expectedLastTimestamp = 3000L,
+                )
                 assertPendingStats(connection)
             }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun migration10To11MovesYear2025EntriesTo2026AndRebuildsStats() {
+        helper.createDatabase(TEST_DB, 10).use { connection ->
+            createVersion9Schema(connection)
+            seedVersion10Year2025Data(connection)
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DB,
+            11,
+            true,
+            AutobookMigrations.MIGRATION_10_11,
+        )
+        migrated.close()
+
+        val database = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            AutobookDatabase::class.java,
+            TEST_DB,
+        )
+            .addMigrations(*AutobookMigrations.ALL)
+            .build()
+        try {
+            val connection = database.openHelper.writableDatabase
+            assertLedgerTimestamp(
+                connection = connection,
+                id = 10L,
+                expectedTimestamp = epochMillisOf(2026, 5, 15, 11, 20),
+            )
+            assertLedgerTimestamp(
+                connection = connection,
+                id = 11L,
+                expectedTimestamp = epochMillisOf(2026, 6, 1, 8, 30),
+            )
+            assertPendingTimestamp(
+                connection = connection,
+                id = 20L,
+                expectedTimestamp = epochMillisOf(2026, 5, 16, 9, 5),
+            )
+            assertLedgerStats(
+                connection = connection,
+                expectedCount = 2,
+                expectedFirstTimestamp = epochMillisOf(2026, 5, 15, 11, 20),
+                expectedLastTimestamp = epochMillisOf(2026, 6, 1, 8, 30),
+            )
+            assertPendingStats(connection)
         } finally {
             database.close()
         }
@@ -120,6 +178,29 @@ class AutobookMigrationTest {
     }
 
     /**
+     * 写入 v10 时代的 2025 年错位账单。
+     *
+     * 参数说明：
+     * - connection：测试辅助工具创建出来的 v10 SQLite 连接。
+     */
+    private fun seedVersion10Year2025Data(connection: SupportSQLiteDatabase) {
+        connection.execSQL(
+            "INSERT INTO ledger_entries(id, sortId, amount, direction, channel, timestamp, category, note, traceSource, tracePath, traceModelVersion, traceNotificationId, editedManually) VALUES(10, 1001, 13.2, 'EXPENSE', '图片导入', ${epochMillisOf(2025, 5, 15, 11, 20)}, '餐饮', NULL, 'image-import', 'cloud', 'v1', NULL, 0)",
+        )
+        connection.execSQL(
+            "INSERT INTO ledger_entries(id, sortId, amount, direction, channel, timestamp, category, note, traceSource, tracePath, traceModelVersion, traceNotificationId, editedManually) VALUES(11, 1002, 99.0, 'INCOME', '图片导入', ${epochMillisOf(2026, 6, 1, 8, 30)}, '工资', NULL, 'image-import', 'cloud', 'v1', NULL, 0)",
+        )
+        connection.execSQL("INSERT INTO ledger_stats(id, entryCount, firstTimestamp, lastTimestamp) VALUES(1, 99, 1, 2)")
+        connection.execSQL(
+            "INSERT INTO pending_entries(id, sortId, amount, direction, channel, timestamp, confidenceScore, categoryHint, note, rawSource, parsePath, modelVersion, reason, traceNotificationId, isFalsePositive, editedManually) VALUES(20, 2001, 8.8, 'EXPENSE', '图片导入', ${epochMillisOf(2025, 5, 16, 9, 5)}, 0.8, '餐饮', NULL, 'image-import', 'cloud', 'v1', '待确认', NULL, 0, 0)",
+        )
+        connection.execSQL(
+            "INSERT INTO pending_entries(id, sortId, amount, direction, channel, timestamp, confidenceScore, categoryHint, note, rawSource, parsePath, modelVersion, reason, traceNotificationId, isFalsePositive, editedManually) VALUES(21, 2002, 9.9, 'EXPENSE', '图片导入', ${epochMillisOf(2025, 5, 16, 9, 10)}, 0.8, '餐饮', NULL, 'image-import', 'cloud', 'v1', '误识别', NULL, 1, 0)",
+        )
+        connection.execSQL("INSERT INTO pending_stats(id, activeCount) VALUES(1, 99)")
+    }
+
+    /**
      * 断言账本金额已经被迁移为正数。
      *
      * 参数说明：
@@ -158,17 +239,60 @@ class AutobookMigrationTest {
     }
 
     /**
+     * 断言账本时间戳已经按迁移预期更新。
+     *
+     * 参数说明：
+     * - connection：迁移后的数据库连接。
+     * - id：待检查账本记录主键。
+     * - expectedTimestamp：期望时间戳。
+     */
+    private fun assertLedgerTimestamp(
+        connection: SupportSQLiteDatabase,
+        id: Long,
+        expectedTimestamp: Long,
+    ) {
+        connection.query("SELECT timestamp FROM ledger_entries WHERE id = ?", arrayOf(id)).use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(expectedTimestamp, cursor.getLong(0))
+        }
+    }
+
+    /**
+     * 断言待确认时间戳已经按迁移预期更新。
+     *
+     * 参数说明：
+     * - connection：迁移后的数据库连接。
+     * - id：待检查待确认记录主键。
+     * - expectedTimestamp：期望时间戳。
+     */
+    private fun assertPendingTimestamp(
+        connection: SupportSQLiteDatabase,
+        id: Long,
+        expectedTimestamp: Long,
+    ) {
+        connection.query("SELECT timestamp FROM pending_entries WHERE id = ?", arrayOf(id)).use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(expectedTimestamp, cursor.getLong(0))
+        }
+    }
+
+    /**
      * 断言账本统计缓存已经按真实流水重建。
      *
      * 参数说明：
      * - connection：迁移后的数据库连接。
      */
-    private fun assertLedgerStats(connection: SupportSQLiteDatabase) {
+    private fun assertLedgerStats(
+        connection: SupportSQLiteDatabase,
+        expectedCount: Int,
+        expectedFirstTimestamp: Long,
+        expectedLastTimestamp: Long,
+    ) {
         connection.query("SELECT entryCount, firstTimestamp, lastTimestamp FROM ledger_stats WHERE id = 1").use { cursor ->
             cursor.moveToFirst()
-            assertEquals(2, cursor.getLong(0).toInt())
-            assertEquals(1000L, cursor.getLong(1))
-            assertEquals(3000L, cursor.getLong(2))
+            assertEquals(expectedCount, cursor.getLong(0).toInt())
+            assertEquals(expectedFirstTimestamp, cursor.getLong(1))
+            assertEquals(expectedLastTimestamp, cursor.getLong(2))
         }
     }
 
@@ -188,4 +312,27 @@ class AutobookMigrationTest {
     private companion object {
         private const val TEST_DB = "autobook-migration-test"
     }
+}
+
+/**
+ * 构造本地时区毫秒时间戳。
+ *
+ * 参数说明：
+ * - year：年份。
+ * - month：月份。
+ * - day：日期。
+ * - hour：小时。
+ * - minute：分钟。
+ */
+private fun epochMillisOf(
+    year: Int,
+    month: Int,
+    day: Int,
+    hour: Int,
+    minute: Int,
+): Long {
+    return LocalDateTime.of(year, month, day, hour, minute)
+        .atZone(ZoneId.systemDefault())
+        .toInstant()
+        .toEpochMilli()
 }

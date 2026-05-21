@@ -23,6 +23,7 @@ import com.autobook.cn.core.data.PaymentRepository
 import com.autobook.cn.core.data.NotificationTraceRepository
 import com.autobook.cn.core.data.PendingRepository
 import com.autobook.cn.core.data.SettingsRepository
+import com.autobook.cn.core.data.UserFeedbackRepository
 import com.autobook.cn.core.data.mapper.toDomain
 import com.autobook.cn.core.data.mapper.toEntity
 import com.autobook.cn.core.data.parser.enrichForProcessing
@@ -63,6 +64,7 @@ import com.autobook.cn.core.network.BackendRefreshTokenRequest
 import com.autobook.cn.core.network.BackendSmsCodeRequest
 import com.autobook.cn.core.network.BackendTrainingSampleParser
 import com.autobook.cn.core.network.BackendTrainingSamplesRequest
+import com.autobook.cn.core.network.BackendUserFeedbackRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.DecimalFormat
 import java.time.Instant
@@ -517,14 +519,52 @@ class PendingRepositoryImpl @Inject constructor(
 class NotificationTraceRepositoryImpl @Inject constructor(
     private val notificationEventDao: NotificationEventDao,
 ) : NotificationTraceRepository {
-    override fun observeRawTextById(): Flow<Map<Long, String>> = notificationEventDao.observeAll().map { events ->
-        events.mapNotNull { event ->
-            val rawText = listOfNotNull(
-                event.title?.trim()?.takeIf { it.isNotEmpty() },
-                event.text?.trim()?.takeIf { it.isNotEmpty() },
-            ).distinct().takeIf { it.isNotEmpty() }?.joinToString(separator = "\n")
-            rawText?.let { event.id to it }
+    /**
+     * 用途说明：
+     * - 只观察指定通知 ID 集合对应的原文。
+     *
+     * 参数说明：
+     * - ids：当前页面需要展示原文的通知主键集合。
+     */
+    override fun observeRawTextByIds(ids: Set<Long>): Flow<Map<Long, String>> {
+        if (ids.isEmpty()) {
+            return kotlinx.coroutines.flow.flowOf(emptyMap())
+        }
+        return notificationEventDao.observeByIds(ids).map(::buildRawTextMap)
+    }
+
+    /**
+     * 用途说明：
+     * - 观察全部通知原文映射。
+     * - 这是兼容接口，待确认页面已改为 `observeRawTextByIds()`，避免全表扫描。
+     */
+    override fun observeRawTextById(): Flow<Map<Long, String>> = notificationEventDao.observeAll().map(::buildRawTextMap)
+
+    /**
+     * 用途说明：
+     * - 把通知事件列表转换成 UI 可直接展示的原文映射。
+     *
+     * 参数说明：
+     * - events：数据库返回的通知事件列表。
+     */
+    private fun buildRawTextMap(events: List<com.autobook.cn.core.database.entity.NotificationEventEntity>): Map<Long, String> {
+        return events.mapNotNull { event ->
+            event.toRawText()?.let { rawText -> event.id to rawText }
         }.toMap()
+    }
+
+    /**
+     * 用途说明：
+     * - 合并通知标题和正文，去重后以换行展示。
+     *
+     * 接收者说明：
+     * - 单条通知事件实体。
+     */
+    private fun com.autobook.cn.core.database.entity.NotificationEventEntity.toRawText(): String? {
+        return listOfNotNull(
+            title?.trim()?.takeIf { it.isNotEmpty() },
+            text?.trim()?.takeIf { it.isNotEmpty() },
+        ).distinct().takeIf { it.isNotEmpty() }?.joinToString(separator = "\n")
     }
 }
 
@@ -991,6 +1031,52 @@ class AppUpdateRepositoryImpl @Inject constructor(
     }
 }
 
+class UserFeedbackRepositoryImpl @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val authRepository: AuthRepository,
+    private val backendApi: AutobookBackendApi,
+) : UserFeedbackRepository {
+    /**
+     * 用途说明：
+     * - 校验并提交一条用户反馈。
+     *
+     * 参数解释：
+     * - content：反馈正文，必须有实际内容。
+     * - contact：用户额外联系方式，允许为空。
+     */
+    override suspend fun submitFeedback(
+        content: String,
+        contact: String,
+    ): OperationResult<Unit> {
+        val normalizedContent = content.trim()
+        if (normalizedContent.length < USER_FEEDBACK_MIN_CONTENT_LENGTH) {
+            return OperationResult.TerminalFailure("请至少输入 $USER_FEEDBACK_MIN_CONTENT_LENGTH 个字的反馈内容")
+        }
+        val normalizedContact = contact.trim().takeIf { it.isNotEmpty() }
+        return when (
+            val result = callAuthenticatedBackend(
+                endpointLabel = USER_FEEDBACK_SUBMIT_ENDPOINT,
+                authRepository = authRepository,
+                loginRequiredMessage = "请先登录邮箱账号，再提交反馈",
+            ) { authorization ->
+                backendApi.submitUserFeedback(
+                    authorization = authorization,
+                    body = BackendUserFeedbackRequest(
+                        content = normalizedContent,
+                        contact = normalizedContact,
+                        deviceId = context.resolveDeviceId(),
+                        appVersion = context.resolveAppVersion(),
+                    ),
+                )
+            }
+        ) {
+            is OperationResult.Success -> OperationResult.Success(Unit)
+            is OperationResult.RetryableFailure -> result
+            is OperationResult.TerminalFailure -> result
+        }
+    }
+}
+
 /**
  * 用途说明：
  * - 云端学习仓储实现。
@@ -1348,6 +1434,12 @@ private const val MEMBERSHIP_ORDER_QUERY_ENDPOINT = "GET /v1/payments/membership
 
 /** 用途说明：检查 App 最新稳定版元数据的后端接口标签。 */
 private const val APP_RELEASE_LATEST_ENDPOINT = "GET /v1/app/releases/latest"
+
+/** 用途说明：提交用户反馈到云服务端的后端接口标签。 */
+private const val USER_FEEDBACK_SUBMIT_ENDPOINT = "POST /v1/user-feedback"
+
+/** 用途说明：用户反馈正文最小长度，避免空内容占用后台处理精力。 */
+private const val USER_FEEDBACK_MIN_CONTENT_LENGTH = 5
 
 /** 用途说明：上传用户改善计划训练样本到全局样本池的后端接口路径。 */
 private const val TRAINING_SAMPLE_UPLOAD_ENDPOINT = "POST /v1/cloud-learning/training-samples"

@@ -39,6 +39,8 @@ import com.autobook.cn.core.model.MoneyDirection
  * - 详细记录页负责展示按时间排序的完整记录列表。
  *
  * 参数说明：
+ * - title：顶部导航标题。
+ * - summary：顶部摘要卡文案。
  * - items：时间线记录列表。
  * - onSelectEntry：点击某条记录后的回调。
  * - onBack：返回上一级页面的回调。
@@ -47,6 +49,8 @@ import com.autobook.cn.core.model.MoneyDirection
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordsTimelineScreen(
+    title: String,
+    summary: String,
     items: List<RecordTimelineItemUiModel>,
     onSelectEntry: (Long) -> Unit,
     onBack: () -> Unit,
@@ -56,7 +60,7 @@ fun RecordsTimelineScreen(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text("详细记录") },
+                title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         AutobookIcon(
@@ -82,7 +86,7 @@ fun RecordsTimelineScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             item(key = "summary") {
-                RecordsSummaryCard(totalCount = items.size)
+                RecordsSummaryCard(summary = summary)
             }
             itemsIndexed(items = items, key = { _, item -> item.id }) { index, item ->
                 val showDate = index == 0 || items[index - 1].dateLabel != item.dateLabel
@@ -103,14 +107,14 @@ fun RecordsTimelineScreen(
 
 /**
  * 用途说明：
- * - 顶部摘要卡根据列表数量即时生成说明，避免把固定文案放进 ViewModel 状态里。
+ * - 顶部摘要卡展示 ViewModel 按当前筛选上下文生成的说明。
  *
  * 参数说明：
- * - totalCount：当前完整记录列表的数量。
+ * - summary：当前记录列表的摘要文案。
  */
 @Composable
 private fun RecordsSummaryCard(
-    totalCount: Int,
+    summary: String,
 ) {
     Card(
         shape = AutobookUiTokens.panelShape,
@@ -118,11 +122,7 @@ private fun RecordsSummaryCard(
         colors = autobookCardColors(),
     ) {
         Text(
-            text = if (totalCount == 0) {
-                "当前还没有账单记录"
-            } else {
-                "共 $totalCount 笔账单，按时间倒序展示"
-            },
+            text = summary,
             modifier = Modifier.padding(16.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

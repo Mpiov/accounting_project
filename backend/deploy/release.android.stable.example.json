@@ -1,14 +1,14 @@
 {
-  "latestVersionCode": 5,
-  "latestVersionName": "0.1.4",
+  "latestVersionCode": 8,
+  "latestVersionName": "0.1.7",
   "minSupportedVersionCode": 1,
   "forceUpdate": false,
-  "apkUrl": "https://pan.quark.cn/s/07970f32910a?pwd=cZzn",
+  "apkUrl": "https://pan.quark.cn/s/f36bf8ece9f8?pwd=e97M",
   "apkSizeBytes": 0,
   "sha256": "",
   "releaseNotes": [
-    "发布轻松记 0.1.4 最新安装包",
-    "同步最新自动记账与版本更新体验优化"
+    "发布轻松记 0.1.7 最新安装包",
+    "同步最新自动记账、版本更新与账单统计修复"
   ],
-  "publishedAt": 1778766417505
+  "publishedAt": 1778950916075
 }

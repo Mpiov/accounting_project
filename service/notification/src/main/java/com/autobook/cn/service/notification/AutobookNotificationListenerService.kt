@@ -58,6 +58,15 @@ class AutobookNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        if (shouldIgnoreSelfNotification(sbn.packageName, applicationContext.packageName)) {
+            // 自动入账成功通知、截图导入通知等都由本应用自己发出，不能再进入交易解析链路。
+            NotificationListenerTraceRecorder.record(
+                applicationContext,
+                "ignoreSelfNotification package=${sbn.packageName} postedAt=${sbn.postTime}",
+            )
+            Log.d("AutobookNotifService", "Ignore self notification package=${sbn.packageName}")
+            return
+        }
         val extras = sbn.notification.extras
         val payloads = NotificationPayloadExtractor.extractAll(
             title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
@@ -79,7 +88,7 @@ class AutobookNotificationListenerService : NotificationListenerService() {
             Log.d("AutobookNotifService", "Notification payload empty package=${sbn.packageName}")
             return
         }
-        // `textLines` 聚合通知在最新方案下可能拆成两条独立 payload，这里需要逐条入库和处理。
+        // 兼容历史接口形态：正常情况下提取器只会为一条系统通知生成一条 payload。
         payloads.forEachIndexed { index, payload ->
             // 通知样式会因厂商、Android 版本、折叠/展开状态而变化，这里先做一层标准化。
             val event = NotificationEvent(
@@ -165,4 +174,24 @@ class AutobookNotificationListenerService : NotificationListenerService() {
         serviceScope.cancel()
         super.onDestroy()
     }
+}
+
+/**
+ * 判断通知是否来自轻松记自身。
+ *
+ * 用途说明：
+ * - 通知监听服务能收到本应用自己发出的系统通知。
+ * - 如果不跳过，自动入账成功通知里的“支出 ¥xx 已入账”会被再次当成交易通知解析，形成重复记账。
+ *
+ * 参数说明：
+ * - notificationPackageName：系统通知来源包名，对应 `StatusBarNotification.packageName`。
+ * - appPackageName：当前应用包名，对应 `Context.packageName`。
+ */
+internal fun shouldIgnoreSelfNotification(
+    notificationPackageName: String?,
+    appPackageName: String?,
+): Boolean {
+    return !notificationPackageName.isNullOrBlank() &&
+        !appPackageName.isNullOrBlank() &&
+        notificationPackageName == appPackageName
 }

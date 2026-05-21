@@ -264,10 +264,10 @@ class EntryEditorViewModel @Inject constructor(
                 updateState { copy(errorMessage = "请输入正确时间，格式如 2026-05-03 18:30") }
                 return@launch
             }
+            val resolvedDirection = state.direction.defaultExpenseWhenUnknown()
             if (state.direction == MoneyDirection.UNKNOWN) {
-                // 自动解析无法确定方向时，要求用户在编辑页里显式确认收入或支出。
-                updateState { copy(errorMessage = "请选择收支方向") }
-                return@launch
+                // 待确认编辑页和快速记账页视觉上已经默认选中“支出”，这里同步业务状态，避免再次要求用户确认方向。
+                updateState { copy(direction = resolvedDirection, errorMessage = null) }
             }
             val category = state.category.trim().ifBlank { "待分类" }
             val note = state.note.trim().ifBlank { null }
@@ -277,7 +277,7 @@ class EntryEditorViewModel @Inject constructor(
                     ledgerRepository.add(
                         LedgerEntry(
                             amount = amount,
-                            direction = state.direction,
+                            direction = resolvedDirection,
                             channel = if (state.importedImageRef != null) "图片导入" else "手动记账",
                             timestamp = entryTimestamp,
                             category = category,
@@ -296,7 +296,7 @@ class EntryEditorViewModel @Inject constructor(
                         current.copy(
                             amount = amount,
                             timestamp = entryTimestamp,
-                            direction = state.direction,
+                            direction = resolvedDirection,
                             category = category,
                             note = note,
                             editedManually = true,
@@ -310,7 +310,7 @@ class EntryEditorViewModel @Inject constructor(
                     val correctedEntry = LedgerEntry(
                         sortId = pending.sortId,
                         amount = amount,
-                        direction = state.direction,
+                        direction = resolvedDirection,
                         channel = pending.channel,
                         timestamp = entryTimestamp,
                         category = category.ifBlank { pending.categoryHint },
@@ -377,7 +377,8 @@ class EntryEditorViewModel @Inject constructor(
                         entryTimeText = formatEntryTime(entry.timestamp),
                         category = entry.categoryHint,
                         note = entry.note.orEmpty(),
-                        direction = entry.direction,
+                        // 待确认来源可能是 UNKNOWN，但编辑页已经默认展示“支出”，因此加载时也要写成支出状态。
+                        direction = entry.direction.defaultExpenseWhenUnknown(),
                     )
                 }
             }
@@ -456,6 +457,18 @@ private val ENTRY_TEMPLATE_MODELS = ENTRY_TEMPLATES.map { template ->
         id = template.id,
         label = template.label,
     )
+}
+
+/**
+ * 用途说明：
+ * - 把无法识别的收支方向默认落到支出。
+ * - 快速记账和待确认编辑页的产品心智都是默认支出，因此业务状态不能继续保留 UNKNOWN。
+ *
+ * 接收者说明：
+ * - 当前表单或候选记录中的收支方向。
+ */
+internal fun MoneyDirection.defaultExpenseWhenUnknown(): MoneyDirection {
+    return if (this == MoneyDirection.UNKNOWN) MoneyDirection.EXPENSE else this
 }
 
 /**

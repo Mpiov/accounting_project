@@ -60,6 +60,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.ContentScale
@@ -138,6 +139,9 @@ fun SettingsWorkspaceScreen(
     onSourceEnabledChanged: (SettingsNotificationSource, Boolean) -> Unit,
     onCheckAppUpdate: () -> Unit,
     onDismissAppUpdatePrompt: () -> Unit,
+    onFeedbackContentChanged: (String) -> Unit,
+    onFeedbackContactChanged: (String) -> Unit,
+    onSubmitUserFeedback: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -304,6 +308,9 @@ fun SettingsWorkspaceScreen(
             onNotificationRetentionChanged = onNotificationRetentionChanged,
             onScreenshotRetentionChanged = onScreenshotRetentionChanged,
             onSourceEnabledChanged = onSourceEnabledChanged,
+            onFeedbackContentChanged = onFeedbackContentChanged,
+            onFeedbackContactChanged = onFeedbackContactChanged,
+            onSubmitUserFeedback = onSubmitUserFeedback,
             modifier = modifier,
         )
         return
@@ -413,6 +420,13 @@ private fun SettingsHomeContent(
             )
             SettingsMenuDivider()
             SettingsMenuRow(
+                icon = AutobookIconAsset.Message,
+                title = "用户反馈",
+                summary = "提交问题、建议或自动记账异常",
+                onClick = { onOpenDetail(SettingsDetailDestination.FEEDBACK) },
+            )
+            SettingsMenuDivider()
+            SettingsMenuRow(
                 // 版本检查只请求很小的 JSON 元数据；真正下载交给浏览器，避免后台自动占用服务器带宽。
                 icon = AutobookIconAsset.CloudSync,
                 title = "检查新版本",
@@ -463,6 +477,11 @@ private enum class SettingsDetailDestination(
         title = "数据留存",
         summary = "控制原始通知和截图保留时间",
         icon = AutobookIconAsset.Storage,
+    ),
+    FEEDBACK(
+        title = "用户反馈",
+        summary = "提交问题、建议或自动记账异常",
+        icon = AutobookIconAsset.Message,
     ),
 }
 
@@ -517,6 +536,9 @@ private fun SettingsDetailScreen(
     onNotificationRetentionChanged: (Int) -> Unit,
     onScreenshotRetentionChanged: (Int) -> Unit,
     onSourceEnabledChanged: (SettingsNotificationSource, Boolean) -> Unit,
+    onFeedbackContentChanged: (String) -> Unit,
+    onFeedbackContactChanged: (String) -> Unit,
+    onSubmitUserFeedback: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -636,6 +658,17 @@ private fun SettingsDetailScreen(
                     onScreenshotRetentionChanged = onScreenshotRetentionChanged,
                 )
             }
+            SettingsDetailDestination.FEEDBACK -> {
+                UserFeedbackCard(
+                    authLoggedIn = state.authLoggedIn,
+                    content = state.feedbackContentInput,
+                    contact = state.feedbackContactInput,
+                    submitting = state.feedbackSubmitting,
+                    onContentChanged = onFeedbackContentChanged,
+                    onContactChanged = onFeedbackContactChanged,
+                    onSubmit = onSubmitUserFeedback,
+                )
+            }
         }
     }
 }
@@ -702,6 +735,75 @@ private fun SettingsDetailHeader(
  * 参数说明：
  * - content：横条内容。
  */
+/**
+ * 用途说明：
+ * - 设置页用户反馈表单。
+ *
+ * 参数说明：
+ * - authLoggedIn：当前是否已登录，未登录时禁止提交，保证云端反馈能绑定账号。
+ * - content：反馈正文输入内容。
+ * - contact：额外联系方式输入内容。
+ * - submitting：当前是否正在提交，避免重复点击。
+ * - onContentChanged：反馈正文变化回调。
+ * - onContactChanged：联系方式变化回调。
+ * - onSubmit：提交按钮回调。
+ */
+@Composable
+private fun UserFeedbackCard(
+    authLoggedIn: Boolean,
+    content: String,
+    contact: String,
+    submitting: Boolean,
+    onContentChanged: (String) -> Unit,
+    onContactChanged: (String) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    val trimmedContent = content.trim()
+    val canSubmit = authLoggedIn && !submitting && trimmedContent.length >= USER_FEEDBACK_MIN_LENGTH
+    SettingsGroupCard(
+        title = "用户反馈",
+        summary = "告诉我们问题、建议或自动记账异常",
+    ) {
+        OutlinedTextField(
+            value = content,
+            onValueChange = onContentChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("反馈内容") },
+            placeholder = { Text("例如：某条通知没有自动入账，或某个页面体验不好") },
+            minLines = 5,
+            maxLines = 8,
+            enabled = !submitting,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+        )
+        OutlinedTextField(
+            value = contact,
+            onValueChange = onContactChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("联系方式（选填）") },
+            placeholder = { Text("可填写微信号、邮箱或手机号") },
+            singleLine = true,
+            enabled = !submitting,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        )
+        Text(
+            text = if (authLoggedIn) {
+                "反馈会随登录邮箱、App 版本和设备信息一起提交，方便定位问题。"
+            } else {
+                "请先登录邮箱账号，再提交反馈。"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(
+            onClick = onSubmit,
+            enabled = canSubmit,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (submitting) "提交中..." else "提交反馈")
+        }
+    }
+}
+
 @Composable
 private fun SettingsMenuCard(
     content: @Composable ColumnScope.() -> Unit,
@@ -3046,6 +3148,9 @@ private fun SettingsUiState.membershipPromotionToday(): LocalDate {
         ?.let { serverTime -> Instant.ofEpochMilli(serverTime).atZone(MEMBERSHIP_PROMOTION_ZONE).toLocalDate() }
         ?: LocalDate.now(MEMBERSHIP_PROMOTION_ZONE)
 }
+
+/** 用途说明：用户反馈正文最小长度，和数据层校验保持一致。 */
+private const val USER_FEEDBACK_MIN_LENGTH = 5
 
 /**
  * 设置页允许展示的通知来源白名单。

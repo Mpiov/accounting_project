@@ -17,8 +17,10 @@ import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -30,29 +32,38 @@ class PendingViewModel @Inject constructor(
     private val ledgerRepository: LedgerRepository,
     private val notificationTraceRepository: NotificationTraceRepository,
 ) : ViewModel() {
-    /** 把待确认仓库中的领域模型转换成 UI 模型。 */
-    val uiState: StateFlow<PendingUiState> = combine(
-        pendingRepository.observeEntries(),
-        notificationTraceRepository.observeRawTextById(),
-    ) { pendingEntries, notificationTextById ->
-        pendingEntries to notificationTextById
-    }.mapLatest { snapshot ->
-            // 待确认页列表虽然不算重，但切 Tab 时仍会做金额和时间格式化，统一放到后台线程更稳妥。
-            withContext(Dispatchers.Default) {
-                val (pendingEntries, notificationTextById) = snapshot
-                PendingUiState(
-                    items = pendingEntries.map { pending ->
-                        pending.toPendingItemUiModel(
-                            rawNotificationText = pending.traceNotificationId?.let(notificationTextById::get),
-                        )
-                    },
-                )
-            }
+    /**
+     * 把待确认仓库中的领域模型转换成 UI 模型。
+     *
+     * 用途说明：
+     * - 首屏只等待待确认表自身查询，不能被通知历史原文全量映射拖住。
+     * - 待确认项先展示出来，再按当前列表关联的通知 ID 补充原文。
+     */
+    val uiState: StateFlow<PendingUiState> = pendingRepository.observeEntries()
+        .flatMapLatest { pendingEntries ->
+            val notificationIds = pendingEntries.mapNotNull(PendingEntry::traceNotificationId).toSet()
+            notificationTraceRepository.observeRawTextByIds(notificationIds)
+                .mapLatest { notificationTextById ->
+                    pendingEntries.toPendingUiState(
+                        notificationTextById = notificationTextById,
+                        isLoading = false,
+                    )
+                }
+                .onStart {
+                    // 原文查询回来前先展示待确认项，避免用户看到“当前无需处理”的假空状态。
+                    emit(
+                        pendingEntries.toPendingUiState(
+                            notificationTextById = emptyMap(),
+                            isLoading = false,
+                        ),
+                    )
+                }
         }
+        .onStart { emit(PendingUiState(isLoading = true)) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = PendingUiState(),
+            initialValue = PendingUiState(isLoading = true),
         )
 
     fun confirmPending(id: Long) {
@@ -95,6 +106,33 @@ class PendingViewModel @Inject constructor(
         viewModelScope.launch {
             pendingRepository.markFalsePositive(id)
         }
+    }
+}
+
+/**
+ * 将待确认列表和通知原文映射成页面状态。
+ *
+ * 用途说明：
+ * - 待确认列表和原文是两阶段加载：列表先出，原文后补。
+ * - 这个函数统一做后台线程格式化，避免主线程承担金额和时间文本处理。
+ *
+ * 参数说明：
+ * - notificationTextById：当前待确认项关联通知的原文映射。
+ * - isLoading：是否仍处于首次加载。
+ */
+private suspend fun List<PendingEntry>.toPendingUiState(
+    notificationTextById: Map<Long, String>,
+    isLoading: Boolean,
+): PendingUiState {
+    return withContext(Dispatchers.Default) {
+        PendingUiState(
+            items = map { pending ->
+                pending.toPendingItemUiModel(
+                    rawNotificationText = pending.traceNotificationId?.let(notificationTextById::get),
+                )
+            },
+            isLoading = isLoading,
+        )
     }
 }
 

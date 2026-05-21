@@ -111,6 +111,38 @@ fun AutobookApp() {
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
 
                 RecordsTimelineScreen(
+                    title = state.title,
+                    summary = state.summary,
+                    items = state.items,
+                    onSelectEntry = { ledgerId ->
+                        navController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))
+                    },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(
+                route = AutobookDestination.RecordsCategory.route,
+                arguments = listOf(
+                    navArgument("direction") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
+                    navArgument("period") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
+                    navArgument("category") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
+                ),
+            ) {
+                val viewModel: RecordsBrowserViewModel = hiltViewModel()
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+                RecordsTimelineScreen(
+                    title = state.title,
+                    summary = state.summary,
                     items = state.items,
                     onSelectEntry = { ledgerId ->
                         navController.navigate(AutobookDestination.EntryEdit.createRoute(ledgerId))

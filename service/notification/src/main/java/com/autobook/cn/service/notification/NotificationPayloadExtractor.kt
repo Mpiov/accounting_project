@@ -5,7 +5,7 @@ package com.autobook.cn.service.notification
  *
  * 参数说明：
  * - title：归一化后的通知标题，优先保留最稳定的标题字段。
- * - text：归一化后的通知正文，会尽量选出最适合交易解析的一段文本。
+ * - text：归一化后的通知正文，会从折叠态、展开态和多行样式中选出最适合交易解析的一段文本。
  */
 internal data class NotificationPayload(
     val title: String?,
@@ -25,13 +25,12 @@ internal data class NotificationPayload(
  */
 internal object NotificationPayloadExtractor {
     /**
-     * 提取并标准化当前通知的所有候选 payload。
+     * 提取并标准化当前通知的候选 payload。
      *
      * 用途说明：
-     * - 按最新规则，`textLines` 代表同一应用下聚合在一条通知里的多条候选消息时，
-     *   不再把所有行直接拼成一段正文，而是只保留首行和尾行，视作两条独立通知。
-     * - 中间行会被主动过滤；后续如果首尾里出现重复，交给数据库去重层处理。
-     * - 如果没有 `textLines`，则继续回退到“单条最佳正文”策略。
+     * - 一条 Android 通知对象默认只对应一条业务通知，`textLines` 只作为正文候选来源。
+     * - 不再把多行正文拆成多条 payload，避免云闪付、银行 App 的同一笔交易被首尾行重复入待确认。
+     * - 多个字段同时存在时会按信息完整度选出最佳正文，减少金额和关键词重复带来的噪声。
      *
      * 参数说明：
      * - title：通知常规标题，对应 `android.title`。
@@ -50,21 +49,23 @@ internal object NotificationPayloadExtractor {
         tickerText: String?,
     ): List<NotificationPayload> {
         val normalizedTitle = firstNonBlank(title, bigTitle)
-        val linePayloads = buildLinePayloads(
-            normalizedTitle = normalizedTitle,
-            textLines = textLines,
-        )
-        if (linePayloads.isNotEmpty()) {
-            // 纯空 payload 继续进入链路只会制造“空通知处理失败”的噪音记录，因此这里直接丢弃。
-            return linePayloads.filter(NotificationPayload::hasMeaningfulContent)
-        }
-
         val normalizedText = selectBestBodyCandidate(
-            candidates = listOf(
-                bigText,
-                text,
-                tickerText,
-            ),
+            candidates = buildList {
+                // 展开态正文通常比折叠态更完整，所以在同分时优先保留它。
+                add(
+                    bigText,
+                )
+                // 折叠态正文是用户最常看到的一行，也作为稳定候选参与比较。
+                add(
+                    text,
+                )
+                // 多行样式里的每一行只参与“选正文”，不再代表多条通知。
+                addAll(textLines)
+                // ticker 是最末级兜底，部分旧通知样式只在这里暴露原文。
+                add(
+                    tickerText,
+                )
+            },
             title = normalizedTitle,
         )
         return listOf(
@@ -108,7 +109,7 @@ internal object NotificationPayloadExtractor {
      * 选择最适合交易解析的一段正文。
      *
      * 参数说明：
-     * - candidates：按优先级排列的正文候选集合，前面的字段通常结构更完整。
+     * - candidates：正文候选集合，包含折叠态、展开态、多行样式和 ticker 文本。
      * - title：已归一化标题，用于过滤和标题完全相同的无效正文。
      */
     private fun selectBestBodyCandidate(
@@ -124,7 +125,7 @@ internal object NotificationPayloadExtractor {
     }
 
     /**
-     * 为正文候选打分，优先保留对金额、方向判断更有帮助的文本。
+     * 为正文候选打分，优先保留对金额、方向、时间和银行卡尾号判断更有帮助的文本。
      *
      * 参数说明：
      * - candidate：单个正文候选字符串。
@@ -138,6 +139,18 @@ internal object NotificationPayloadExtractor {
         // 方向关键词可以显著提高后续自动入账概率，因此给予额外权重。
         if (DIRECTION_KEYWORDS.any(candidate::contains)) {
             score += 30
+        }
+        // 时间信息可以帮助用户定位账单，也能让重复判断更稳定。
+        if (TIME_HINT_REGEX.containsMatchIn(candidate)) {
+            score += 20
+        }
+        // 银行卡尾号是银行/云闪付重复通知的重要同笔交易证据。
+        if (candidate.contains("尾号")) {
+            score += 15
+        }
+        // 纯引导点击文案不应盖过真正的交易正文。
+        if (DETAIL_NOISE_KEYWORDS.any(candidate::contains)) {
+            score -= 25
         }
         return score
     }
@@ -157,42 +170,6 @@ internal object NotificationPayloadExtractor {
      * - value：待清洗的原始文本。
      */
     private fun normalize(value: String?): String? = value?.trim()?.takeIf { it.isNotEmpty() }
-
-    /**
-     * 基于 `textLines` 构造首行/尾行两条独立 payload。
-     *
-     * 用途说明：
-     * - 按最新方案，同一条聚合通知里只保留第一行和最后一行，把它们分别送进后续解析链路。
-     * - 中间行全部过滤，不再尝试整段拼接。
-     * - 如果首行和尾行清洗后相同，则自动折叠成一条，避免同一回调内部立即制造重复。
-     *
-     * 参数说明：
-     * - normalizedTitle：已经归一化后的标题。
-     * - textLines：原始多行正文集合。
-     */
-    private fun buildLinePayloads(
-        normalizedTitle: String?,
-        textLines: List<String>,
-    ): List<NotificationPayload> {
-        val cleanedLines = textLines
-            .mapNotNull(::normalize)
-            .distinct()
-            .filterNot { line -> line == normalizedTitle }
-        if (cleanedLines.isEmpty()) {
-            return emptyList()
-        }
-
-        val boundaryLines = listOfNotNull(
-            cleanedLines.firstOrNull(),
-            cleanedLines.lastOrNull(),
-        ).distinct()
-        return boundaryLines.map { line ->
-            NotificationPayload(
-                title = normalizedTitle,
-                text = line,
-            )
-        }
-    }
 }
 
 /**
@@ -211,3 +188,9 @@ private val AMOUNT_REGEX = Regex("""(?:￥|¥|RMB|CNY)?\s*\d+(?:\.\d{1,2})?""")
 
 /** 这些关键词能帮助后续规则判断收支方向，因此在挑选正文时给予更高优先级。 */
 private val DIRECTION_KEYWORDS = listOf("支付", "付款", "收款", "到账", "入账", "转账", "扣款")
+
+/** 时间线索能让银行动账通知从普通摘要行里脱颖而出。 */
+private val TIME_HINT_REGEX = Regex("""(?:\d{1,2}:\d{2}|年|月|日|时|分)""")
+
+/** 这些提示词通常是操作引导，不应优先成为交易正文。 */
+private val DETAIL_NOISE_KEYWORDS = listOf("点击查看", "查看详情", "详情")

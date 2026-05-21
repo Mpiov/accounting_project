@@ -637,6 +637,21 @@ interface CloudLearningRepository {
  * - 提供通知原文回看能力。
  */
 interface NotificationTraceRepository {
+    /**
+     * 用途说明：
+     * - 观察指定通知 ID 集合对应的原文映射。
+     * - 待确认页只需要当前待确认项关联的少量通知，不能为了 1 条待确认去扫描全部历史通知。
+     *
+     * 参数说明：
+     * - ids：待查询的通知事件主键集合。
+     */
+    fun observeRawTextByIds(ids: Set<Long>): Flow<Map<Long, String>>
+
+    /**
+     * 用途说明：
+     * - 观察全部通知原文映射。
+     * - 仅保留给确实需要全量回看通知历史的页面使用，普通待确认列表不应调用。
+     */
     fun observeRawTextById(): Flow<Map<Long, String>>
 }
 
@@ -755,4 +770,23 @@ interface SettingsRepository {
      * - enabled：目标状态。
      */
     suspend fun setSourceEnabled(source: NotificationSourceApp, enabled: Boolean)
+}
+
+/**
+ * 用途说明：
+ * - 用户反馈仓储，负责把设置页提交的意见或问题发送到云服务端。
+ */
+interface UserFeedbackRepository {
+    /**
+     * 用途说明：
+     * - 提交一条用户反馈。
+     *
+     * 参数解释：
+     * - content：用户填写的反馈正文。
+     * - contact：用户额外留下的联系方式，可为空。
+     */
+    suspend fun submitFeedback(
+        content: String,
+        contact: String,
+    ): OperationResult<Unit>
 }

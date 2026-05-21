@@ -164,6 +164,20 @@ interface AutobookBackendApi {
         @Query("platform") platform: String = "android",
         @Query("channel") channel: String = "stable",
     ): Response<BackendEnvelope<BackendAppReleaseResponse>>
+
+    /**
+     * 用途说明：
+     * - 提交用户在设置页填写的产品反馈。
+     *
+     * 参数解释：
+     * - authorization：Bearer 访问令牌，用于把反馈绑定到服务器账号。
+     * - body：反馈正文、联系方式、设备与版本信息。
+     */
+    @POST("v1/user-feedback")
+    suspend fun submitUserFeedback(
+        @Header("Authorization") authorization: String,
+        @Body body: BackendUserFeedbackRequest,
+    ): Response<BackendEnvelope<BackendUserFeedbackResponse>>
 }
 
 /**
@@ -358,6 +372,36 @@ data class BackendAppReleaseResponse(
     val releaseNotes: List<String> = emptyList(),
     val publishedAt: Long? = null,
     val notModified: Boolean = true,
+)
+
+/**
+ * 用途说明：
+ * - 用户反馈提交请求体。
+ *
+ * 参数解释：
+ * - content：用户填写的反馈正文。
+ * - contact：用户额外留下的联系方式，可为空；登录邮箱由服务端根据令牌绑定。
+ * - deviceId：客户端稳定设备标识，用于定位机型或单设备复现问题。
+ * - appVersion：客户端当前版本号，方便后台判断反馈来自哪个安装包。
+ */
+data class BackendUserFeedbackRequest(
+    val content: String,
+    val contact: String? = null,
+    val deviceId: String? = null,
+    val appVersion: String? = null,
+)
+
+/**
+ * 用途说明：
+ * - 用户反馈提交响应体。
+ *
+ * 参数解释：
+ * - feedbackId：服务器反馈主键，供后台排查和日志关联。
+ * - receivedAt：服务器收到反馈的毫秒时间戳。
+ */
+data class BackendUserFeedbackResponse(
+    val feedbackId: Long = 0L,
+    val receivedAt: Long = 0L,
 )
 
 /**
