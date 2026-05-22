@@ -287,7 +287,7 @@ def render_page(title: str, body: str) -> HTMLResponse:
         <a href="/admin">会员与训练</a>
         <a href="/admin/orders">订单</a>
         <a href="/admin/samples">样本</a>
-        <a href="/admin/feedback">反馈</a>
+        <a href="/admin/feedback">用户反馈</a>
       </nav>
     </div>
     <form method="post" action="/admin/logout">
@@ -526,6 +526,7 @@ def admin_index(
     member_page = list_member_status_page(config.database_path, query=q, page=page, page_size=page_size)
     members = member_page["items"]
     orders_section = render_recent_orders_section(config.database_path)
+    feedback_section = render_recent_feedback_section(config.database_path)
     global_model_section = render_global_model_section(config.database_path)
     training_section = render_training_section(config)
     message_html = f'<div class="message">{escape(message)}</div>' if message else ""
@@ -540,6 +541,7 @@ def admin_index(
     body = f"""
     {message_html}
     {orders_section}
+    {feedback_section}
     {global_model_section}
     {training_section}
     <section>
@@ -1084,6 +1086,58 @@ def render_recent_orders_section(database_path: str) -> str:
           <div class="section-title">
             <h2>订单处理</h2>
             <a class="badge" href="/admin/orders">查看全部</a>
+          </div>
+          <p class="muted">读取失败：{escape(str(exc))}</p>
+        </section>
+        """
+
+
+def render_recent_feedback_section(database_path: str) -> str:
+    """渲染首页最近用户反馈摘要。
+
+    参数：
+        database_path: SQLite 数据库文件路径。
+
+    返回：
+        str: 后台首页反馈摘要 HTML。
+    """
+
+    try:
+        feedback_page = list_user_feedback_page(database_path, page=1, page_size=5)
+        feedback_items = feedback_page["items"]
+        rows = "\n".join(render_user_feedback_row(feedback) for feedback in feedback_items)
+        total = int(feedback_page["total"])
+        # 首页只展示最近 5 条反馈，完整筛选和分页交给用户反馈页处理。
+        return f"""
+        <section>
+          <div class="section-title">
+            <h2>用户反馈</h2>
+            <a class="badge" href="/admin/feedback">查看全部（{total}）</a>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>邮箱/账号</th>
+                <th>反馈内容</th>
+                <th>联系方式</th>
+                <th>设备</th>
+                <th>版本</th>
+                <th>状态</th>
+                <th>提交时间</th>
+              </tr>
+            </thead>
+            <tbody>{rows or '<tr><td colspan="8" class="muted">暂无反馈</td></tr>'}</tbody>
+          </table>
+        </section>
+        """
+    except Exception as exc:
+        # 反馈摘要失败时不能影响订单处理、会员发放和模型发布。
+        return f"""
+        <section>
+          <div class="section-title">
+            <h2>用户反馈</h2>
+            <a class="badge" href="/admin/feedback">查看全部</a>
           </div>
           <p class="muted">读取失败：{escape(str(exc))}</p>
         </section>
